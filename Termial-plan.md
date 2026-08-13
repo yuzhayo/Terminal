@@ -319,9 +319,18 @@ di bagian keputusan terbuka dan tidak boleh ditebak oleh implementation agent.
 
 - Reload V1 hanya manual dan eksplisit; tidak ada file watcher.
 - UI Editor menggunakan entry point reload `UiConfigGate` yang sama, bukan jalur parse khusus.
-- Reload valid mempublikasikan generation baru secara atomik.
+- Gate lebih dahulu menghasilkan candidate resolved generation tanpa mengganti document aktif.
+- Sebelum candidate generation di-commit, setiap `WindowContainer` menormalkan transient UI state
+  secara generik: tutup owned Combo popup, selesaikan active IME composition sesuai kontrak Input,
+  drain modal stack dari paling dalam, lepaskan seluruh native-peer suppression scope, dan membuktikan
+  suppression depth kembali nol. Cleanup tetap dijalankan bila component target hilang atau teardown
+  menghasilkan error.
+- V1 tidak mempertahankan Combo popup atau Dialog terbuka melewati generation swap. Setelah seluruh
+  window berada pada normalized state, reload valid mempublikasikan generation baru secara atomik.
 - Reconciliation mempertahankan focus, scroll, dan unsaved draft berdasarkan stable window/screen/
   component identity yang masih ada. State untuk identity yang hilang dibuang secara deterministik.
+- Focus restoration hanya dilakukan setelah tree baru selesai direkonsiliasi; target yang hilang tidak
+  boleh meninggalkan native peer tersembunyi, suppression token, popup, atau stale UIA provider.
 - Reload invalid tidak mengganti UI aktif dan mengikuti diagnostic policy di atas.
 
 ## 9. Model component
@@ -429,11 +438,29 @@ Resource ownership yang dikunci:
   mempunyai cache domain sendiri;
 - text format, path geometry, dan resource device-independent yang reusable berada pada factory-domain
   cache;
+- Seluruh `Measure` component wajib device-independent: measure memakai resolved metrics, DirectWrite
+  factory/text-layout resource, dan geometry CPU yang sah tanpa `WindowRenderContext`, swapchain,
+  device context, atau resource device-dependent. Contract yang sama harus bekerja untuk headless test,
+  hidden window yang render context-nya dilepas, dan device-lost recovery;
 - resource device-dependent immutable yang dapat dibagi oleh device-context dari Direct2D device yang
   sama berada pada device-domain cache; resource mutable/per-target tetap berada pada compatible
   per-surface domain;
 - cache selalu ditempatkan pada widest valid Direct2D resource domain, bukan dipaksa selalu per-device
   atau selalu per-render-context;
+- `RenderRuntime` memiliki cache generik process-level `NativePeerGdiResourceCache` untuk physical
+  `HFONT` dan `HBRUSH` yang dipakai native peer. Cache ini tidak mengetahui jenis component; component
+  owner menentukan resolved descriptor lalu memegang reference-counted lease;
+- key `HFONT` minimal terdiri dari resolved font descriptor dan DPI. Solid background `HBRUSH` hanya
+  di-key oleh final opaque `COLORREF`; resource epoch mengubah warna yang diminta tetapi bukan identitas
+  brush. Dengan demikian native peer berwarna sama dapat berbagi physical brush lintas component/epoch;
+  text/background color biasa tetap berupa resolved value dan bukan GDI object;
+- GDI object tidak boleh dibuat di `WM_PAINT`, `WM_CTLCOLOREDIT`, atau `WM_CTLCOLORSTATIC`. Cache
+  menghapus entry dan physical object dengan zero lease setelah settle dan hanya setelah object tidak
+  lagi dipakai native control/DC;
+- `RenderRuntime` meregistrasikan seluruh active render context/resource domain, termasuk primary
+  `WindowRenderContext` dan visible `LayeredPopupRenderContext`. Theme/system-color resource-epoch
+  change meng-invalidasi semuanya; active layered popup wajib dirender dan dipresentasikan ulang, bukan
+  menunggu close/reopen;
 - config generation/theme change meng-invalidasi resource yang bergantung padanya;
 - device-lost melepas resource device-dependent lalu membuatnya kembali tanpa kehilangan logical UI
   state;
@@ -464,11 +491,13 @@ acceptance target untuk default JSON dan component baru:
   harus konsisten. Exact DirectWrite rendering mode dipilih dari visual measurement vertical slice pada
   DPI 100%, 125%, 150%, dan 200%, bukan diasumsikan sebelum bukti.
 - `InputComponent::Measure` menghitung minimum safe size pada DPI aktif dari radius, border, padding,
-  dan font metrics. Native Edit rectangle wajib seluruhnya berada di dalam opaque inner geometry agar
-  background Edit yang kotak tidak menimpa rounded corner.
+  font metrics, dan seluruh reserved app-painted region. Input menghasilkan `nativePeerContentRect`
+  setelah mengecualikan border/padding, Scrollbar track, icon, clear button, atau dekorasi in-bounds lain;
+  native Edit rectangle wajib seluruhnya berada di dalam opaque inner geometry dan tidak overlap dengan
+  region yang digambar aplikasi.
 - Gate hanya memvalidasi range/constraint statis. Geometry containment akhir adalah layout-time
-  assertion milik Input; pelanggaran menghasilkan actionable diagnostic dan safe non-interactive
-  layout-error presentation, bukan crash atau silent overlap.
+  containment serta non-overlap assertion milik Input; pelanggaran menghasilkan actionable diagnostic
+  dan safe non-interactive layout-error presentation, bukan crash atau silent overlap.
 - Logical focus berpindah ke Input dengan memanggil `SetFocus` pada Edit child. Sebaliknya,
   `WM_SETFOCUS`/`WM_KILLFOCUS` pada Edit melaporkan perubahan kepada focus coordinator agar logical focus
   tetap sinkron. Reentrancy guard mencegah loop dan tidak ada dua sumber kebenaran focus.
@@ -480,6 +509,24 @@ acceptance target untuk default JSON dan component baru:
   tanpa caret/selection pada primary surface agar scrim tidak memperlihatkan area Input kosong. Snapshot
   wajib memakai presentation/masking mode yang sama dan tidak boleh menggambar raw secret dari password
   input. State dipulihkan saat overlay selesai bila component identity masih valid.
+- Sebelum Input disuspend oleh modal atau normalized reload, active IME composition diselesaikan dengan
+  commit-result semantics (`CPS_COMPLETE`) dan candidate UI ditutup. Input baru boleh snapshot/hide peer
+  setelah composition end teramati; bila completion gagal, modal/reload ditunda atau dibatalkan dengan
+  diagnostic dan composition tidak pernah di-cancel diam-diam.
+- `InputComponent` memiliki lease, bukan physical ownership terpisah, atas `HFONT` dan `HBRUSH` dari
+  `NativePeerGdiResourceCache`. Pada theme/resource-epoch atau DPI change, Input memperoleh lease baru,
+  mengirim `WM_SETFONT`, memperbarui resolved native text/background state, meng-invalidasi peer/frame,
+  lalu melepas lease lama setelah Edit tidak lagi memakainya.
+- `WM_CTLCOLOREDIT` hanya mengatur warna DC dan mengembalikan cached brush; Input read-only/disabled juga
+  menangani jalur `WM_CTLCOLORSTATIC`. Parent message routing berdasarkan owned child `HWND` tetap
+  generik dan meneruskan message ke Input tanpa memindahkan logic warna/font Input ke container.
+- Modal suspend tidak melepas GDI lease karena Edit HWND masih hidup. Saat peer dihancurkan, Edit HWND
+  dihancurkan sebelum final font lease dilepas. Hidden retained window boleh mempertahankan lease;
+  stale theme/DPI resource wajib diperbarui sebelum peer ditampilkan kembali.
+- Restore hidden window wajib berurutan: tentukan DPI aktif, hitung ulang measure/layout termasuk
+  `nativePeerContentRect`, acquire GDI lease baru, kirim `WM_SETFONT` dan resolved native colors, render
+  complete non-blank frame, lalu `ShowWindow`. Tidak boleh ada visible frame dengan font/warna/geometry
+  generation lama.
 
 #### Button
 
@@ -519,15 +566,30 @@ capability OS yang benar-benar diperlukan:
   memerlukannya, Input memiliki `ScrollbarComponent` pada primary surface dan menyinkronkan scroll
   model ke native Edit melalui Input-owned native behavior;
 - trigger `ComboComponent` digambar pada primary surface. Dropdown adalah app-owned popup `HWND`
-  ber-`WS_EX_LAYERED` dengan `LayeredPopupRenderContext`, bukan native `CBS_*` list, agar rounded clip,
-  shadow, dan seluruh visual dropdown dikontrol aplikasi;
+  ber-`WS_POPUP` dengan minimum `WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` dan
+  `LayeredPopupRenderContext`, bukan native `CBS_*` list, agar rounded clip, shadow, dan seluruh visual
+  dropdown dikontrol aplikasi;
+- Combo popup tidak masuk taskbar/Alt-Tab. Owner top-level window tetap
+  active dan logical focus tetap pada Combo trigger; keyboard diterima owner lalu dirutekan ke owning
+  Combo selama popup terbuka, sedangkan pointer/hit-test popup tetap dimiliki Combo;
+- Combo menutup popup pada selection, Escape, outside click, owner deactivation, focus meninggalkan
+  Combo scope, route/config-generation change, atau modal scope baru yang tidak memuat owning Combo;
 - `DialogComponent` tidak memiliki popup/top-level `HWND`. Dialog menggunakan generic modal overlay
   plane pada primary parent surface dan memiliki panel, shadow, scrim, focus trap, dismissal, serta
   paint/state dialog itu sendiri;
-- ketika modal overlay aktif, seluruh native peer di luar active overlay scope disuspend dan child
-  `HWND`-nya di-hide karena native child selalu berada di atas parent surface. WindowContainer hanya
-  mengatur generic suspend/resume traversal; snapshot/state preservation tetap milik component peer;
-- Combo popup yang terbuka ditutup secara deterministik sebelum modal Dialog mengambil focus;
+- `WindowContainer` memiliki generic `ModalOverlayStack`, bukan satu Boolean modal. Setiap push mendapat
+  scope token; suppression menggunakan depth/refcount dan native peer hanya di-resume setelah tidak ada
+  scope aktif yang masih menekannya. Menutup inner Dialog mengembalikan focus ke outer Dialog, bukan ke
+  background screen;
+- active overlay scope ditentukan dari stable component identity dan ancestry pada logical component
+  tree, bukan relasi parent/child HWND. Native peer dan owned popup mewarisi scope component pemiliknya:
+  Input/Combo di top Dialog tetap aktif, sedangkan peer di belakang scrim disuspend meskipun seluruh Edit
+  HWND bersaudara di bawah top-level window yang sama;
+- ketika modal overlay aktif, native peer di luar top stack scope disuspend dan child `HWND`-nya di-hide
+  karena native child selalu berada di atas parent surface. WindowContainer hanya mengatur generic
+  scope traversal/refcount; snapshot/state preservation tetap milik component peer;
+- Combo popup di luar new top modal scope ditutup sebelum Dialog mengambil focus. Combo yang dimiliki
+  component di dalam active Dialog tetap boleh membuka popup non-activating miliknya;
 - WindowContainer melakukan generic hit testing/focus/event routing melalui component contract dan
   tidak berisi cabang internal Button/Input/Combo atau state machine component;
 - shared window-procedure trampoline hanya meneruskan message ke instance owner dan tidak bercabang
@@ -543,8 +605,34 @@ surface/ownership model di atas.
 
 - Component app-rendered yang interaktif memiliki keyboard contract, visible focus, accessible name,
   role, state, action, dan UI Automation provider miliknya.
-- Input mempertahankan native Edit accessibility untuk text/selection; InputComponent tetap menyediakan
-  label/name dan relasi UIA yang diperlukan.
+- Input muncul sebagai tepat satu logical UIA element pada posisi visual/Tab order Input, bukan wrapper
+  Input dan Edit HWND sebagai dua element yang diumumkan terpisah.
+- `WindowContainer` UIA fragment root mengimplementasikan `IRawElementProviderHwndOverride`.
+  `GetOverrideProviderForHwnd(editHwnd)` mengembalikan `InputProvider` milik Input yang tepat dan
+  mengembalikan `nullptr` untuk HWND yang tidak dioverride oleh fragment tersebut.
+- `InputProvider` merupakan bagian yang dapat dinavigasi dari custom fragment tree dan
+  `get_HostRawElementProvider()` mengembalikan hasil `UiaHostProviderFromHwnd(editHwnd)`. Host native
+  mempertahankan Text/Value/selection behavior, sedangkan Input provider menambahkan atau mengoverride
+  `Name`, `AutomationId`, label relationship, enabled/read-only state, bounds, dan logical navigation.
+- `InputProvider::SetFocus` meneruskan focus ke Edit HWND. Provider/runtime identity mengikuti stable
+  component identity; peer recreation/config reconciliation menaikkan structure/focus notification yang
+  diperlukan dan tidak meninggalkan stale provider.
+- Ketika Input native peer disuspend oleh modal, `InputProvider` tetap dialokasikan dengan identity yang
+  sama tetapi dikeluarkan dari active modal fragment navigation, melaporkan disabled/non-focusable, dan
+  menolak `SetFocus`. Scrim/occlusion saja tidak mengubah `IsOffscreen`; provider kembali ke posisi tree
+  semula dengan structure/focus event saat resume.
+- Combo popup top-level mempunyai fragment root yang di-host oleh popup HWND melalui
+  `UiaHostProviderFromHwnd(popupHwnd)`. Logical parent/child dibentuk melalui bidirectional
+  `IRawElementProviderFragment::Navigate`, bukan `IRawElementProviderHwndOverride`: Combo provider
+  memiliki required `ExpandCollapse`, popup List provider memiliki `Selection`, dan item memiliki
+  `SelectionItem`. Popup tidak muncul lagi sebagai duplicate desktop child.
+- `DialogProvider` melaporkan `UIA_WindowControlTypeId`, `UIA_IsDialogPropertyId = TRUE`, serta
+  `IWindowProvider::IsModal = TRUE`; Close memetakan ke semantic dismissal dan capability
+  move/resize/rotate/minimize/maximize yang tidak tersedia dilaporkan false melalui required fixed
+  `ITransformProvider`/`IWindowProvider` contract. Saat modal stack aktif,
+  WindowContainer mengekspos hanya top Dialog scope melalui fragment navigation; background provider
+  tetap hidup tetapi unreachable, disabled/non-focusable, dan tidak salah dilaporkan offscreen hanya
+  karena tertutup scrim. Push/pop menghasilkan structure/focus events yang sesuai.
 - List mengekspos hanya logical/virtualized item yang relevan melalui UIA tanpa membuat `HWND` per row.
 - WindowContainer menyediakan generic UIA fragment root/navigation bridge; accessible semantics dan
   state tetap berasal dari provider component owner, bukan switch berdasarkan component type.
@@ -616,8 +704,9 @@ Tanggung jawab:
 - menerapkan V1 `reuse-per-route` untuk external/taskbar route: aktifkan matching window yang sudah
   ada atau buat satu bila belum ada;
 - mengelola tray lifetime;
-- tetap hidup di tray setelah window terakhir ditutup;
-- keluar penuh hanya melalui explicit Exit action.
+- tetap hidup di tray setelah window terakhir ditutup ketika tray tersedia;
+- keluar penuh melalui explicit Exit action, atau melalui close atas last reachable route window ketika
+  tray tidak tersedia sehingga proses tidak dapat ditinggalkan tanpa UI yang dapat dijangkau.
 
 Larangan:
 
@@ -629,24 +718,47 @@ Larangan:
 
 ### 11.1 Tray lifecycle V1
 
-- Klik kiri tray icon mengaktifkan dan mengembalikan window yang terakhir aktif.
-- Bila tidak ada window tersisa, klik kiri membuat window baru dengan default route Terminal.
+- Selain infrastructure window, registry boleh memiliki maksimal satu `retained hidden route window`.
+  Ini invariant keras V1; tidak ada LRU atau cache beberapa hidden route window.
+- Registry menegakkan `reuse-per-route` sebagai assertion: satu route ID maksimal mempunyai satu route
+  window di gabungan visible + retained-hidden set. Matching external route selalu activate/restore,
+  tidak pernah membuat visible/hidden duplicate.
+- Klik kiri tray icon mengaktifkan retained hidden route window. Bila tidak ada retained window, klik
+  kiri membuat window baru dengan default route Terminal.
 - Klik kanan membuka native context menu yang minimal berisi daftar route yang boleh dibuka serta
   explicit Exit.
 - Tray icon selalu mengirim callback ke infrastructure window, bukan ke visible/hidden route window
   yang lifecycle-nya dapat berubah.
-- Menutup visible window terakhir melakukan hide, bukan destroy, setelah tray icon dipastikan tersedia.
-  Window instance, active route, draft, scroll, focus target, geometry, dan runtime identity tetap hidup.
-- Window yang hidden tetap tercatat pada registry dan tetap eligible untuk `reuse-per-route`; external
-  route mengaktifkan instance tersebut, bukan membuat duplikat.
+- Destructive close memakai two-step generic `PrepareClose` lalu `CommitClose`. `PrepareClose` meminta
+  setiap dirty participant memilih `Save / Discard / Cancel`: Save hanya mengizinkan close setelah
+  bridge melaporkan success, Discard dicatat untuk commit, dan Cancel membatalkan operasi tanpa destroy.
+  ApplicationContainer mengoordinasi window-level result tetapi tidak mengimplementasikan persistence,
+  validation, atau component-specific dirty logic.
+- Jika masih ada route window lain yang visible, window target hanya di-destroy setelah `PrepareClose`
+  berhasil dan `CommitClose` dijalankan.
+- Hide ke tray bukan destructive close. Jika belum ada retained hidden route window dan tray tersedia,
+  last visible route window langsung di-hide sebagai retained meskipun dirty; active route, draft,
+  scroll, focus target, geometry, dan runtime identity tetap hidup tanpa Save/Discard prompt.
+- Jika retained window lama sudah ada ketika last visible window baru ditutup, window terbaru menjadi
+  retained. Retained lama menjalani `PrepareClose`; bila confirmation diperlukan ia dipulihkan sementara.
+  Save-success/Discard menghancurkan retained lama lalu meng-hide window terbaru. Cancel membatalkan
+  seluruh replacement: window terbaru tetap visible dan retained lama kembali ke hidden state sebelumnya.
+- Retained hidden window tetap tercatat pada registry dan eligible untuk `reuse-per-route`; external
+  matching route me-restore instance tersebut, sedangkan route berbeda membuat visible window baru.
 - `WindowRenderContext` serta resource device-dependent window hidden dilepas untuk menekan idle working
   set, lalu dibuat ulang ketika restore tanpa membuang logical UI state.
-- Jika `Shell_NotifyIcon` gagal, aplikasi tidak boleh membuat dirinya tidak dapat dijangkau: visible
-  window terakhir tetap terbuka dan diagnostic ditampilkan.
+- Jika `Shell_NotifyIcon` gagal saat route window masih visible, diagnostic ditampilkan dan close atas
+  last reachable route window memulai `PrepareCloseAll`, bukan ditolak atau di-hide.
+- Jika tray hilang/gagal dipasang kembali ketika hanya retained hidden route window yang tersedia,
+  retained window itu segera di-restore. Invariant runtime: tray unavailable selalu berarti ada route
+  window visible/reachable sampai user menutupnya untuk Exit.
 - Aplikasi menangani registered `TaskbarCreated` message untuk memasang kembali tray icon setelah
   Windows Explorer restart melalui infrastructure top-level window.
-- Explicit Exit menutup seluruh window, melepas tray icon, menyelesaikan cleanup, lalu mengakhiri
-  proses.
+- Explicit Exit dan tray-failure Exit memakai `PrepareCloseAll`: retained dirty window dipulihkan
+  sementara agar confirmation Dialog dapat diakses, seluruh window disiapkan tanpa menghancurkan satu
+  pun, Save boleh selesai, dan keputusan Discard baru diterapkan pada commit. Cancel membatalkan seluruh
+  Exit serta mengembalikan visibility state; hanya setelah semua window mengizinkan close aplikasi
+  menjalankan `CommitCloseAll`, melepas tray icon, cleanup, lalu mengakhiri proses.
 
 ### 11.2 Process-global Windows state signals
 
@@ -654,8 +766,10 @@ Larangan:
   `WM_SYSCOLORCHANGE`, relevant `WM_SETTINGCHANGE`, High Contrast/app-theme change, display topology,
   dan `TaskbarCreated`.
 - Infrastructure window hanya membaca/notifikasi platform state lalu meminta `RenderRuntime` atau
-  application theme state memperbarui shared resolved-resource epoch satu kali dan fan-out invalidation
-  ke seluruh `WindowContainer`; ia tidak menentukan palette desain.
+  application theme state memperbarui shared resolved-resource epoch satu kali. `RenderRuntime`
+  meng-invalidasi seluruh active primary dan layered-popup render context/resource domain; setiap
+  `WindowContainer` serta visible Combo popup menjadwalkan redraw/re-present. Infrastructure window
+  tidak menentukan palette desain.
 - `WM_DPICHANGED` bukan process-global signal. Setiap top-level window dan Combo popup menanganinya pada
   owner masing-masing karena effective DPI dapat berbeda per window/monitor.
 - Exact app-theme detection adapter dibekukan di Phase 1. Kandidat Windows saat ini adalah relevant
@@ -677,8 +791,11 @@ Tanggung jawab:
   mengambil alih component-specific logic;
 - satu logical focus coordinator dan combined Tab order untuk app-rendered component serta native peer;
   native focus event direkonsiliasi kembali ke logical focus dengan reentrancy guard;
-- generic modal overlay plane/z-order serta traversal `SuspendNativePeer`/`ResumeNativePeer`; Dialog
-  tetap memiliki scrim/panel/focus trap dan Input tetap memiliki snapshot/state preservation;
+- generic `ModalOverlayStack`, component-ancestry scope traversal, suppression refcount, UIA active-scope
+  navigation, serta `SuspendNativePeer`/`ResumeNativePeer`; Dialog tetap memiliki scrim/panel/focus trap
+  dan Input tetap memiliki snapshot/state preservation;
+- mengagregasi generic component dirty participants menjadi window-level `IsDirty`, `PrepareClose`, dan
+  `CommitClose` tanpa membaca draft payload atau menjalankan Save/Discard business operation;
 - active route dan per-window UI state;
 - meneruskan same-window navigation;
 - meneruskan external/new-window navigation ke `ApplicationContainer`;
@@ -814,13 +931,28 @@ Ketika business integration dimulai, data berikut secara konsep shared untuk sel
 - component focus, hover, pressed, selected, dan enabled presentation;
 - scroll position;
 - transient status/error;
-- dialog yang sedang terbuka;
+- ordered `ModalOverlayStack` beserta top active scope dan prior-focus chain;
 - input atau editor draft yang belum disimpan;
+- saved/baseline identity serta derived `IsDirty` milik component yang mempunyai editable draft;
 - preview/draft UI Editor;
 - generation yang diperlukan untuk mengabaikan async result yang sudah stale bagi window tersebut.
 
 Prinsip penentu: data yang harus konsisten di semua window menjadi shared application state; data
 interaction/draft yang hanya masuk akal untuk satu window tetap dimiliki window/component tersebut.
+
+Dirty/close ownership yang dikunci:
+
+- component editable memiliki draft, baseline/saved identity, dan derived `IsDirty`; component contract
+  hanya mengekspos generic dirty participant/prepare-close behavior, bukan isi atau aturan business-nya;
+- `WindowContainer` mengagregasi participant berdasarkan stable component identity menjadi window-level
+  `IsDirty`, `PrepareClose`, dan `CommitClose` tanpa switch component type;
+- Save dikirim sebagai semantic `UiEvent` melalui `UiApplicationBridge` dan baru membersihkan dirty state
+  setelah success patch yang sesuai generation/identity diterima; failure mempertahankan draft dan
+  menggagalkan close;
+- Discard mengembalikan component ke accepted baseline hanya pada commit; Cancel tidak mengubah draft,
+  baseline, retained-window selection, atau visibility state akhir;
+- hide ke tray bukan close/destruction sehingga boleh mempertahankan dirty draft. Destructive close,
+  retained-window replacement, dan application Exit wajib memakai prepare/commit contract §11.1.
 
 ### Theme V1 yang dikunci
 
@@ -861,6 +993,10 @@ Pada stub phase, action hanya boleh membuktikan:
 - bridge menerima dan merutekannya;
 - patch/view state kembali ke target yang benar;
 - visual state dan enabled/disabled state berubah sesuai contract.
+- generic close flow dapat mengagregasi deterministic dirty participant tanpa persistence nyata;
+- stub Save menerima draft sebagai baseline in-memory dan mengembalikan deterministic success patch,
+  stub Discard kembali ke baseline in-memory hanya saat commit, dan Cancel mempertahankan seluruh state
+  serta membatalkan close/Exit.
 
 Pada stub phase dilarang:
 
@@ -966,6 +1102,7 @@ boleh mempunyai header contract serta tepat satu `.cpp` implementation utama. Na
 | satu-satunya JSON gate | `src/ui/config/ui_config_gate.{h,cpp}` | `UiConfigGate` |
 | immutable typed UI config | `src/ui/config/resolved_ui_document.{h,cpp}` | `ResolvedUiDocument` |
 | process Direct2D/DirectWrite owner | `src/ui/rendering/render_runtime.{h,cpp}` | `RenderRuntime` |
+| process cache untuk physical native-peer GDI resource | `src/ui/rendering/native_peer_gdi_resource_cache.{h,cpp}` | `NativePeerGdiResourceCache` |
 | per-window/surface render context | `src/ui/rendering/window_render_context.{h,cpp}` | `WindowRenderContext` |
 | Combo layered-popup render/present path | `src/ui/rendering/layered_popup_render_context.{h,cpp}` | `LayeredPopupRenderContext` |
 | one top-level window owner | `src/ui/container/window_container.{h,cpp}` | `WindowContainer` |
@@ -996,6 +1133,7 @@ C:\VSCODE\Teminal\
 │       │   └── resolved_ui_document.*
 │       ├── rendering\
 │       │   ├── render_runtime.*
+│       │   ├── native_peer_gdi_resource_cache.*
 │       │   ├── window_render_context.*
 │       │   └── layered_popup_render_context.*
 │       ├── container\
@@ -1093,9 +1231,11 @@ Exit criteria: schema dapat di-resolve tanpa HWND dan tidak pernah membaca legac
 
 ### Phase 2 — Native primitives dan vertical component slice
 
-1. Buat `RenderRuntime`, minimal `WindowRenderContext`, resource-domain counter, dan primitive
+1. Buat `RenderRuntime`, `NativePeerGdiResourceCache`, minimal `WindowRenderContext`, resource-domain
+   serta GDI lease/cache counter, dan primitive
    Direct2D/DirectWrite backend-agnostic untuk DPI, font measurement, typed color/compositing, geometry,
    clipping, invalidation, caching, hardware/WARP creation, serta device-lost hard-failure path.
+   Seluruh measure primitive/component harus dapat diuji tanpa device/swapchain/render context.
 2. Buat component contract, registry/factory, dan minimal vertical-slice `WindowContainer` host yang
    memiliki logical focus coordinator, generic overlay plane, native-peer traversal, dan one-surface
    dispatch contract; routing/multi-window lifecycle lengkap tetap Phase 4.
@@ -1104,17 +1244,25 @@ Exit criteria: schema dapat di-resolve tanpa HWND dan tidak pernah membaca legac
 4. Bandingkan DirectWrite/native Edit rendering pada DPI 100%, 125%, 150%, dan 200%, lalu bekukan exact
    text rendering mode berdasarkan visual evidence.
 5. Implement dan uji combined logical/native focus coordinator, two-way Edit focus sync, activation
-   restore, Input safe-inner-geometry measure/assertion, serta native-peer suspend/resume hook lengkap
-   dengan suspended text snapshot dan restoration state. Synthetic overlay dapat memanggil hook sebelum
-   DialogComponent tersedia.
-6. Pastikan first complete frame dirender ke presentation buffer sebelum top-level window ditampilkan;
+   restore, Input `nativePeerContentRect` containment/non-overlap assertion dengan synthetic reserved
+   app-painted regions, IME commit/candidate-close sebelum suspend, serta native-peer suspend/resume hook
+   lengkap dengan suspended text snapshot dan restoration state. Synthetic overlay dapat memanggil hook
+   sebelum DialogComponent tersedia.
+6. Implement Input-owned GDI resource lease, cached `WM_CTLCOLOREDIT`/`WM_CTLCOLORSTATIC` path, atomic
+   font/brush replacement pada theme/DPI change, serta destroy-order yang tidak melepaskan resource saat
+   masih dipakai Edit HWND. Implement zero-lease cache eviction dan restore order DPI/layout → lease →
+   `WM_SETFONT`/colors → complete frame → `ShowWindow`.
+7. Tambahkan generic editable-component dirty participant contract; Input vertical slice membuktikan
+   baseline, derived `IsDirty`, Save-success/failure patch, staged Discard, dan Cancel tanpa memasukkan
+   persistence/business logic ke component atau container.
+8. Pastikan first complete frame dirender ke presentation buffer sebelum top-level window ditampilkan;
    window class tidak memakai default white client brush dan handled `WM_ERASEBKGND` tidak menghapus
    complete app-owned frame.
-7. Jalankan executable placeholder dari JSON untuk membuktikan create/layout/paint/alpha/event/patch,
+9. Jalankan executable placeholder dari JSON untuk membuktikan create/layout/paint/alpha/event/patch,
    no-blank-frame, focus synchronization, suppression hook, dan resource recreation.
-8. Jalankan measurement harness, catat provisional budget results, dan bekukan numeric cold/warm first
+10. Jalankan measurement harness, catat provisional budget results, dan bekukan numeric cold/warm first
    frame serta idle private-commit budget sebelum Phase 3A.
-9. Selesaikan Phase 0B, buat installer preview pertama, dan jalankan smoke dari installed path, bukan
+11. Selesaikan Phase 0B, buat installer preview pertama, dan jalankan smoke dari installed path, bukan
    hanya build tree.
 
 Exit criteria: installed test app tampil dari JSON, tidak memiliki hidden visual constant atau
@@ -1125,10 +1273,15 @@ business side effect, dan dapat di-uninstall tanpa merusak user data di luar sco
 1. Tambahkan HWND-less Checkbox, Toggle, Card, Screen, dan Scrollbar.
 2. Integrasikan Scrollbar sebagai owned component contract pada scrollable Container dan multiline
    Input; native visible scrollbar tidak digunakan untuk app-owned scroll surface. Integrasi virtualized
-   List diselesaikan pada Phase 3B.
-3. Implement UI Automation provider untuk Button, Checkbox, Toggle, Scrollbar, dan relasi accessibility
-   Input; lengkapi keyboard/focus contract dasar.
-4. Uji visual state, drag/wheel/keyboard scroll, UIA/Narrator, High Contrast, DPI, resize, repaint, dan
+   List diselesaikan pada Phase 3B. Verifikasi native Edit rect mengecualikan Scrollbar track dan seluruh
+   app-painted decoration pada minimum/normal size serta seluruh accepted DPI.
+3. Implement UI Automation provider untuk Button, Checkbox, Toggle, dan Scrollbar. Untuk Input,
+   implement `IRawElementProviderHwndOverride`, Input provider yang berada pada fragment navigation
+   order, serta native Edit host-provider delegation tanpa duplicate logical element.
+4. Uji Inspect Raw/Control/Content view, previous/next visual order, Name/label, AutomationId,
+   Text/Value/selection, read-only/password, SetFocus, peer recreate, config reconciliation, dan Narrator
+   duplicate-announcement khusus Input.
+5. Uji visual state, drag/wheel/keyboard scroll, UIA/Narrator, High Contrast, DPI, resize, repaint, dan
    cleanup sesuai capability masing-masing.
 
 Exit criteria Phase 3A: component dasar dapat diregistrasikan lokal, Scrollbar tidak bergantung pada
@@ -1136,16 +1289,25 @@ native themed control, dan basic UIA/keyboard smoke lulus tanpa central widget d
 
 ### Phase 3B — Combo popup, Dialog overlay, List virtualization, dan advanced UIA
 
-1. Implement Combo dengan specialized `LayeredPopupRenderContext` dan premultiplied-alpha DIB/HDC
-   presentation melalui `UpdateLayeredWindow`; primitive/component contract tidak mengasumsikan DXGI.
-2. Implement in-surface Dialog overlay memakai generic overlay plane; verifikasi scrim, rounded panel,
-   shadow, focus trap, dismissal, native-peer suppression/snapshot, dan exact restoration.
+1. Implement Combo dengan specialized `LayeredPopupRenderContext`, premultiplied-alpha DIB/HDC
+   presentation melalui `UpdateLayeredWindow`, non-activating/no-taskbar popup, owner-side keyboard
+   routing, pointer/outside-click handling, seluruh dismissal trigger, dan theme/system-color epoch
+   redraw/re-present; primitive/component contract tidak mengasumsikan DXGI.
+2. Implement in-surface Dialog overlay memakai generic `ModalOverlayStack`; verifikasi nested
+   push/pop, component-ancestry scope, suppression refcount, Input dalam/luar Dialog, Combo popup dalam
+   active Dialog, scrim, rounded panel, shadow, focus trap, dismissal, IME completion,
+   native-peer snapshot, dan exact restoration.
 3. Implement virtualized List memakai ScrollbarComponent, visible-row realization, selection, scroll,
    dan cleanup tanpa `HWND` per row.
 4. Implement UIA `ItemContainer`, `VirtualizedItem`, Selection, Scroll, dan ScrollItem contract untuk
-   List, UIA ExpandCollapse/Selection contract Combo, serta Dialog role/name/modal/focus relationship.
+   List; Combo `ExpandCollapse`, popup-hosted/reparented List `Selection`, item `SelectionItem`; serta
+   Dialog Window/IsDialog/IsModal, active-scope navigation, disabled background, structure/focus event,
+   dan suspended-provider identity contract.
 5. Ukur full-surface update/copy cost layered popup pada deterministic maximum V1 item/size terhadap
    input-to-paint budget; jangan menyebutnya murah tanpa measurement.
+6. Implement reusable Save/Discard/Cancel confirmation Dialog dan generic result contract yang akan
+   dipakai Phase 4 close coordinator. Phase 4 tidak boleh mengganti confirmation ini dengan native
+   message box atau component-specific close UI.
 
 Exit criteria Phase 3B: Combo rounded/shadow konsisten, Dialog tidak ditembus native child, virtualized
 List serta advanced UIA lulus, dan layered presentation berada dalam performance budget. Phase 4 tidak
@@ -1154,17 +1316,22 @@ boleh dimulai sebelum Phase 3A dan 3B keduanya lulus.
 ### Phase 4 — WindowContainer, ApplicationContainer, multi-window, dan tray
 
 1. Lazy-assemble hanya route aktif, lalu cache screen per window; inactive route tidak dilayout/dipaint.
-2. Implement per-window route/state, combined focus coordinator, dan generic overlay/native-peer
-   traversal di `WindowContainer`.
+2. Implement per-window route/state, combined focus coordinator, `ModalOverlayStack`, logical
+   component-scope/native-peer traversal, reload normalization, serta window-level dirty aggregation di
+   `WindowContainer`.
 3. Implement `ApplicationInfrastructureWindow`, process window registry, process-global OS-state
    signal fan-out, tray callback, `TaskbarCreated`, dan second-launch routing di `ApplicationContainer`.
 4. Implement per-window/popup `WM_DPICHANGED`; jangan fan-out DPI sebagai process-global state.
-5. Implement `reuse-per-route` untuk external/taskbar command.
-6. Implement close-one-window, hide-and-retain last window, release/recreate hidden render resources,
-   hidden-window route reuse, dan explicit Exit.
+5. Implement `reuse-per-route` untuk external/taskbar command dengan registry assertion bahwa route ID
+   tidak pernah mempunyai visible/hidden duplicate.
+6. Implement `PrepareClose`/`CommitClose`, `PrepareCloseAll`/`CommitCloseAll`, destructive
+   close-one-window, non-destructive hide dirty window, newest-window retained replacement, maksimal satu
+   retained hidden route window, release/recreate hidden render resources, hidden-window route reuse,
+   tray-failure restore/fallback Exit, dan explicit Exit. Confirmation wajib memakai Dialog Phase 3B.
 
 Exit criteria: Terminal dapat tetap terbuka ketika Chrome Launcher muncul di top-level window kedua;
-tidak ada accidental duplicate untuk external route.
+tidak ada accidental duplicate untuk external route; newest retained/Cancel/Exit behavior lulus tanpa
+data loss atau window yang tidak dapat dijangkau.
 
 ### Phase 5 — Stub application dan installed-update validation gate
 
@@ -1174,6 +1341,9 @@ tidak ada accidental duplicate untuk external route.
    `PerMonitorV2`, resize, two-way focus, modal native-peer suppression/restoration, keyboard, alpha,
    layered popup, no-blank-frame, repaint/ghosting, lazy route, virtualization, multi-window, taskbar
    route, infrastructure window, serta tray lifecycle.
+   Smoke wajib mencakup reload ketika nested Dialog/IME aktif, theme switch ketika Combo terbuka,
+   all-route retained replacement, dirty Cancel, tray-failure Exit, dan hidden-window stale-resource
+   restore sebelum `ShowWindow`.
 4. Hasilkan dua versioned preview build `N` dan `N+1`, clean-install `N`, lalu update installed app ke
    `N+1` menggunakan jalur update yang direncanakan.
 5. Verifikasi executable/version benar-benar berubah, aplikasi tetap launchable, dan config/user data
@@ -1234,7 +1404,9 @@ Phase 6 dimulai.
 - Invalid config/reference menghasilkan diagnostic yang dapat ditindaklanjuti.
 - Invalid override ditolak seluruhnya dan tidak mengganti last-known-good UI.
 - Invalid embedded default gagal sebelum main UI dengan bootstrap diagnostic dan non-zero exit.
-- Reload hanya terjadi atas tindakan eksplisit dan melakukan atomic generation swap.
+- Reload hanya terjadi atas tindakan eksplisit. Candidate generation tidak mengganti UI aktif sampai
+  seluruh window menutup popup, menyelesaikan IME, drain modal stack, dan membuktikan suppression depth
+  nol; reload failure mempertahankan generation/tree lama tanpa native peer tersembunyi atau stale UIA.
 - Dark, Light, dan High Contrast selalu resolve menjadi typed semantic contract lengkap sebelum
   document dipublikasikan.
 - High Contrast mempertahankan symbolic `SystemColorSlot`; current system RGB dimaterialize saat
@@ -1260,6 +1432,13 @@ Phase 6 dimulai.
 - Input, Combo popup, infrastructure window, dan top-level Window memiliki serta membersihkan native
   window/surface yang memang menjadi tanggung jawab component/container tersebut. Dialog tidak memiliki
   native window dan memiliki seluruh modal overlay visual/logic pada surface parent.
+- Input memiliki lease resource GDI peer, sedangkan `NativePeerGdiResourceCache` memiliki physical
+  `HFONT`/`HBRUSH`; tidak ada GDI object creation pada paint/control-color hot path atau release ketika
+  modal hanya menyembunyikan peer.
+- Editable component memiliki baseline/draft/derived `IsDirty` dan generic prepare/commit-close
+  participant; WindowContainer hanya mengagregasi contract tanpa mengetahui payload atau component type.
+- `ModalOverlayStack` dan suppression refcount dimiliki WindowContainer sebagai generic container UI
+  lifecycle; Dialog/Input/Combo tetap memiliki state/visual/native-peer behavior khususnya sendiri.
 
 ### Runtime dan visual
 
@@ -1286,21 +1465,33 @@ Phase 6 dimulai.
   sama; native child tidak mencoba membaca pixel parent lintas `HWND`.
 - Teks DirectWrite dan native Edit memenuhi visual-consistency evidence pada DPI 100%, 125%, 150%, dan
   200% menggunakan mode yang dibekukan dari vertical slice.
-- Native Edit rectangle selalu berada di dalam safe opaque inner Input geometry pada seluruh accepted
-  size/DPI; layout failure menghasilkan diagnostic, bukan rounded-corner overwrite atau crash.
+- Native Edit `nativePeerContentRect` selalu berada di dalam safe opaque inner Input geometry dan tidak
+  overlap dengan Scrollbar track, icon, clear button, atau app-painted decoration pada seluruh accepted
+  size/DPI; layout failure menghasilkan diagnostic, bukan overwrite atau crash.
 - Logical/native focus tersinkron dua arah dan mempunyai satu canonical logical focused address; window
   deactivate/reactivate tidak menghasilkan focus ring ganda atau kehilangan focus target valid.
-- Saat modal Dialog aktif, native peer di belakangnya tersembunyi, Input menggambar suspended text
-  snapshot di bawah scrim, caret/selection/scroll/draft dipertahankan, dan state dipulihkan tepat setelah
-  Dialog selesai.
+- Sebelum modal/reload menyembunyikan Input, active IME composition di-commit dan candidate UI ditutup;
+  failure menunda/membatalkan transition tanpa membuang composition.
+- Nested modal memakai stack dan component-ancestry scope: native peer di belakang top Dialog
+  disuspend/refcounted, Input di active Dialog tetap terlihat di atas panel, Combo milik active Dialog
+  tetap boleh membuka popup, dan pop inner Dialog tidak membangunkan background sebelum stack kosong.
+- Input yang disuspend menggambar text snapshot di bawah scrim, mempertahankan
+  caret/selection/scroll/draft, dan memulihkan state/focus tepat setelah scope mengizinkan resume.
+- Combo popup tidak mengambil activation/taskbar/Alt-Tab; keyboard tetap melalui owner, pointer tetap
+  milik Combo, dan selection/Escape/outside-click/deactivate/focus-leave/route/reload/modal transition
+  menutupnya secara deterministik.
 - Combo layered popup mempunyai rounded clip/shadow konsisten dan full-surface update/copy cost-nya
   memenuhi input-to-paint budget pada deterministic maximum V1 size/items.
 - System/Dark/Light/High Contrast menghasilkan resolved set yang benar di seluruh top-level window
   tanpa restart atau re-parse config; system-color/app-theme change hanya meningkatkan shared
-  resource epoch sekali lalu meng-invalidasi window terkait.
+  resource epoch sekali lalu meng-invalidasi dan redraw/re-present seluruh active primary serta layered
+  popup context.
 - Paint tidak melakukan parse/config IO atau membuat ulang resource cacheable setiap frame.
 - Device-lost dan restore hidden window membuat ulang render resource tanpa kehilangan logical UI
-  state.
+  state. Hidden restore menghitung DPI/layout, mengganti GDI lease/font/colors, dan merender complete
+  frame sebelum `ShowWindow`, sehingga tidak ada stale atau blank intermediate frame.
+- Theme/DPI change mengganti native Edit font/brush tanpa use-after-free; Edit HWND dihancurkan sebelum
+  final font lease dilepas dan read-only/disabled Input memakai jalur `WM_CTLCOLORSTATIC` yang benar.
 
 ### Accessibility dan High Contrast
 
@@ -1309,6 +1500,15 @@ Phase 6 dimulai.
 - Component app-rendered interaktif mengekspos accessible name, role, state, dan action melalui UIA;
   List virtualized tetap dapat dinavigasi secara accessibility tanpa `HWND` per row.
 - Native Edit mempertahankan text/selection accessibility dan terhubung ke accessible label Input.
+- Input muncul tepat sekali pada UIA tree melalui `IRawElementProviderHwndOverride`; native host provider
+  mempertahankan Text/Value/selection pattern, visual/Tab/navigation order konsisten, dan peer recreation
+  tidak meninggalkan duplicate atau stale provider.
+- Combo hanya mengekspos required `ExpandCollapse` pada Combo provider; popup HWND memiliki hosted List
+  fragment yang direparent melalui bidirectional navigation, List mengekspos `Selection`, item
+  `SelectionItem`, dan tidak ada duplicate popup sebagai desktop child.
+- Top Dialog provider melaporkan Window/IsDialog/IsModal semantics. Background provider tetap stable
+  tetapi unreachable, disabled/non-focusable, dan tidak ditandai offscreen hanya karena scrim; suspended
+  Input menolak focus lalu kembali dengan identity yang sama dan structure/focus event yang benar.
 - Narrator serta accessibility inspection smoke benar-benar dijalankan sebelum klaim PASS.
 - High Contrast memakai semantic Windows system colors melalui resolved config set dan tidak memakai
   alpha dekoratif yang mengurangi kontras.
@@ -1321,6 +1521,10 @@ sample; cold-start mengulang declared cold condition tanpa warm-up, sedangkan sc
 satu warm-up sebelum sample dicatat. Target V1 provisional yang dikunci:
 
 - cold process-start sampai first complete non-blank frame terlihat: p95 maksimal 250 ms;
+- laporan cold/warm start tetap menilai total end-to-end terhadap target, tetapi juga memisahkan
+  process/bootstrap/config, D3D/D2D device creation dan driver/WARP warm-up, first layout/render, serta
+  first present. Breakdown dipakai untuk diagnosis dan tidak boleh mengecualikan device-init dari
+  PASS/FAIL end-to-end;
 - warm process-start sampai first complete non-blank frame terlihat: p95 maksimal 120 ms;
 - first-time route assembly/navigation: p95 maksimal 100 ms;
 - cached route navigation: p95 maksimal 50 ms;
@@ -1335,10 +1539,13 @@ satu warm-up sebelum sample dicatat. Target V1 provisional yang dikunci:
   Combo menambah satu layered popup. Dialog, Button, Checkbox, Toggle, Scrollbar, dan List row menambah
   nol `HWND`;
 - 100 cycle route/theme/hide-restore tidak menghasilkan pertumbuhan bersih `HWND`, USER/GDI handle,
-  private commit, render context, atau cache entry pada resource domain mana pun setelah settle;
+  private commit, render context, GDI lease, atau cache entry pada resource domain mana pun setelah
+  settle;
 - `RenderRuntime` diagnostic API melaporkan jumlah active render context serta cache entry per domain
-  sehingga no-growth dapat diuji. Debug validation memakai Direct3D live-object reporting bila debug
-  layer tersedia tanpa menjadikannya dependency Release.
+  termasuk cached `HFONT`, cached `HBRUSH`, dan active native-peer lease sehingga no-growth dapat diuji.
+  Solid brush key hanya final opaque `COLORREF`; zero-lease entry wajib hilang setelah settle.
+  Debug validation memakai Direct3D live-object reporting bila debug layer tersedia tanpa menjadikannya
+  dependency Release.
 
 Phase 2 wajib mencatat hasil nyata. Target hanya boleh diubah melalui keputusan plan eksplisit dengan
 measurement evidence; implementation agent tidak boleh melonggarkannya diam-diam.
@@ -1348,16 +1555,24 @@ measurement evidence; implementation agent tidak boleh melonggarkannya diam-diam
 - Satu proses dapat memiliki minimal dua independent top-level window.
 - External Chrome Launcher route tidak mengganti Terminal window yang sudah terbuka.
 - External route mengaktifkan matching window yang sudah ada atau membuat satu bila belum ada.
+- Registry assertion membuktikan satu route ID tidak pernah mempunyai visible dan retained-hidden
+  instance bersamaan.
 - Menutup satu window tidak menutup window lain.
-- Menutup window terakhir meng-hide instance yang sama, mempertahankan route/draft/state, melepas render
-  resource beratnya, dan membuat aplikasi tetap hidup di tray.
-- Hidden window tetap eligible untuk matching `reuse-per-route` dan tidak menyebabkan duplicate window.
-- Klik kiri tray memulihkan last-active window atau membuat Terminal window bila tidak ada.
+- Maksimal satu retained hidden route window boleh hidup di luar infrastructure window. Jika belum ada
+  retained window dan tray tersedia, menutup route window terakhir meng-hide instance yang sama,
+  mempertahankan route/draft/state, dan melepas render resource beratnya.
+- Jika retained hidden window lama sudah ada, close atas last visible route window menjadikan window
+  terbaru sebagai retained setelah old-retained `PrepareClose` berhasil. Cancel mempertahankan old
+  retained dan membiarkan newest window visible; tidak ada state yang dihancurkan sebagian.
+- Klik kiri tray memulihkan retained hidden route window atau membuat Terminal window bila tidak ada.
 - Klik kanan tray menyediakan route dan Exit; Explorer restart memasang kembali icon.
 - Satu hidden infrastructure top-level window menerima tray callback, `TaskbarCreated`, second-launch,
   dan process-global OS-state signal sepanjang umur proses.
 - Kegagalan tray tidak pernah meninggalkan proses hidup tanpa visible/reachable window.
-- Exit eksplisit menutup proses dengan cleanup yang benar.
+- Saat tray unavailable, retained hidden window dipulihkan; close atas last reachable route window
+  menjalankan `PrepareCloseAll` lalu orderly Exit hanya setelah seluruh dirty participant mengizinkan.
+- Explicit Exit memulihkan retained dirty window untuk confirmation, tidak menghancurkan window sebelum
+  seluruh prepare selesai, dan Cancel membatalkan Exit sepenuhnya.
 
 ### Stub/business boundary
 
@@ -1367,6 +1582,8 @@ measurement evidence; implementation agent tidak boleh melonggarkannya diam-diam
   component runtime identity; stale/missing target ditolak.
 - Component/container tidak menjalankan business operation.
 - Business integration kelak tidak mengenal JSON/HWND/paint/layout.
+- Stub Save hanya menerima draft sebagai in-memory baseline dan mengirim deterministic success/failure
+  patch; Discard baru diterapkan saat commit dan Cancel tidak mengubah draft/retention/visibility.
 
 ### Installer, updater, dan release artifact
 
@@ -1394,21 +1611,37 @@ Command final ditemukan dari project file baru setelah scaffold. Minimum setiap 
 - test Dark/Light/High Contrast contract completeness, alpha/surface rejection, override minimum-version,
   symbolic system-color materialization/resource-epoch change, serta rollback fallback;
 - test component/event/patch contracts yang terkena;
+- headless/device-lost/hidden-window measure test yang membuktikan tidak ada dependency ke render context
+  atau device-dependent resource;
+- reload normalization test untuk popup, nested modal stack, suppression refcount, removed component,
+  active IME success/failure, rollback ke generation lama, dan focus restoration;
 - Windows smoke untuk behavior runtime/visual yang berubah, termasuk Direct2D device-lost/recreate,
   hardware-to-WARP fallback, device-lost hard-failure diagnostic, native Edit text consistency, Combo
   layered popup, in-surface Dialog, lazy route, Scrollbar, dan virtualized List;
-- modal-overlay smoke untuk native-peer suppression, suspended Input snapshot, restoration caret/
-  selection/scroll/draft, popup close, dismissal, dan focus trap;
+- modal-overlay smoke untuk nested stack, component-ancestry scope, native-peer suppression refcount,
+  active-Dialog Input/Combo, IME completion, suspended Input snapshot, restoration
+  caret/selection/scroll/draft, popup close, dismissal, focus trap, dan reload drain;
 - two-way logical/native focus smoke termasuk click/Tab, direct Edit focus, window deactivate/reactivate,
   component removal, dan config-generation reconciliation;
-- keyboard, UIA inspection, Narrator, High Contrast, serta List ItemContainer/VirtualizedItem smoke;
+- keyboard, UIA inspection Raw/Control/Content tree, Narrator duplicate-announcement check, Input HWND
+  override/host-provider order dan peer-recreation check, Combo popup logical reparenting/pattern split,
+  Dialog IsDialog/IsModal active-scope/background behavior, High Contrast, serta List
+  ItemContainer/VirtualizedItem smoke;
 - manifest/runtime verification bahwa `PerMonitorV2` aktif dan per-window/popup `WM_DPICHANGED` behavior
   benar pada DPI 100%, 125%, 150%, dan 200%;
 - no-blank-frame visual/capture check pada cold start, new-window route, hidden-window restore, hardware
-  render, dan WARP fallback;
+  render, WARP fallback, serta stale DPI/theme hidden restore setelah lease/font/color update;
+- Combo popup smoke untuk non-activation, owner keyboard routing, pointer selection, seluruh dismissal
+  trigger, theme/High-Contrast live redraw, taskbar/Alt-Tab absence, dan per-popup DPI;
+- close-coordination smoke untuk dirty single close, non-destructive dirty hide, newest retained
+  replacement, Save success/failure, staged Discard, Cancel rollback, explicit Exit, tray-failure Exit,
+  dan no-duplicate-route registry assertion;
 - performance harness untuk first-complete-visible-frame, route, input-to-paint, layered-popup
   full-surface update/copy, resize, private commit, diagnostic working set, `HWND`, USER/GDI handle,
-  render-context/cache-entry counter, dan 100-cycle no-growth check;
+  render-context/cache-entry/native-peer-GDI-lease counter, 100-cycle no-growth check, serta all-route
+  open/close scenario yang membuktikan maksimal satu retained hidden route window. Startup report wajib
+  memisahkan bootstrap/config, device/driver/WARP, layout/render, dan present tanpa mengubah end-to-end
+  PASS/FAIL target;
 - clean-install smoke dari artifact, bukan build directory;
 - installed update smoke dari version `N` ke version `N+1`;
 - preservation check untuk config/settings/cache/user data yang relevan;
@@ -1491,8 +1724,9 @@ installed `N → N+1` validation dimulai.
 - exact token/color/fill/border values hover dan pressed untuk setiap Button variant. Ini desain baru,
   bukan pencarian mapping legacy `35%/25%`;
 - exact DirectWrite text rendering mode setelah perbandingan native Edit pada DPI 100/125/150/200;
-- exact native Edit flags, safe-inner-geometry field/rules, Scrollbar field/variants, serta Combo layered
-  popup Win32 style dan premultiplied backing format tanpa mengubah surface ownership;
+- exact native Edit flags, safe-inner-geometry field/rules, Scrollbar field/variants, ancillary Combo
+  popup flags di luar locked `WS_POPUP` + `WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`, serta
+  premultiplied backing format tanpa mengubah surface ownership;
 - exact semantic Windows system-color mapping dan batas native non-client area yang dapat ditemakan;
 - exact same-window navigation behavior ketika target route sudah aktif pada window lain;
 - update UX: manual check atau automatic check, frequency, download consent, restart/apply prompt,
@@ -1512,7 +1746,9 @@ Keputusan yang sudah dikunci di bagian lain tidak boleh dibuka kembali tanpa ins
 - `Termial-plan.md` adalah sumber keputusan arsitektur/delivery paling lengkap. Root `AGENTS.md` saat
   ini masih menyebut GDI/hybrid child-window lama dan wajib disinkronkan pada Phase 0A sebelum source
   implementation dimulai. Sinkronisasi wajib mencakup Dialog overlay, layered Combo exception,
-  infrastructure window, Scrollbar, `PerMonitorV2`, dan private-commit metric.
+  infrastructure window, Scrollbar, `PerMonitorV2`, modal stack/component scope, UIA HWND/popup hosting,
+  native-peer GDI lease/cache, newest retained/dirty close transaction, tray-failure Exit, dan
+  private-commit metric.
 - Root `.gitignore` masih membawa pola era .NET dan belum lengkap untuk output MSVC/native/packaging;
   sinkronisasi pola ignore wajib dilakukan sebelum build atau artifact generation pertama.
 - Perubahan plan ini belum otomatis menjadi Git history. Commit hanya dilakukan atas instruksi user.
