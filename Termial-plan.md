@@ -86,8 +86,10 @@ Keputusan final adalah membuat UI baru, bukan memigrasikan UI lama.
 - DirectComposition dan teknik compositing tambahan lain tetap di luar V1 kecuali kebutuhan yang tidak
   dapat dipenuhi primary surface atau specialized Combo popup dibuktikan lebih dahulu.
 - Process DPI awareness dikunci `PerMonitorV2` melalui application manifest. Semua top-level, Combo
-  popup, native Edit child, layout, font, hit-test, dan render resource mengikuti DPI window aktif;
-  supported Windows baseline tidak boleh lebih tua dari Windows 10 version 1703.
+  popup, native Edit child, layout, font, hit-test, dan render resource mengikuti DPI window aktif.
+- Minimum compatibility baseline V1 adalah Windows 10 22H2 x64 build 19045. Windows 11 x64 pada build
+  supported-current yang dicatat saat pengujian menjadi visual dan release-primary gate; Windows 10
+  tetap menjadi compatibility gate yang wajib lulus smoke.
 - Tidak memakai .NET, WinForms, WebView2, Electron, Node.js, HTML/CSS, Tailwind, atau framework UI
   pihak ketiga kecuali user membuat keputusan baru.
 - Tailwind tidak dipakai. Walaupun Tailwind menghasilkan CSS statis untuk web, raw Win32 tidak
@@ -213,6 +215,10 @@ dimulai; tidak perlu mengarang seluruh field 13 component sebelum vertical slice
   diam-diam sebagai token.
 - Unknown field, duplicate key, unknown component type, missing reference, reference cycle, salah
   type, dan nilai di luar range ditolak sebagai validation error; tidak diabaikan diam-diam.
+- Embedded document dan override masing-masing dibatasi maksimal 4 MiB serta nesting maksimal 64
+  level sebelum typed resolution. JSON literal non-standar `NaN`/`Infinity` ditolak parser dan seluruh
+  hasil konversi numerik typed wajib lulus `std::isfinite`; limit failure menghasilkan diagnostic biasa,
+  bukan crash/stack exhaustion.
 - Merge override bersifat recursive untuk object. Scalar mengganti scalar dan array mengganti seluruh
   array. `null` hanya valid untuk field yang secara eksplisit nullable dan bukan operator delete umum.
 - Perubahan additive yang tidak mengubah arti field lama tetap dapat berada pada schema version 1.
@@ -311,9 +317,13 @@ baru dipublikasikan.
   dan jangan menyamarkan kegagalan sebagai keberhasilan.
 - Diagnostic minimal membawa file/source identity, schema path atau JSON location bila tersedia,
   error code/category, dan pesan yang dapat ditindaklanjuti tanpa membocorkan secret.
-
-Exact bentuk visual diagnostic persisten dan lokasi log diagnostic masih belum pasti; keduanya dicatat
-di bagian keputusan terbuka dan tidak boleh ditebak oleh implementation agent.
+- UI Editor menulis override secara atomik: tulis temporary sibling pada data volume yang sama, flush,
+  lalu replace/rename destination. File lama tetap utuh bila write/flush/replace gagal; temporary file
+  dibersihkan secara best effort dan candidate baru tetap harus melewati `UiConfigGate` sebelum publish.
+- Config diagnostic log berada di
+  `%LOCALAPPDATA%\Yuzha\OpenTerminalNative\logs\ui-config.log`. Kegagalan membuat directory, membuka,
+  menulis, atau merotasi log tidak boleh menahan first frame, menggagalkan UI yang valid, atau memicu
+  dialog berulang; diagnostic aktif di Settings/UI Editor tetap menjadi jalur user-facing canonical.
 
 ### 8.2 Reload V1
 
@@ -355,6 +365,18 @@ Inventory V1 mengikuti kebutuhan aplikasi native yang sudah ada, tetapi implemen
 
 Jenis/variant baru harus bisa didaftarkan melalui registry/factory tanpa membuat central widget
 dispatcher membesar.
+
+Minimum schema shape yang sudah canonical:
+
+- setiap component membawa stable `id`, registered `type`, layout/style references, initial
+  visibility/enabled state, serta typed event/navigation bindings yang relevan;
+- `Button` membawa explicit `variant` dan per-state style reference untuk sedikitnya normal, hover,
+  pressed, focused, selected bila variant mendukungnya, dan disabled; tidak ada state color turunan C++;
+- `Screen` membawa stable `routeId` dan route/navigation binding yang dapat divalidasi gate;
+- `Dialog` membawa explicit `modality` dan `dismissPolicy` untuk Escape, outside-click, serta explicit
+  action. V1 hanya menerima in-surface modal behavior yang sesuai §9.6;
+- exact field tambahan, type, range, dan default dibekukan dalam schema contract vertical slice sebelum
+  component owner diimplementasikan.
 
 ### 9.2 Satu component, satu ownership
 
@@ -431,6 +453,19 @@ Shared primitive tidak boleh berisi cabang `if Input`, `if Button`, atau aturan 
 Resource ownership yang dikunci:
 
 - Direct2D/DirectWrite factory hidup pada process-level `RenderRuntime`;
+- Primary presentation memakai fallback berjenjang dengan component/JSON/bridge contract yang sama:
+  1. DXGI flip-model swapchain sebagai default;
+  2. DXGI bitblt `SEQUENTIAL` swapchain memakai `ID2D1Device`/`ID2D1DeviceContext` dan resource-domain
+     graph yang sama bila flip-model + native child menunjukkan artifact;
+  3. `ID2D1HwndRenderTarget` hanya last resort. Level ini memakai object model D2D 1.0 dan membatalkan
+     device-domain cache, sehingga tidak boleh diaktifkan tanpa measurement evidence dan revisi eksplisit
+     §9.4 terlebih dahulu.
+- Flip dan bitblt multi-buffer presentation menjaga coherent content per buffer. Dirty rectangle adalah
+  optimisasi present, bukan sumber kebenaran; runtime melacak gabungan perubahan sejak buffer yang sama
+  terakhir dipresentasikan atau melakukan full repaint. Full repaint wajib setelah `ResizeBuffers`,
+  device/backend recreation, config-generation swap, dan theme/system-color resource-epoch change.
+- `DXGI_STATUS_OCCLUDED` memindahkan context ke standby tanpa render loop aktif; readiness diperiksa
+  kembali dengan present-test sebelum normal rendering dilanjutkan.
 - setiap top-level window mempunyai `WindowRenderContext` untuk swapchain/target, clipping/layer state,
   dan mutable per-surface state;
 - `LayeredPopupRenderContext` milik Combo merender premultiplied BGRA ke compatible DIB/HDC lalu
@@ -487,9 +522,12 @@ acceptance target untuk default JSON dan component baru:
 - single-line text rata tengah secara vertikal;
 - multiline text tetap rata atas;
 - horizontal text alignment tetap rata kiri.
-- Font family, size, weight, baseline, dan perceived density antara teks DirectWrite dan native Edit
-  harus konsisten. Exact DirectWrite rendering mode dipilih dari visual measurement vertical slice pada
-  DPI 100%, 125%, 150%, dan 200%, bukan diasumsikan sebelum bukti.
+- Font family, size, weight, baseline, advance/spacing, dan perceived density antara teks DirectWrite
+  yang berdampingan dengan native Edit harus konsisten. Baseline V1 memakai GDI-compatible text layout,
+  `DWRITE_MEASURING_MODE_GDI_CLASSIC`, ClearType, dan `DWRITE_RENDERING_MODE_GDI_CLASSIC` pada opaque
+  primary surface. Phase 2 memverifikasinya pada DPI 100%, 125%, 150%, dan 200%; perubahan ke natural
+  mode hanya boleh dilakukan lewat revisi plan berbasis screenshot/measurement yang juga menerima
+  perbedaan spacing secara eksplisit. Layered alpha popup tetap memakai grayscale text antialiasing.
 - `InputComponent::Measure` menghitung minimum safe size pada DPI aktif dari radius, border, padding,
   font metrics, dan seluruh reserved app-painted region. Input menghasilkan `nativePeerContentRect`
   setelah mengecualikan border/padding, Scrollbar track, icon, clear button, atau dekorasi in-bounds lain;
@@ -527,10 +565,22 @@ acceptance target untuk default JSON dan component baru:
   `nativePeerContentRect`, acquire GDI lease baru, kirim `WM_SETFONT` dan resolved native colors, render
   complete non-blank frame, lalu `ShowWindow`. Tidak boleh ada visible frame dengan font/warna/geometry
   generation lama.
+- Hit target Input adalah seluruh bounds component, bukan hanya rectangle native Edit. Pointer pada
+  padding valid memfokuskan Edit dan menempatkan caret pada posisi teks terdekat; Input owner melakukan
+  translation ini tanpa memindahkan logic ke container. Sinkronisasi visible Scrollbar dengan multiline
+  Edit memakai unit line/baris yang didukung native Edit, bukan mengklaim scroll per-pixel.
 
 #### Button
 
-- pressed memakai accent fill yang lebih kuat daripada hover;
+- "lebih kuat" didefinisikan sebagai kontras state terhadap resolved surrounding component surface
+  yang meningkat monoton `normal < hover < pressed`, bukan selalu berarti lebih gelap. Fill atau border
+  yang menjadi visual boundary wajib memenuhi minimal 3:1 terhadap warna adjacent aktual; pasangan
+  foreground/text ukuran normal wajib memenuhi minimal 4.5:1.
+- Ramp Primary awal berbeda per theme dan seluruh nilainya tetap token JSON eksplisit:
+  - Light: normal `#2563EB`, hover `#1D4ED8`, pressed `#1E40AF`, foreground `#FFFFFF`;
+  - Dark: normal `#60A5FA`, hover `#93C5FD`, pressed `#BFDBFE`, foreground `#0F172A`.
+  Nilai ini provisional-design baseline untuk screenshot review Phase 2/3A, tetapi arah luminance dan
+  gerbang contrast di atas adalah contract. High Contrast memakai semantic system colors, bukan ramp ini.
 - nilai hover dan pressed ditulis eksplisit serta independen pada JSON untuk setiap Button variant;
 - C++ tidak menghitung hover sebagai persentase pressed atau sebaliknya;
 - hover dan pressed memakai solid accent border;
@@ -541,9 +591,9 @@ acceptance target untuk default JSON dan component baru:
   background tanpa child-window transparency hack.
 
 Angka lama `35%/25% accent` bukan tabel canonical yang dapat direkonstruksi dan tidak boleh disebut
-sebagai mapping referensi. Exact default tiap variant adalah keputusan desain baru di Phase 1. Yang
-sudah dikunci hanya hubungan visual `normal < hover < pressed` dan seluruh nilainya harus tampak
-eksplisit di JSON agar tidak ada visual policy tersembunyi dalam C++.
+sebagai mapping referensi. Exact default variant selain Primary dipilih agent sebagai bagian vertical
+slice, lalu wajib melewati contrast test dan screenshot review yang sama sebelum dianggap accepted;
+tidak ada visual policy tersembunyi dalam C++ dan tidak ada keputusan warna yang ditunda tanpa pemilik.
 
 ### 9.6 Model HWND V1 yang dikunci
 
@@ -574,6 +624,9 @@ capability OS yang benar-benar diperlukan:
   Combo selama popup terbuka, sedangkan pointer/hit-test popup tetap dimiliki Combo;
 - Combo menutup popup pada selection, Escape, outside click, owner deactivation, focus meninggalkan
   Combo scope, route/config-generation change, atau modal scope baru yang tidak memuat owning Combo;
+- Combo popup memilih monitor dari anchor/owner saat dibuka, menjepit bounds ke work area monitor tujuan,
+  memilih arah buka yang masih muat, dan menangani perpindahan monitor/DPI saat terbuka melalui
+  recompute measure/layout serta `WM_DPICHANGED`; popup tidak boleh tersisa di luar reachable work area;
 - `DialogComponent` tidak memiliki popup/top-level `HWND`. Dialog menggunakan generic modal overlay
   plane pada primary parent surface dan memiliki panel, shadow, scrim, focus trap, dismissal, serta
   paint/state dialog itu sendiri;
@@ -682,12 +735,27 @@ Aturan:
 - dynamic List selalu virtualized dan hanya materialize data/view row yang diperlukan viewport;
 - draft/status/scroll/focus milik instance screen/window;
 - screen tidak membaca storage business dan tidak menjalankan business service pada stub phase;
+- JSON Editor V1 memakai native multiline Edit tanpa line number, gutter, atau syntax highlighting.
+  Custom text editor dengan selection/IME/undo/scroll/render/accessibility milik aplikasi adalah
+  arsitektur post-V1, bukan field tambahan kecil pada component V1;
 - penambahan screen baru dilakukan melalui config + component/action registration yang eksplisit,
   bukan menambah logic ke dispatcher global.
 
 ## 11. ApplicationContainer
 
 `ApplicationContainer` adalah container tingkat proses, satu instance per proses.
+
+Startup contract V1:
+
+1. `VelopackApp::Build().Run()` dipanggil tepat sekali sebagai operasi pertama di `wWinMain`, sebelum
+   `RoInitialize`/COM, mutex, pipe, config gate, infrastructure window, atau UI lain; fast-exit hook
+   tidak boleh menjalankan startup normal.
+2. Normal first instance memperoleh same-user/session mutex, membuat named-pipe listener sampai status
+   ready, baru membuat infrastructure/route window. Second instance mencoba koneksi dengan bounded
+   backoff maksimal dua detik; kegagalan menghasilkan diagnostic dan orderly non-zero exit, bukan
+   diam-diam menjadi instance kedua.
+3. Pipe server boleh melakukan IO pada worker, tetapi hasil tervalidasi hanya di-`PostMessage` ke
+   infrastructure window. Worker tidak mengakses registry window atau state UI secara langsung.
 
 Tanggung jawab:
 
@@ -745,6 +813,10 @@ Larangan:
   seluruh replacement: window terbaru tetap visible dan retained lama kembali ke hidden state sebelumnya.
 - Retained hidden window tetap tercatat pada registry dan eligible untuk `reuse-per-route`; external
   matching route me-restore instance tersebut, sedangkan route berbeda membuat visible window baru.
+- Restore retained window dari tray maupun navigation memakai satu canonical path: tentukan DPI aktif,
+  measure/layout ulang, acquire/update native-peer lease, kirim `WM_SETFONT`/resolved colors, render
+  complete frame generation aktif, baru `ShowWindow` dan activate. Tidak ada jalur restore kedua yang
+  dapat menampilkan stale/blank intermediate frame.
 - `WindowRenderContext` serta resource device-dependent window hidden dilepas untuk menekan idle working
   set, lalu dibuat ulang ketika restore tanpa membuang logical UI state.
 - Jika `Shell_NotifyIcon` gagal saat route window masih visible, diagnostic ditampilkan dan close atas
@@ -772,10 +844,18 @@ Larangan:
   tidak menentukan palette desain.
 - `WM_DPICHANGED` bukan process-global signal. Setiap top-level window dan Combo popup menanganinya pada
   owner masing-masing karena effective DPI dapat berbeda per window/monitor.
-- Exact app-theme detection adapter dibekukan di Phase 1. Kandidat Windows saat ini adalah relevant
-  `WM_SETTINGCHANGE` (`ImmersiveColorSet`) yang dikonfirmasi dengan current Apps light/dark setting;
-  behavior fallback dan supported-Windows verification wajib diuji karena Windows tidak menyediakan
-  satu dedicated app-theme message.
+- Sebelum first frame, `ThemePlatformAdapter` membaca High Contrast sinkron melalui
+  `SystemParametersInfoW(SPI_GETHIGHCONTRAST)` serta snapshot app-theme sinkron dan bounded dari
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\AppsUseLightTheme`; missing/error
+  app-theme memakai Light sebagai safe initial fallback. Jalur ini tidak memasang subscription atau
+  menahan frame untuk WinRT activation; High Contrast yang terdeteksi selalu mengalahkan Dark/Light.
+- Setelah first complete frame dan UI idle, application menginisialisasi WinRT `UISettings`, membaca
+  authoritative foreground/app-theme state, merekonsiliasi snapshot bila berbeda, lalu memasang
+  `ColorValuesChanged`. Kegagalan `RoInitialize`, activation, query, atau subscription mempertahankan
+  snapshot/fallback dan hanya menghasilkan non-blocking diagnostic.
+- `ColorValuesChanged` dapat tiba pada background thread; callback hanya mem-post dedicated theme signal
+  ke infrastructure window. Infrastructure window me-requery/coalesce perubahan sehingga satu perubahan
+  efektif menaikkan resource epoch sekali. `ImmersiveColorSet` tidak menjadi detection contract V1.
 
 ## 12. WindowContainer
 
@@ -835,6 +915,16 @@ route yang sama, mempertahankan state window yang sudah ada, dan memakai resourc
 `newWindow` pada flow ini berarti membuat window ketika belum ada matching route, bukan selalu membuat
 duplikat. `allowMultiple` bukan policy V1 dan tetap menjadi kemungkinan versi berikutnya setelah ada
 use case nyata.
+
+Same-window navigation memakai aturan deterministik berikut:
+
+- bila target route sudah aktif pada window pemanggil, hasilnya no-op tanpa rebuild component tree;
+- bila target route aktif pada visible window lain, activate window tersebut dan biarkan window
+  pemanggil pada route semula;
+- bila target route dimiliki retained-hidden window, jalankan canonical retained restore, activate
+  instance itu, kosongkan retained slot, dan biarkan window pemanggil pada route semula;
+- hanya bila tidak ada matching visible/retained instance, intent same-window boleh mengganti active
+  route window pemanggil sesuai navigation binding; external/taskbar intent tetap membuat window baru.
 
 ## 14. Navigation event dan business event
 
@@ -973,6 +1063,10 @@ Dirty/close ownership yang dikunci:
   re-parse, atau config generation baru.
 - Theme change harus memperbarui native control colors, non-client/client painting yang dimiliki app,
   focus visuals, dialog, dan tray menu yang dapat dikontrol tanpa restart aplikasi.
+- Standard title bar memakai SDK `DWMWA_USE_IMMERSIVE_DARK_MODE` value 20 pada locked build-19045-or-newer
+  baseline. Runtime tidak mencoba undocumented value 19. Attribute diterapkan pada setiap top-level
+  window setelah create/recreate dan diterapkan ulang saat effective theme berubah; kegagalan selalu
+  non-fatal dan membiarkan non-client area pada default OS.
 - UI Editor preview boleh menjadi per-window draft, tetapi Apply mengubah shared theme/config state.
 
 ## 17. Stub-first boundary
@@ -1005,8 +1099,9 @@ Pada stub phase dilarang:
 - membaca atau menulis settings business;
 - menyentuh provider/API key nyata;
 - melakukan network request;
-- menjalankan updater dari component/business stub atau plugin discovery; packaging/update harness yang
-  terpisah tetap boleh menguji instalasi serta perpindahan build;
+- menjalankan updater dari component/business stub atau plugin discovery. Packaging/update harness dan
+  updater infrastructure terpisah tetap boleh menguji instalasi, perpindahan build, serta menulis
+  updater-owned schedule metadata §19; carve-out ini tidak mengizinkan business settings persistence;
 - memakai business implementation nested repository.
 
 ## 18. Business integration setelah UI terbukti
@@ -1050,17 +1145,30 @@ ke build baru.
 
 Kontrak yang dikunci:
 
+- Product display name: `Open Terminal Native`; executable: `OpenTerminalNative.exe`; solution:
+  `OpenTerminalNative.sln`; publisher: `Yuzha`; application/package ID: `Yuzha.OpenTerminalNative`.
+  Package version memakai SemVer `MAJOR.MINOR.PATCH`, Win32 file version memetakan ke
+  `MAJOR.MINOR.PATCH.0`, dan release tag memakai `vMAJOR.MINOR.PATCH`.
+- V1 memakai Velopack C++ SDK/CLI 1.2.0 yang dipin pada dependency lock. `vpk`/required .NET SDK hanya
+  dependency mesin build/package dan tidak menjadi managed runtime dependency aplikasi.
+- `Setup.exe` memakai per-user install ke `%LOCALAPPDATA%\Yuzha.OpenTerminalNative`; persistent data
+  root terpisah di `%LOCALAPPDATA%\Yuzha\OpenTerminalNative`. Program files/current version tidak pernah
+  menjadi tempat config, log, updater state, cache, draft, atau credential.
 - Installer adalah jalur utama user testing; menjalankan loose EXE hanya supplemental developer smoke.
 - V1 menghasilkan installer untuk clean install serta update artifact/feed metadata untuk upgrade.
+- `Setup.exe` adalah full offline installer: clean install dan first launch wajib lulus ketika jaringan
+  dimatikan; update feed/network diuji sebagai jalur terpisah.
 - Installed build mempunyai product identity, application ID, install scope, data directory, dan
   version identity yang stabil lintas update.
-- Runtime UI process V1 selalu berjalan unelevated pada normal launch, termasuk dari per-machine
-  install. Operasi business yang membutuhkan administrator memakai separately elevated child/helper
+- Runtime UI process V1 selalu berjalan unelevated pada normal launch dari locked per-user install.
+  Operasi business yang membutuhkan administrator memakai separately elevated child/helper
   melalui explicit action; installer elevation tidak boleh diwariskan menjadi elevated app runtime.
 - Single-instance/second-launch IPC harus dibatasi ke same-user/session dan diverifikasi terhadap
   install/privilege model. V1 tidak melonggarkan UIPI message filter untuk menerima arbitrary
-  lower-integrity window message; bila main process terdeteksi elevated karena manual launch, aplikasi
-  mengikuti explicit diagnostic/relaunch-or-exit policy yang dibekukan pada Phase 0B.
+  lower-integrity window message. Manual elevated launch dengan linked/split normal token ditolak dengan
+  diagnostic/relaunch unelevated; bila token tidak mempunyai linked counterpart (misalnya UAC disabled
+  atau built-in Administrator), aplikasi boleh berjalan dengan diagnostic dan cross-integrity routing/
+  helper feature dinonaktifkan, bukan hard-exit tanpa usable path.
 - Update `N → N+1` mengganti program files secara aman tanpa menghapus atau menimpa user UI override,
   settings, cache, bookmark/history, draft yang memang persisted, atau credential storage.
 - Rollback binary tidak mengubah atau mengganti override yang dibuat oleh build lebih baru. Binary lama
@@ -1068,11 +1176,24 @@ Kontrak yang dikunci:
   membuat persistence `last compatible snapshot` tambahan.
 - File runtime milik versi berbeda tidak boleh bercampur. Update gagal atau dibatalkan harus
   meninggalkan versi lama tetap dapat dijalankan.
-- Package/update metadata harus diverifikasi sebelum binary diganti. Exact signing/integrity mechanism
-  mengikuti updater stack yang nanti dipilih.
+- Package/update metadata harus diverifikasi sebelum binary diganti. Exact Velopack signing/integrity
+  policy untuk preview/public artifact dibekukan pada Phase 0B.
 - Update check, download, dan staging tidak boleh menahan first frame atau berjalan di UI thread.
 - Updater coordination berada di application/deployment service dan hanya mengirim status/action
   semantic melalui `UiApplicationBridge`; component dan container tidak mengelola file update.
+- Manual `Check for updates` selalu tersedia. Automatic check dilakukan maksimal sekali per 24 jam,
+  hanya setelah first complete frame dan idle; check tidak mengunduh otomatis. Download serta
+  restart/apply membutuhkan persetujuan eksplisit user dan apply wajib melewati `PrepareCloseAll`.
+- Jadwal memakai updater-owned
+  `%LOCALAPPDATA%\Yuzha\OpenTerminalNative\updater\state.json` dengan `lastAttemptUtc` dan
+  `lastSuccessfulCheckUtc`, ditulis atomik. Metadata ini deployment state, bukan business settings:
+  Phase 5 boleh menulisnya melalui updater infrastructure/harness meskipun component/business stub
+  dilarang melakukan persistence. Kegagalan membaca/menulis state tidak memblokir first frame, manual
+  check, close, atau normal use dan hanya menghasilkan non-blocking diagnostic.
+- V1 mempertahankan satu previous full package yang dapat dipilih untuk explicit downgrade serta satu
+  staged file dari attempt terakhir. Staged file dibersihkan setelah apply sukses atau failure final
+  dikonfirmasi. Automatic crash-loop rollback adalah post-V1; apply gagal wajib meninggalkan current
+  installed version dapat dijalankan.
 - Installer/update wajib mempertahankan single-process routing, taskbar/Jump List identity, tray icon,
   shortcut, dan multi-window behavior setelah update.
 - Uninstall membersihkan program files dan integration milik aplikasi. Kebijakan mempertahankan atau
@@ -1084,9 +1205,10 @@ Kontrak yang dikunci:
 - Membangun serta menguji artifact berada dalam scope plan. Mempublikasikan release/update ke user
   tetap memerlukan permintaan eksplisit user pada turn pelaksanaan.
 
-Installer/updater stack, install scope, update transport/feed, channel, signing certificate, release
-host, rollback policy, dan detail uninstall user-data belum pasti. Semuanya harus diputuskan sebelum
-packaging implementation; agent tidak boleh memilih atau memasang dependency sendiri.
+Yang belum dikunci hanya exact local/production feed transport dan host, channel naming, preview/public
+signing material, artifact command, serta explicit uninstall-user-data UX. Contract production untuk
+item tersebut wajib dibekukan pada Phase 0B; certificate production aktual baru wajib sebelum public
+signed release.
 
 ## 20. Target source ownership dan nama final
 
@@ -1175,9 +1297,10 @@ memerlukannya, dan jangan membuat framework abstraksi spekulatif.
 4. Sinkronkan `AGENTS.md` dengan keputusan Direct2D/DirectWrite, primary-surface/`HWND` ownership,
    in-surface Dialog, layered Combo popup, infrastructure window, accessibility, High Contrast, lazy
    route, dan private-commit performance contract di plan ini.
-5. Tetapkan nama product/executable/solution, application ID, version convention, serta path config
-   baru.
-6. Tetapkan build system/toolchain, exact Windows 10 1703-or-newer/MSVC/SDK baseline, exact Direct2D
+5. Terapkan identity/version/data-root yang sudah dikunci §19 dan tetapkan nama/resource path config
+   baru yang belum ditentukan.
+6. Tetapkan build system/toolchain serta exact MSVC/SDK untuk locked Windows 10 build 19045 minimum dan
+   Windows 11 release-primary gate, exact Direct2D
    backend/object/resource-domain model, JSON parser, dan test framework tanpa mengimpor project lama;
    manifest wajib membuktikan `PerMonitorV2`.
 7. Tetapkan embedded default resource identity, override metadata/version comparison, config diagnostic
@@ -1197,14 +1320,13 @@ certificate/release host bukan blocker untuk mulai menulis schema atau `UiConfig
 
 #### Phase 0B — Blocker sebelum installer preview pertama
 
-1. Tetapkan installer/updater stack, install scope, privilege model, stable installed identity, dan
-   supported installed Windows baseline. Apa pun install scope-nya, normal app runtime tetap
-   unelevated; elevated work dipisahkan menjadi explicit child/helper operation.
+1. Integrasikan locked Velopack 1.2.0 per-user install, package/installed identity, offline `Setup.exe`,
+   privilege/manual-elevation policy, startup hook, serta build-only dependency pin §19.
 2. Tetapkan local test feed/channel, version comparison, integrity/signing policy untuk preview,
    update staging/apply/rollback contract, serta artifact commands.
 3. Tetapkan production feed/release-host/signing requirement secara kontrak; certificate production
    yang sebenarnya baru wajib tersedia sebelum public signed release, bukan sebelum source pertama.
-4. Tetapkan behavior manual elevated launch serta buktikan second-launch routing tidak bergantung pada
+4. Implement dan buktikan locked manual-elevation behavior §19 serta second-launch routing tanpa
    pelonggaran UIPI yang tidak aman.
 
 Exit criteria Phase 0B: packaging route dan `N → N+1` local installed-update test dapat dijalankan
@@ -1221,9 +1343,10 @@ sebelum Phase 2 menghasilkan installer preview.
    complete Dark/Light/High Contrast resolution, dan runtime theme selection tanpa re-parse.
 5. Implement whole-override rejection, last-known-good reload, bootstrap failure, manual reload, dan
    rollback-incompatible override fallback tanpa membuat compatible snapshot tambahan.
-6. Bekukan dan uji platform adapter untuk query/deteksi app theme serta High Contrast. Live signal kelak
-   diterima infrastructure window; Phase 1 membuktikan query, semantic slot materialization, fallback,
-   dan resource-epoch behavior tanpa menjadikan current system RGB bagian config generation.
+6. Bekukan dan uji `ThemePlatformAdapter`: bounded synchronous initial snapshot, post-first-frame
+   `UISettings` reconciliation/subscription, background-callback-to-infrastructure-window dispatch,
+   semantic High Contrast slot materialization, fallback, dan coalesced resource-epoch behavior tanpa
+   menjadikan current system RGB bagian config generation.
 7. Tambahkan tests untuk valid, invalid, duplicate/unknown field, missing/cyclic reference, merge/
    replacement semantics, version, override rejection, reload, dan no-legacy-import.
 
@@ -1231,38 +1354,45 @@ Exit criteria: schema dapat di-resolve tanpa HWND dan tidak pernah membaca legac
 
 ### Phase 2 — Native primitives dan vertical component slice
 
-1. Buat `RenderRuntime`, `NativePeerGdiResourceCache`, minimal `WindowRenderContext`, resource-domain
+1. Buat minimal renderer probe lebih dahulu: flip-model parent dengan synthetic native Edit child,
+   dirty tracking per-buffer, full repaint pada resize/device/config/theme epoch, occlusion standby, dan
+   DPI/hide-restore stress. Bila ada artifact reproducible, turun ke bitblt `SEQUENTIAL` dengan device
+   graph yang sama. Jangan melanjutkan component slice pada backend yang belum lulus; kebutuhan
+   `ID2D1HwndRenderTarget` menghentikan Phase 2 untuk revisi §9.4.
+2. Lengkapi `RenderRuntime`, `NativePeerGdiResourceCache`, minimal `WindowRenderContext`, resource-domain
    serta GDI lease/cache counter, dan primitive
    Direct2D/DirectWrite backend-agnostic untuk DPI, font measurement, typed color/compositing, geometry,
    clipping, invalidation, caching, hardware/WARP creation, serta device-lost hard-failure path.
    Seluruh measure primitive/component harus dapat diuji tanpa device/swapchain/render context.
-2. Buat component contract, registry/factory, dan minimal vertical-slice `WindowContainer` host yang
+3. Buat component contract, registry/factory, dan minimal vertical-slice `WindowContainer` host yang
    memiliki logical focus coordinator, generic overlay plane, native-peer traversal, dan one-surface
    dispatch contract; routing/multi-window lifecycle lengkap tetap Phase 4.
-3. Implement `Window`, `Container`, `Text`, HWND-less `Button`, dan native-Edit-backed `Input` sebagai
+4. Implement `Window`, `Container`, `Text`, HWND-less `Button`, dan native-Edit-backed `Input` sebagai
    vertical slice pertama pada satu primary surface.
-4. Bandingkan DirectWrite/native Edit rendering pada DPI 100%, 125%, 150%, dan 200%, lalu bekukan exact
-   text rendering mode berdasarkan visual evidence.
-5. Implement dan uji combined logical/native focus coordinator, two-way Edit focus sync, activation
+5. Verifikasi locked GDI-compatible layout/`GDI_CLASSIC` measuring/rendering terhadap native Edit pada
+   DPI 100%, 125%, 150%, dan 200% di Dark/Light. Screenshot berpasangan memakai family/size/weight/text
+   identik dan memeriksa baseline, advance/spacing, serta perceived density; natural mode hanya menjadi
+   perubahan plan bila bukti menunjukkan hasil lebih baik dengan acceptance yang direvisi eksplisit.
+6. Implement dan uji combined logical/native focus coordinator, two-way Edit focus sync, activation
    restore, Input `nativePeerContentRect` containment/non-overlap assertion dengan synthetic reserved
    app-painted regions, IME commit/candidate-close sebelum suspend, serta native-peer suspend/resume hook
    lengkap dengan suspended text snapshot dan restoration state. Synthetic overlay dapat memanggil hook
    sebelum DialogComponent tersedia.
-6. Implement Input-owned GDI resource lease, cached `WM_CTLCOLOREDIT`/`WM_CTLCOLORSTATIC` path, atomic
+7. Implement Input-owned GDI resource lease, cached `WM_CTLCOLOREDIT`/`WM_CTLCOLORSTATIC` path, atomic
    font/brush replacement pada theme/DPI change, serta destroy-order yang tidak melepaskan resource saat
    masih dipakai Edit HWND. Implement zero-lease cache eviction dan restore order DPI/layout → lease →
    `WM_SETFONT`/colors → complete frame → `ShowWindow`.
-7. Tambahkan generic editable-component dirty participant contract; Input vertical slice membuktikan
+8. Tambahkan generic editable-component dirty participant contract; Input vertical slice membuktikan
    baseline, derived `IsDirty`, Save-success/failure patch, staged Discard, dan Cancel tanpa memasukkan
    persistence/business logic ke component atau container.
-8. Pastikan first complete frame dirender ke presentation buffer sebelum top-level window ditampilkan;
+9. Pastikan first complete frame dirender ke presentation buffer sebelum top-level window ditampilkan;
    window class tidak memakai default white client brush dan handled `WM_ERASEBKGND` tidak menghapus
    complete app-owned frame.
-9. Jalankan executable placeholder dari JSON untuk membuktikan create/layout/paint/alpha/event/patch,
+10. Jalankan executable placeholder dari JSON untuk membuktikan create/layout/paint/alpha/event/patch,
    no-blank-frame, focus synchronization, suppression hook, dan resource recreation.
-10. Jalankan measurement harness, catat provisional budget results, dan bekukan numeric cold/warm first
+11. Jalankan measurement harness, catat provisional budget results, dan bekukan numeric cold/warm first
    frame serta idle private-commit budget sebelum Phase 3A.
-11. Selesaikan Phase 0B, buat installer preview pertama, dan jalankan smoke dari installed path, bukan
+12. Selesaikan Phase 0B, buat installer preview pertama, dan jalankan smoke dari installed path, bukan
    hanya build tree.
 
 Exit criteria: installed test app tampil dari JSON, tidak memiliki hidden visual constant atau
@@ -1278,10 +1408,13 @@ business side effect, dan dapat di-uninstall tanpa merusak user data di luar sco
 3. Implement UI Automation provider untuk Button, Checkbox, Toggle, dan Scrollbar. Untuk Input,
    implement `IRawElementProviderHwndOverride`, Input provider yang berada pada fragment navigation
    order, serta native Edit host-provider delegation tanpa duplicate logical element.
-4. Uji Inspect Raw/Control/Content view, previous/next visual order, Name/label, AutomationId,
+4. Lengkapi token seluruh Button variant per theme. Jalankan gerbang objektif text 4.5:1 dan visual
+   boundary/focus 3:1 terhadap adjacent resolved color, lalu screenshot enam variant × normal/hover/
+   pressed/focused/disabled pada Dark dan Light. Kandidat yang gagal direvisi agent sebelum phase lulus.
+5. Uji Inspect Raw/Control/Content view, previous/next visual order, Name/label, AutomationId,
    Text/Value/selection, read-only/password, SetFocus, peer recreate, config reconciliation, dan Narrator
    duplicate-announcement khusus Input.
-5. Uji visual state, drag/wheel/keyboard scroll, UIA/Narrator, High Contrast, DPI, resize, repaint, dan
+6. Uji visual state, drag/wheel/keyboard scroll, UIA/Narrator, High Contrast, DPI, resize, repaint, dan
    cleanup sesuai capability masing-masing.
 
 Exit criteria Phase 3A: component dasar dapat diregistrasikan lokal, Scrollbar tidak bergantung pada
@@ -1323,7 +1456,8 @@ boleh dimulai sebelum Phase 3A dan 3B keduanya lulus.
    signal fan-out, tray callback, `TaskbarCreated`, dan second-launch routing di `ApplicationContainer`.
 4. Implement per-window/popup `WM_DPICHANGED`; jangan fan-out DPI sebagai process-global state.
 5. Implement `reuse-per-route` untuk external/taskbar command dengan registry assertion bahwa route ID
-   tidak pernah mempunyai visible/hidden duplicate.
+   tidak pernah mempunyai visible/hidden duplicate; implement same-window no-op, activate visible match,
+   serta canonical restore retained match yang mengosongkan retained slot tanpa mengganti route pemanggil.
 6. Implement `PrepareClose`/`CommitClose`, `PrepareCloseAll`/`CommitCloseAll`, destructive
    close-one-window, non-destructive hide dirty window, newest-window retained replacement, maksimal satu
    retained hidden route window, release/recreate hidden render resources, hidden-window route reuse,
@@ -1341,19 +1475,24 @@ data loss atau window yang tidak dapat dijangkau.
    `PerMonitorV2`, resize, two-way focus, modal native-peer suppression/restoration, keyboard, alpha,
    layered popup, no-blank-frame, repaint/ghosting, lazy route, virtualization, multi-window, taskbar
    route, infrastructure window, serta tray lifecycle.
-   Smoke wajib mencakup reload ketika nested Dialog/IME aktif, theme switch ketika Combo terbuka,
+   Smoke wajib mencakup initial theme snapshot lalu post-frame `UISettings` reconciliation, background
+   `ColorValuesChanged` coalescing, DWM dark-mode reapply/non-fatal failure, reload ketika nested
+   Dialog/IME aktif, theme switch ketika Combo terbuka,
    all-route retained replacement, dirty Cancel, tray-failure Exit, dan hidden-window stale-resource
    restore sebelum `ShowWindow`.
 4. Hasilkan dua versioned preview build `N` dan `N+1`, clean-install `N`, lalu update installed app ke
-   `N+1` menggunakan jalur update yang direncanakan.
+   `N+1` menggunakan jalur update yang direncanakan; clean-install `Setup.exe` dan first launch wajib
+   diuji dengan jaringan dimatikan.
 5. Verifikasi executable/version benar-benar berubah, aplikasi tetap launchable, dan config/user data
    yang disiapkan pada `N` tetap tersedia pada `N+1`.
 6. Uji update gagal/ditolak, uninstall, Explorer restart, dan update ketika aplikasi masih berjalan
-   sesuai contract updater yang dipilih.
+   sesuai contract updater yang dipilih. Verifikasi manual check, scheduled check 24 jam setelah frame+
+   idle, no-auto-download, consent download/restart, atomic updater metadata, retained package/staged-file
+   cleanup, serta `PrepareCloseAll` sebelum apply.
 7. Jalankan deterministic performance/resource scenarios dan buktikan budget first frame, route,
    input-to-paint, layered-popup presentation, resize, idle private commit, diagnostic working set,
    `HWND`, USER/GDI handle, cache-entry/render-context counter, serta no-growth cycle.
-8. Verifikasi second-launch routing same-user/session pada privilege/install scope yang dipilih dan
+8. Verifikasi second-launch routing same-user/session pada locked per-user privilege/install scope dan
    pastikan normal UI runtime tidak elevated.
 9. Audit bahwa tidak ada business side effect dan tidak ada dependency ke nested repository.
 
@@ -1449,6 +1588,9 @@ Phase 6 dimulai.
   tidak membuat render target sendiri.
 - Manifest dan runtime inspection membuktikan `PerMonitorV2`; setiap top-level/popup merespons
   `WM_DPICHANGED` miliknya pada DPI 100%, 125%, 150%, dan 200%.
+- Compatibility smoke lulus pada Windows 10 22H2 build 19045 dan visual/release-primary smoke lulus pada
+  supported-current Windows 11 x64 build yang exact version-nya dicatat; budget yang dibekukan pada satu
+  OS tidak otomatis dianggap lulus pada OS lain.
 - First frame tidak menunggu scan, network, WSL, plugin, atau business file operation.
 - Top-level window baru tidak ditampilkan sebelum complete frame tersedia pada presentation buffer;
   cold start/restore tidak pernah memperlihatkan default white/blank client frame dan handled
@@ -1456,15 +1598,23 @@ Phase 6 dimulai.
 - First frame hanya merakit route awal; screen lain dirakit lazy lalu di-cache per window.
 - Focus, hover, pressed, selected, disabled, dan keyboard tetap bekerja melalui component owner.
 - Resize/DPI tidak menimbulkan border ghosting, stale pixels, overlap, atau layout corruption.
+- Flip-model + native Edit child lulus clipping/z-order/flicker stress atau backend turun ke bitblt
+  `SEQUENTIAL` tanpa mengubah component/JSON/bridge contract. Setiap presented buffer coherent; full
+  repaint terjadi setelah resize, device/backend recreate, config generation, dan theme epoch, sedangkan
+  occluded window tidak menjalankan render loop aktif.
 - Input mempunyai satu continuous outline di bounds-nya, focused outline solid-accent lebih tebal,
   single-line text vertically centered, multiline top-aligned, dan seluruh text left-aligned.
-- Button mempunyai hubungan normal < hover < pressed yang konsisten, solid accent border saat
-  hover/pressed, solid focus outline tanpa dashed/dotted ring, serta nilai hover/pressed eksplisit dan
-  independen di JSON.
+- Seluruh bounds Input menjadi pointer hit target; klik padding memfokuskan Edit dan menempatkan caret
+  terdekat. Multiline Scrollbar sinkron dengan native Edit dalam unit line tanpa overlap app-painted area.
+- Button mempunyai contrast-to-surrounding-surface `normal < hover < pressed` pada Light maupun Dark,
+  text normal minimal 4.5:1, visual boundary/focus minimal 3:1, solid accent border saat hover/pressed,
+  solid focus outline tanpa dashed/dotted ring, serta nilai hover/pressed eksplisit dan independen di
+  JSON. Seluruh variant lulus gerbang objektif sebelum screenshot review.
 - Alpha/tint Button dan component app-rendered ter-composite benar terhadap parent pada surface yang
   sama; native child tidak mencoba membaca pixel parent lintas `HWND`.
 - Teks DirectWrite dan native Edit memenuhi visual-consistency evidence pada DPI 100%, 125%, 150%, dan
-  200% menggunakan mode yang dibekukan dari vertical slice.
+  200% menggunakan GDI-compatible layout/`GDI_CLASSIC` measuring/rendering baseline yang dibekukan dari
+  vertical slice.
 - Native Edit `nativePeerContentRect` selalu berada di dalam safe opaque inner Input geometry dan tidak
   overlap dengan Scrollbar track, icon, clear button, atau app-painted decoration pada seluruh accepted
   size/DPI; layout failure menghasilkan diagnostic, bukan overwrite atau crash.
@@ -1482,10 +1632,15 @@ Phase 6 dimulai.
   menutupnya secara deterministik.
 - Combo layered popup mempunyai rounded clip/shadow konsisten dan full-surface update/copy cost-nya
   memenuhi input-to-paint budget pada deterministic maximum V1 size/items.
+- Combo popup selalu ter-clamp pada work area monitor anchor, memilih arah buka yang reachable, dan
+  recompute geometry/resource ketika berpindah monitor atau menerima DPI baru saat terbuka.
 - System/Dark/Light/High Contrast menghasilkan resolved set yang benar di seluruh top-level window
   tanpa restart atau re-parse config; system-color/app-theme change hanya meningkatkan shared
   resource epoch sekali lalu meng-invalidasi dan redraw/re-present seluruh active primary serta layered
   popup context.
+- Initial snapshot tidak memperlihatkan flash theme yang salah pada baseline test; post-first-frame
+  `UISettings` reconciliation dan background callback tidak menyentuh UI lintas thread. DWM dark title
+  attribute 20 diterapkan ulang ketika perlu dan kegagalannya tidak menggagalkan window/startup.
 - Paint tidak melakukan parse/config IO atau membuat ulang resource cacheable setiap frame.
 - Device-lost dan restore hidden window membuat ulang render resource tanpa kehilangan logical UI
   state. Hidden restore menghitung DPI/layout, mengganti GDI lease/font/colors, dan merender complete
@@ -1517,8 +1672,10 @@ Phase 6 dimulai.
 
 Semua angka diukur dari installed Release x64 pada baseline machine/Windows/DPI Phase 0A dengan
 deterministic stub data dan trace marker yang sama. Setiap repeatable scenario memakai minimum 30
-sample; cold-start mengulang declared cold condition tanpa warm-up, sedangkan scenario lain melakukan
-satu warm-up sebelum sample dicatat. Target V1 provisional yang dikunci:
+sample. Metric startup canonical adalah cold process dengan OS/file cache hangat dan tanpa app warm-up;
+true cold-file-cache run dicatat terpisah sebagai diagnostic karena sangat dipengaruhi storage/OS.
+Scenario selain startup melakukan satu warm-up sebelum sample dicatat. Target V1 provisional yang
+dikunci:
 
 - cold process-start sampai first complete non-blank frame terlihat: p95 maksimal 250 ms;
 - laporan cold/warm start tetap menilai total end-to-end terhadap target, tetapi juga memisahkan
@@ -1555,6 +1712,9 @@ measurement evidence; implementation agent tidak boleh melonggarkannya diam-diam
 - Satu proses dapat memiliki minimal dua independent top-level window.
 - External Chrome Launcher route tidak mengganti Terminal window yang sudah terbuka.
 - External route mengaktifkan matching window yang sudah ada atau membuat satu bila belum ada.
+- Same-window navigation ke route yang sama adalah no-op; visible match lain diaktifkan, sedangkan
+  retained match dipulihkan lewat canonical DPI/layout/resource/frame-before-show path dan mengosongkan
+  retained slot tanpa mengganti route window pemanggil.
 - Registry assertion membuktikan satu route ID tidak pernah mempunyai visible dan retained-hidden
   instance bersamaan.
 - Menutup satu window tidak menutup window lain.
@@ -1588,6 +1748,7 @@ measurement evidence; implementation agent tidak boleh melonggarkannya diam-diam
 ### Installer, updater, dan release artifact
 
 - Preview pertama dan setiap accepted build setelahnya dapat dihasilkan sebagai installer.
+- Per-user Velopack `Setup.exe` dapat melakukan clean install dan first launch tanpa jaringan.
 - Clean install menjalankan binary dari installed location dengan product/version identity yang benar.
 - Installed build `N` dapat diperbarui ke `N+1` dan benar-benar menjalankan `N+1`.
 - Update mempertahankan user data dan tidak mencampur program files antarversi.
@@ -1595,6 +1756,9 @@ measurement evidence; implementation agent tidak boleh melonggarkannya diam-diam
 - Rollback tidak menghapus/menimpa override baru; binary lama memakai embedded default serta diagnostic
   bila override membutuhkan contract lebih baru.
 - Update check/download tidak menahan first frame atau UI thread.
+- Manual check, scheduled 24-hour check setelah frame+idle, no-auto-download, explicit consent,
+  updater-owned atomic timestamp state, `PrepareCloseAll`, one-previous-full retention, one-staged-attempt
+  cleanup, dan failed-apply current-version survival semuanya lulus installed smoke.
 - Uninstall membersihkan integration/program files sesuai contract tanpa menghapus user data diam-diam.
 - Generated installer/update/release artifacts tidak tracked di source Git.
 - Normal installed UI process berjalan unelevated; elevated business action terpisah, dan second-launch
@@ -1616,8 +1780,9 @@ Command final ditemukan dari project file baru setelah scaffold. Minimum setiap 
 - reload normalization test untuk popup, nested modal stack, suppression refcount, removed component,
   active IME success/failure, rollback ke generation lama, dan focus restoration;
 - Windows smoke untuk behavior runtime/visual yang berubah, termasuk Direct2D device-lost/recreate,
-  hardware-to-WARP fallback, device-lost hard-failure diagnostic, native Edit text consistency, Combo
-  layered popup, in-surface Dialog, lazy route, Scrollbar, dan virtualized List;
+  hardware-to-WARP fallback, flip/bitblt renderer probe dengan native Edit child, per-buffer dirty/full-
+  repaint/occlusion behavior, device-lost hard-failure diagnostic, GDI-classic native Edit text
+  consistency, Combo layered popup, in-surface Dialog, lazy route, Scrollbar, dan virtualized List;
 - modal-overlay smoke untuk nested stack, component-ancestry scope, native-peer suppression refcount,
   active-Dialog Input/Combo, IME completion, suspended Input snapshot, restoration
   caret/selection/scroll/draft, popup close, dismissal, focus trap, dan reload drain;
@@ -1629,8 +1794,12 @@ Command final ditemukan dari project file baru setelah scaffold. Minimum setiap 
   ItemContainer/VirtualizedItem smoke;
 - manifest/runtime verification bahwa `PerMonitorV2` aktif dan per-window/popup `WM_DPICHANGED` behavior
   benar pada DPI 100%, 125%, 150%, dan 200%;
+- Windows 10 build 19045 compatibility matrix serta supported-current Windows 11 visual/release-primary
+  matrix dengan exact OS build dan hasil performance revalidation tercatat;
 - no-blank-frame visual/capture check pada cold start, new-window route, hidden-window restore, hardware
   render, WARP fallback, serta stale DPI/theme hidden restore setelah lease/font/color update;
+- theme-platform smoke untuk initial snapshot, post-frame `UISettings` reconciliation,
+  `ColorValuesChanged` background dispatch/coalescing, fallback failure, dan DWM attribute reapply;
 - Combo popup smoke untuk non-activation, owner keyboard routing, pointer selection, seluruh dismissal
   trigger, theme/High-Contrast live redraw, taskbar/Alt-Tab absence, dan per-popup DPI;
 - close-coordination smoke untuk dirty single close, non-destructive dirty hide, newest retained
@@ -1643,12 +1812,13 @@ Command final ditemukan dari project file baru setelah scaffold. Minimum setiap 
   memisahkan bootstrap/config, device/driver/WARP, layout/render, dan present tanpa mengubah end-to-end
   PASS/FAIL target;
 - clean-install smoke dari artifact, bukan build directory;
+- offline `Setup.exe` clean-install/first-launch smoke dengan jaringan dimatikan;
 - installed update smoke dari version `N` ke version `N+1`;
 - preservation check untuk config/settings/cache/user data yang relevan;
 - failed/invalid update dan uninstall smoke;
 - package version, manifest/checksum/signature, shortcut, taskbar, tray, dan installed-path checks sesuai
   stack yang disetujui;
-- second-launch routing same-user/session pada privilege/install scope yang dipilih, termasuk explicit
+- second-launch routing same-user/session pada locked per-user privilege/install scope, termasuk explicit
   behavior ketika executable diluncurkan manual dengan elevated token;
 - pemeriksaan bahwa nested repositories tidak berubah;
 - pemeriksaan bahwa artefak binary tidak staged/tracked dan native build/package patterns sudah
@@ -1661,6 +1831,9 @@ yang benar-benar terlihat pada state dan viewport/DPI yang relevan.
 
 - migration atau compatibility dengan UI lama;
 - import/link/dependency terhadap nested repository;
+- layout mirroring RTL dan `WS_EX_LAYOUTRTL`; V1 menjamin layout LTR. Ini tidak menonaktifkan Unicode
+  bidirectional text shaping: DirectWrite/native Edit tetap wajib merender run RTL/bidi dengan benar di
+  dalam bounds text component/Input yang LTR;
 - terminal/Chrome/WSL launch nyata;
 - scan profile nyata;
 - settings/provider/API key persistence nyata;
@@ -1672,74 +1845,63 @@ yang benar-benar terlihat pada state dan viewport/DPI yang relevan.
 Packaging, installer, installed-update validation, dan release-artifact generation adalah pengecualian
 yang sengaja masuk scope V1. Public publication tetap membutuhkan instruksi user tersendiri.
 
-## 25. Keputusan yang masih belum pasti
+## 25. Contract yang belum dibekukan dan provisional verification
 
-Bagian ini adalah note uncertainty, bukan izin bagi agent untuk memilih diam-diam.
+Bagian ini bukan daftar pertanyaan untuk dilempar kembali kepada user. Untuk detail teknis yang tetap
+berada dalam scope terkunci, implementation agent wajib membuat rekomendasi konkret, meminta review
+agent, mencatat evidence, lalu membekukan contract sebelum source terkait ditulis. Plan boleh direvisi
+bila measurement/runtime evidence membuktikan baseline awal salah. User baru diminta keputusan bila
+perubahan mengubah product scope, business semantics, dependency class, privilege, persistence user,
+atau tindakan external seperti publication/signing.
 
-### 25.1 Wajib diputuskan pada Phase 0A sebelum implementation source dimulai
+### 25.1 Contract Phase 0A yang masih harus dibekukan sebelum source pertama
 
-- nama final product, executable, solution, application ID, dan version convention;
-- build system/generator, exact MSVC/Windows SDK/supported Windows baseline yang tidak lebih tua dari
-  Windows 10 version 1703, dependency policy, dan project layout final di luar ownership tree konseptual;
-- exact Direct2D version/backend/device object model, hardware/WARP creation parameters, resource-domain
-  boundaries, dan layered-popup DIB/HDC presentation path yang memenuhi §9.4;
-- JSON parser/library beserta cara dependency di-pin dan didistribusikan;
-- test framework/runner serta command Debug/Release/test canonical;
-- nama/resource ID embedded default JSON, exact override metadata/version comparison, dan exact user
-  config/data path baru;
-- exact config diagnostic persistence: lokasi log dan bentuk indikator tetap pada Settings/UI Editor;
-- measurement harness/tooling, deterministic scenario termasuk maximum Combo/List data, baseline
-  machine/Windows/DPI, cold-start sample procedure, private-commit/working-set collection, internal
-  cache/context counters, dan canonical performance-report format;
-- exact app-theme detection/query adapter dan fallback untuk supported Windows baseline;
-- same-user/session second-launch IPC contract yang kompatibel dengan normal unelevated runtime serta
-  packaging privilege constraints Phase 0B;
-- sinkronisasi root `AGENTS.md` dengan renderer, Dialog overlay, layered Combo popup, infrastructure
-  window, surface/`HWND`, accessibility, High Contrast, `PerMonitorV2`, lazy route, dan private-commit
-  performance decisions plan ini.
+- build system/generator, exact Visual Studio/MSVC/Windows SDK version, dependency policy, dan project
+  layout final di luar ownership tree konseptual;
+- exact Direct2D interface/device object graph, hardware/WARP creation parameters, bitblt tier details,
+  resource-domain implementation, serta layered-popup DIB/HDC path yang memenuhi §9.4;
+- JSON parser/library beserta exact pin/distribution, test framework/runner, dan canonical Debug/Release/
+  test commands;
+- embedded default resource ID, override filename/subdirectory di locked data root, exact config-contract
+  version comparison, dan bentuk indicator diagnostic persistent pada Settings/UI Editor;
+- measurement tooling, deterministic maximum Combo/List data, exact baseline machine/Windows/DPI,
+  cold-process/warm-file-cache procedure, counters, dan canonical performance-report format;
+- named-pipe name/security descriptor/message envelope serta exact bounded retry timing di dalam startup
+  contract same-user/session yang sudah dikunci;
+- sinkronisasi root `AGENTS.md` dan `.gitignore` terhadap seluruh keputusan canonical plan.
 
-Semua item ini memengaruhi compile/runtime contract atau membuat acceptance tidak dapat diuji. Agent
-harus melakukan discovery/proposal lalu memperoleh keputusan user; tidak boleh mulai scaffold dengan
-pilihan default pribadi.
+Identity, minimum OS, presentation tier, theme adapter, diagnostic log path, dan ownership tidak lagi
+open decision. Phase 0A memilih detail implementasi di atas tanpa membuka kembali contract tersebut.
 
-### 25.2 Wajib diputuskan pada Phase 0B sebelum installer preview pertama
+### 25.2 Contract Phase 0B yang masih harus dibekukan sebelum installer preview pertama
 
-- publisher identity serta installer/updater technology;
-- install scope (`per-user` atau `per-machine`), privilege model, stable installed identity, dan
-  supported installed Windows baseline; keputusan ini wajib mempertahankan normal app runtime
-  unelevated dan menyelesaikan dependency second-launch IPC Phase 0A;
-- update feed/transport local-preview, test channel, version comparison, integrity/signing policy,
-  staging/apply/rollback coordination, dan artifact commands;
-- production feed/channel, release host, dan production signing requirement sebagai contract. Actual
-  production certificate wajib sebelum signed public release, bukan sebelum source pertama.
-- explicit manual-elevated-launch policy serta elevation boundary child/helper untuk business action.
+- exact local test feed transport/path, channel names, version comparison flags, integrity/signing policy
+  preview, artifact commands, dan installed-test automation;
+- production feed/release host dan production signing requirement sebagai contract. Certificate/secret
+  aktual hanya wajib sebelum public signed release dan tidak boleh disimpan di repository;
+- explicit uninstall-user-data UX. Default aman tetap mempertahankan data; penghapusan membutuhkan
+  pilihan sadar dan scope path yang tervalidasi.
 
-Item Phase 0B bukan blocker penulisan schema/gate, tetapi wajib selesai sebelum installer preview dan
-installed `N → N+1` validation dimulai.
+Velopack 1.2.0, per-user scope, identity/path, offline Setup, updater UX/schedule, retention, rollback,
+manual-elevation policy, dan startup hook tidak lagi open decision.
 
-### 25.3 Diputuskan sebelum phase/component terkait
+### 25.3 Provisional defaults dengan closure gate, bukan pertanyaan user
 
-- exact nama/type/range/default field schema untuk setiap component; grammar global sudah dikunci,
-  tetapi field tumbuh per vertical slice;
-- exact token/color/fill/border values hover dan pressed untuk setiap Button variant. Ini desain baru,
-  bukan pencarian mapping legacy `35%/25%`;
-- exact DirectWrite text rendering mode setelah perbandingan native Edit pada DPI 100/125/150/200;
-- exact native Edit flags, safe-inner-geometry field/rules, Scrollbar field/variants, ancillary Combo
-  popup flags di luar locked `WS_POPUP` + `WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`, serta
-  premultiplied backing format tanpa mengubah surface ownership;
-- exact semantic Windows system-color mapping dan batas native non-client area yang dapat ditemakan;
-- exact same-window navigation behavior ketika target route sudah aktif pada window lain;
-- update UX: manual check atau automatic check, frequency, download consent, restart/apply prompt,
-  foreground-process coordination, rollback depth, dan offline-installer requirement;
-- uninstall user-data option dan retention period untuk staged update/rollback files;
-- JSON Editor V1 tetap native multiline Edit tanpa line number, gutter, atau syntax highlighting.
-  Keinginan menambah fitur tersebut kelak adalah keputusan arsitektur baru karena membutuhkan custom
-  text editor dengan selection, IME, undo, scrolling, rendering, dan accessibility milik aplikasi;
-- urutan feature business integration pada Phase 6;
-- kebijakan `allowMultiple` untuk route yang sama setelah V1.
+- Primary Button memakai ramp Light/Dark §9.5. Seluruh variant lain dipilih agent per vertical slice,
+  lalu ditutup oleh contrast automation dan screenshot matrix Phase 2/3A; hasil gagal direvisi, bukan
+  diteruskan sebagai pilihan selera tanpa rekomendasi.
+- Primary DirectWrite surface memakai GDI-compatible layout/`GDI_CLASSIC`; Phase 2 memverifikasi pasangan
+  native Edit pada 100/125/150/200%. Perubahan mode memerlukan evidence dan plan amendment.
+- Flip-model adalah baseline dan bitblt `SEQUENTIAL` adalah fallback kompatibel resource-domain. Renderer
+  probe pertama Phase 2 menutup pilihan aktual; kebutuhan `ID2D1HwndRenderTarget` memerlukan revisi §9.4.
+- Exact nama/type/range/default schema, native Edit flags/safe geometry, Scrollbar field, ancillary Combo
+  flags/backing format, dan semantic system-color mapping adalah deliverable contract sebelum masing-
+  masing vertical slice, bukan keputusan arsitektur global yang menahan component lain.
+- Urutan feature business integration dibekukan dari dependency live sebelum Phase 6. `allowMultiple`,
+  RTL layout mirroring, custom JSON text editor, dan automatic crash-loop rollback tetap post-V1.
 
-Item phase-specific harus diputuskan sebelum contract atau acceptance test phase tersebut ditulis.
-Keputusan yang sudah dikunci di bagian lain tidak boleh dibuka kembali tanpa instruksi user.
+Same-window/retained navigation, update UX, staged retention, offline installer, JSON Editor V1,
+non-client DWM policy, dan multi-monitor popup clamping sudah canonical dan dihapus dari daftar terbuka.
 
 ### 25.4 Note dokumentasi dan Git
 
