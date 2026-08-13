@@ -1,0 +1,28 @@
+# .NET build outputs
+**/bin/
+**/obj/
+
+# Published/runtime output and WebView2 user data
+**/publish/
+**/publish-installer/
+**/OpenTerminal.exe.WebView2/
+
+# Installer output and compiled binaries are release assets, not source
+**/dist/
+*.exe
+*.dll
+*.pdb
+*.msi
+*.tmp
+*.log
+
+# Local IDE/user files
+.vs/
+*.user
+*.suo
+
+
+Open-terminal
+Open-terminal-native
+docs
+
