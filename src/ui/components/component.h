@@ -19,6 +19,7 @@ class Component;
 
 enum class AutomationRole { None, Button, Checkbox, ToggleButton, Edit, Combo, Scrollbar, Group };
 enum class AutomationAction { Focus, Invoke, Toggle, Expand, Collapse, SetRangeValue };
+enum class ModalResult { Accept, Discard, Cancel, Dismiss };
 
 struct AutomationRangeValue {
     double value = 0.0;
@@ -48,6 +49,7 @@ struct ComponentHost {
     std::function<std::optional<std::wstring>(std::string_view)> resolve_string_value;
     std::function<bool(AutomationAction, Component*, double)> request_automation_action;
     std::function<void(bool)> request_focus_traversal;
+    std::function<bool(Component*, ModalResult)> request_modal_close;
 };
 
 class Component {
@@ -78,6 +80,16 @@ public:
     virtual HWND OwnedPopupHwnd() const noexcept;
     virtual bool OwnsPopupScopePoint(POINT screen_point) const noexcept;
     virtual void DismissOwnedPopup();
+    virtual bool RequiresNativePeerSuppression() const noexcept;
+    virtual bool IsModalOverlay() const noexcept;
+    virtual bool IsModalActive() const noexcept;
+    virtual bool ActivateModal(std::wstring& diagnostic);
+    virtual bool DeactivateModal(std::wstring& diagnostic);
+    virtual void ArrangeModal(const RECT& client_bounds);
+    virtual void PaintModalOverlay(rendering::WindowRenderContext& context,
+                                   const RECT& invalid_region);
+    virtual bool CanCompleteModal(ModalResult result) const noexcept;
+    virtual void CompleteModal(ModalResult result);
     virtual void CollectFocusable(std::vector<Component*>& focusable);
     virtual bool SuspendNativePeers(std::wstring& diagnostic);
     virtual void ResumeNativePeers();
@@ -105,6 +117,7 @@ public:
     virtual void OnDpiChanged();
     virtual bool PrepareResources(COLORREF parent_background);
     virtual void AddChild(std::unique_ptr<Component> child);
+    virtual void CollectComponents(std::vector<Component*>& components);
 
     const RECT& bounds() const noexcept;
     const config::ResolvedComponent& definition() const noexcept;
@@ -112,6 +125,8 @@ public:
     bool visible() const noexcept;
     bool enabled() const noexcept;
     Component* parent() const noexcept;
+    bool IsDescendantOrSelfOf(const Component* ancestor) const noexcept;
+    Component* FindById(std::string_view id) noexcept;
 
 protected:
     void PaintStyleBox(HDC dc, config::VisualState state, const RECT& bounds) const;

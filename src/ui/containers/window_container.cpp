@@ -166,6 +166,12 @@ bool WindowContainer::BuildComponentTree(std::wstring& diagnostic) {
             };
         component_host_->request_focus_traversal =
             [this](bool reverse) { focus_coordinator_.Move(reverse); };
+        component_host_->request_modal_close =
+            [this](components::Component* dialog, components::ModalResult result) {
+                if (!dialog || modal_stack_.top() != dialog) return false;
+                std::wstring diagnostic;
+                return CloseModal(result, diagnostic);
+            };
         root_ = registry_.CreateTree(*window_definition_, *component_host_);
         focus_coordinator_.Rebuild(*root_);
         automation_provider_ = new accessibility::AutomationRootProvider(
@@ -205,6 +211,8 @@ bool WindowContainer::SuspendNativePeers(std::wstring& diagnostic) {
         diagnostic = L"Component tree tidak tersedia.";
         return false;
     }
+    if (modal_stack_.active() &&
+        !modal_stack_.Drain(*root_, focus_coordinator_, diagnostic)) return false;
     return root_->SuspendNativePeers(diagnostic);
 }
 
@@ -386,6 +394,9 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                 active_popup_owner_->HandleKeyDown(static_cast<UINT>(wparam))) {
                 return 0;
             }
+            if (modal_stack_.active() && modal_stack_.HandleKeyDown(static_cast<UINT>(wparam))) {
+                return 0;
+            }
             if (wparam == VK_TAB) {
                 if (focus_coordinator_.Move((GetKeyState(VK_SHIFT) & 0x8000) != 0)) return 0;
             } else if (focus_coordinator_.HandleKeyDown(static_cast<UINT>(wparam))) {
@@ -402,7 +413,7 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                     active_popup_owner_->DismissOwnedPopup();
                 }
             }
-            components::Component* target = root_ ? root_->HitTest(point) : nullptr;
+            components::Component* target = HitTestInteractive(point);
             if (target && target->CanFocus()) focus_coordinator_.RequestFocus(target);
             if (target && target->PointerDown(point)) pointer_target_ = target;
             return 0;
@@ -419,7 +430,7 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             TraceInputStart();
             POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
             ScreenToClient(window_, &point);
-            components::Component* target = root_ ? root_->HitTest(point) : nullptr;
+            components::Component* target = HitTestInteractive(point);
             while (target && !target->PointerWheel(GET_WHEEL_DELTA_WPARAM(wparam))) {
                 target = target->parent();
             }
@@ -451,6 +462,10 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
         case WM_DESTROY:
             if (active_popup_owner_) active_popup_owner_->DismissOwnedPopup();
             active_popup_owner_ = nullptr;
+            if (root_ && modal_stack_.active()) {
+                std::wstring ignored;
+                modal_stack_.Drain(*root_, focus_coordinator_, ignored);
+            }
             focus_coordinator_.Clear();
             if (automation_provider_) {
                 automation_provider_->Disconnect();
@@ -500,6 +515,7 @@ bool WindowContainer::RenderFrame(HDC reference, const RECT& requested_region, b
     render_runtime_.BeginPaintScope();
     root_->Paint(render_context_.dc());
     overlay_plane_.Paint(render_context_, invalid_region);
+    modal_stack_.Paint(render_context_, invalid_region);
     render_runtime_.EndPaintScope();
     if (saved != 0) RestoreDC(render_context_.dc(), saved);
     render_context_.ForceOpaqueAlpha(invalid_region);
@@ -528,11 +544,12 @@ void WindowContainer::Layout() {
     component_host_->layout_dc = render_context_.dc();
     root_->Measure(render_context_.dc(), client.right - client.left, client.bottom - client.top);
     root_->Arrange(client);
+    modal_stack_.Arrange(client);
     component_host_->layout_dc = nullptr;
 }
 
 void WindowContainer::TrackPointer(POINT point) {
-    components::Component* target = root_ ? root_->HitTest(point) : nullptr;
+    components::Component* target = HitTestInteractive(point);
     if (pointer_target_ && pointer_target_ != target) pointer_target_->PointerMove({-1, -1});
     if (target) target->PointerMove(point);
     pointer_target_ = target;
@@ -542,10 +559,68 @@ void WindowContainer::DispatchStubEvent(const config::EventDefinition& event) {
     const auto patch = application_bridge_.Dispatch({event.action, event.payload});
     if (!patch) return;
     if (patch->window_title) SetWindowTextW(window_, patch->window_title->c_str());
+    if (patch->dialog_request) {
+        std::wstring diagnostic;
+        switch (patch->dialog_request->action) {
+            case application::DialogRequestAction::Open:
+                OpenModal(patch->dialog_request->dialog_id, diagnostic);
+                break;
+            case application::DialogRequestAction::Save:
+                CloseModal(components::ModalResult::Accept, diagnostic);
+                break;
+            case application::DialogRequestAction::Discard:
+                CloseModal(components::ModalResult::Discard, diagnostic);
+                break;
+            case application::DialogRequestAction::Cancel:
+                CloseModal(components::ModalResult::Cancel, diagnostic);
+                break;
+        }
+    }
     if (patch->request_repaint) {
         frame_ready_ = false;
         InvalidateRect(window_, nullptr, FALSE);
     }
+}
+
+bool WindowContainer::OpenModal(std::string_view dialog_id, std::wstring& diagnostic) {
+    if (!root_) {
+        diagnostic = L"Component tree tidak tersedia.";
+        return false;
+    }
+    components::Component* dialog = root_->FindById(dialog_id);
+    if (!dialog || !dialog->IsModalOverlay()) {
+        diagnostic = L"Dialog JSON tidak ditemukan.";
+        return false;
+    }
+    if (GetCapture()) ReleaseCapture();
+    pointer_target_ = nullptr;
+    if (!modal_stack_.Push(*dialog, *root_, focus_coordinator_, diagnostic)) return false;
+    RECT client{};
+    GetClientRect(window_, &client);
+    modal_stack_.Arrange(client);
+    frame_ready_ = false;
+    render_context_.InvalidateAll();
+    InvalidateRect(window_, nullptr, FALSE);
+    return true;
+}
+
+bool WindowContainer::CloseModal(components::ModalResult result, std::wstring& diagnostic) {
+    if (!root_ || !modal_stack_.active()) {
+        diagnostic = L"Tidak ada Dialog aktif.";
+        return false;
+    }
+    if (GetCapture()) ReleaseCapture();
+    pointer_target_ = nullptr;
+    if (!modal_stack_.Pop(result, *root_, focus_coordinator_, diagnostic)) return false;
+    frame_ready_ = false;
+    render_context_.InvalidateAll();
+    InvalidateRect(window_, nullptr, FALSE);
+    return true;
+}
+
+components::Component* WindowContainer::HitTestInteractive(POINT point) const {
+    if (modal_stack_.active()) return modal_stack_.HitTest(point);
+    return root_ ? root_->HitTest(point) : nullptr;
 }
 
 }  // namespace ui::containers

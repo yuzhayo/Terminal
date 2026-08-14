@@ -1,15 +1,11 @@
 #include "platform/wsl.h"
 
-#include <windows.h>
-
 #include <atomic>
-#include <cassert>
 #include <mutex>
 
 #include "platform/paths.h"
 #include "platform/process.h"
 #include "platform/strings.h"
-#include "platform/task.h"
 
 namespace wsl {
 namespace {
@@ -64,8 +60,8 @@ namespace {
 // the JSON Editor loads a path), so the cache is guarded.
 //
 // `settled` is separate and atomic on purpose: the lock is held for the whole
-// 8-second probe, so IsResolved() must not take it — that is called from the UI
-// thread and would reintroduce exactly the freeze this step removes.
+// 8-second probe, so IsResolved() must not take it — callers use it to decide
+// whether they need a worker at all, and blocking there would defeat the point.
 struct Cache {
     std::mutex lock;
     std::atomic<bool> settled{false};
@@ -101,8 +97,9 @@ bool Resolve(std::wstring* distro, std::wstring* home, std::wstring* error) {
     }
 
     // wsl.exe --list waits up to 8 seconds when no distro is running, so the
-    // first probe must happen on a worker. Cache hits above are exempt.
-    assert(!platform::OnUiThread() && "wsl::Resolve probes WSL; run it through platform::RunTask");
+    // first probe must happen off any thread that paints. Cache hits above are
+    // exempt. Core cannot check the caller's thread, so this is a contract, not
+    // an assert — see IsResolved().
 
     std::wstring found_distro;
     std::wstring found_home;
@@ -120,12 +117,10 @@ bool Resolve(std::wstring* distro, std::wstring* home, std::wstring* error) {
     return true;
 }
 
-bool ResolveAsync(HWND target, UINT message, unsigned generation) {
-    return platform::RunTask<Probe>(target, message, generation, [] {
-        Probe probe;
-        probe.ok = Resolve(nullptr, nullptr, &probe.error);
-        return probe;
-    });
+Probe ResolveProbe() {
+    Probe probe;
+    probe.ok = Resolve(nullptr, nullptr, &probe.error);
+    return probe;
 }
 
 std::wstring UncPath(const std::wstring& distro, const std::wstring& posix_path) {

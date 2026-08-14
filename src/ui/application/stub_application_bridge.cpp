@@ -17,6 +17,26 @@ std::optional<UiPatch> StubApplicationBridge::Dispatch(const UiEvent& event) {
         patch.request_repaint = true;
         return patch;
     }
+    if (event.action == "open-save-discard-dialog") {
+        patch.dialog_request = DialogRequest{DialogRequestAction::Open, "save-discard-dialog"};
+        patch.request_repaint = true;
+        return patch;
+    }
+    if (event.action == "dialog-save") {
+        patch.dialog_request = DialogRequest{DialogRequestAction::Save, "save-discard-dialog"};
+        patch.request_repaint = true;
+        return patch;
+    }
+    if (event.action == "dialog-discard") {
+        patch.dialog_request = DialogRequest{DialogRequestAction::Discard, "save-discard-dialog"};
+        patch.request_repaint = true;
+        return patch;
+    }
+    if (event.action == "dialog-cancel") {
+        patch.dialog_request = DialogRequest{DialogRequestAction::Cancel, "save-discard-dialog"};
+        patch.request_repaint = true;
+        return patch;
+    }
     return std::nullopt;
 }
 

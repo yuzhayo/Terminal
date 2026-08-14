@@ -101,6 +101,21 @@ bool Component::HasOpenPopup() const noexcept { return false; }
 HWND Component::OwnedPopupHwnd() const noexcept { return nullptr; }
 bool Component::OwnsPopupScopePoint(POINT) const noexcept { return false; }
 void Component::DismissOwnedPopup() {}
+bool Component::RequiresNativePeerSuppression() const noexcept { return false; }
+bool Component::IsModalOverlay() const noexcept { return false; }
+bool Component::IsModalActive() const noexcept { return false; }
+bool Component::ActivateModal(std::wstring& diagnostic) {
+    diagnostic = L"Component bukan modal overlay.";
+    return false;
+}
+bool Component::DeactivateModal(std::wstring& diagnostic) {
+    diagnostic = L"Component bukan modal overlay.";
+    return false;
+}
+void Component::ArrangeModal(const RECT&) {}
+void Component::PaintModalOverlay(rendering::WindowRenderContext&, const RECT&) {}
+bool Component::CanCompleteModal(ModalResult) const noexcept { return true; }
+void Component::CompleteModal(ModalResult) {}
 
 void Component::CollectFocusable(std::vector<Component*>& focusable) {
     if (CanFocus()) focusable.push_back(this);
@@ -209,6 +224,11 @@ void Component::AddChild(std::unique_ptr<Component> child) {
     }
 }
 
+void Component::CollectComponents(std::vector<Component*>& components) {
+    components.push_back(this);
+    for (const auto& child : children_) child->CollectComponents(components);
+}
+
 const RECT& Component::bounds() const noexcept {
     return bounds_;
 }
@@ -234,6 +254,22 @@ bool Component::enabled() const noexcept {
 
 Component* Component::parent() const noexcept {
     return parent_;
+}
+
+bool Component::IsDescendantOrSelfOf(const Component* ancestor) const noexcept {
+    if (!ancestor) return false;
+    for (const Component* current = this; current; current = current->parent_) {
+        if (current == ancestor) return true;
+    }
+    return false;
+}
+
+Component* Component::FindById(std::string_view id) noexcept {
+    if (definition_.id == id) return this;
+    for (const auto& child : children_) {
+        if (Component* found = child->FindById(id)) return found;
+    }
+    return nullptr;
 }
 
 void Component::PaintStyleBox(HDC dc, config::VisualState state, const RECT& bounds) const {

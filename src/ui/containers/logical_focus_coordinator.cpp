@@ -16,11 +16,14 @@ void LogicalFocusCoordinator::Rebuild(components::Component& root) {
 void LogicalFocusCoordinator::Clear() noexcept {
     focusable_.clear();
     focused_ = nullptr;
+    scope_ = nullptr;
     synchronizing_ = false;
 }
 
 bool LogicalFocusCoordinator::RequestFocus(components::Component* target, bool synchronize_native) {
-    if (!target || !Contains(target) || !target->CanFocus() || synchronizing_) return false;
+    if (!target || !Contains(target) || !InScope(target) || !target->CanFocus() || synchronizing_) {
+        return false;
+    }
     if (focused_ == target) {
         target->SetLogicalFocus(true, window_active_);
         return !synchronize_native || target->FocusNativePeer();
@@ -44,13 +47,13 @@ bool LogicalFocusCoordinator::Move(bool reverse) {
         index = reverse ? (index + focusable_.size() - 1) % focusable_.size()
                         : (index + 1) % focusable_.size();
         components::Component* candidate = focusable_[index];
-        if (candidate->CanFocus()) return RequestFocus(candidate);
+        if (InScope(candidate) && candidate->CanFocus()) return RequestFocus(candidate);
     }
     return false;
 }
 
 void LogicalFocusCoordinator::NotifyNativeFocus(components::Component* target, bool focused) {
-    if (synchronizing_ || !target || !Contains(target)) return;
+    if (synchronizing_ || !target || !Contains(target) || !InScope(target)) return;
     if (focused) {
         RequestFocus(target, false);
     } else if (focused_ == target) {
@@ -73,6 +76,14 @@ bool LogicalFocusCoordinator::HandleKeyDown(unsigned int virtual_key) {
     return focused_ && focused_->HandleKeyDown(virtual_key);
 }
 
+void LogicalFocusCoordinator::SetScope(components::Component* scope) {
+    scope_ = scope;
+    if (focused_ && !InScope(focused_)) {
+        focused_->SetLogicalFocus(false, window_active_);
+        focused_ = nullptr;
+    }
+}
+
 components::Component* LogicalFocusCoordinator::focused() const noexcept {
     return focused_;
 }
@@ -81,8 +92,20 @@ std::size_t LogicalFocusCoordinator::focusable_count() const noexcept {
     return focusable_.size();
 }
 
+std::size_t LogicalFocusCoordinator::active_focusable_count() const noexcept {
+    return static_cast<std::size_t>(std::count_if(
+        focusable_.begin(), focusable_.end(),
+        [this](const components::Component* component) { return InScope(component); }));
+}
+
+components::Component* LogicalFocusCoordinator::scope() const noexcept { return scope_; }
+
 bool LogicalFocusCoordinator::Contains(const components::Component* target) const noexcept {
     return std::find(focusable_.begin(), focusable_.end(), target) != focusable_.end();
+}
+
+bool LogicalFocusCoordinator::InScope(const components::Component* target) const noexcept {
+    return target && (!scope_ || target->IsDescendantOrSelfOf(scope_));
 }
 
 }  // namespace ui::containers

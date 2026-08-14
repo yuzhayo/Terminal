@@ -16,10 +16,18 @@ struct UiEvent {
     config::EventPayloadValue::Object payload;
 };
 
+enum class DialogRequestAction { Open, Save, Discard, Cancel };
+
+struct DialogRequest {
+    DialogRequestAction action = DialogRequestAction::Open;
+    std::string dialog_id;
+};
+
 struct UiPatch {
     std::uint64_t generation = 0;
     std::map<std::string, std::string, std::less<>> view_state;
     std::optional<std::wstring> window_title;
+    std::optional<DialogRequest> dialog_request;
     bool request_repaint = false;
 };
 

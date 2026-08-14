@@ -15,6 +15,7 @@
 #include "ui/components/component_registry.h"
 #include "ui/config/resolved_ui_document.h"
 #include "ui/containers/logical_focus_coordinator.h"
+#include "ui/containers/modal_overlay_stack.h"
 #include "ui/containers/overlay_plane.h"
 
 namespace ui::containers {
@@ -50,6 +51,9 @@ private:
     void Layout();
     void TrackPointer(POINT point);
     void DispatchStubEvent(const config::EventDefinition& event);
+    bool OpenModal(std::string_view dialog_id, std::wstring& diagnostic);
+    bool CloseModal(components::ModalResult result, std::wstring& diagnostic);
+    components::Component* HitTestInteractive(POINT point) const;
 
     HINSTANCE instance_ = nullptr;
     rendering::RenderRuntime& render_runtime_;
@@ -61,6 +65,7 @@ private:
     rendering::WindowRenderContext render_context_;
     components::ComponentRegistry registry_;
     LogicalFocusCoordinator focus_coordinator_;
+    ModalOverlayStack modal_stack_;
     OverlayPlane overlay_plane_;
     std::unique_ptr<components::ComponentHost> component_host_;
     std::unique_ptr<components::Component> root_;

@@ -25,6 +25,7 @@ public:
     bool PrepareResources(COLORREF parent_background) override;
     bool SuspendNativePeers(std::wstring& diagnostic) override;
     void ResumeNativePeers() override;
+    bool RequiresNativePeerSuppression() const noexcept override;
     void CollectEditableParticipants(std::vector<EditableParticipant*>& participants) override;
     void CollectAutomationElements(std::vector<Component*>& elements) override;
     AutomationRole automation_role() const noexcept override;

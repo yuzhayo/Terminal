@@ -194,7 +194,7 @@ void Load() {
 bool SaveSettings() {
     json::Value root = json::Value::Object();
     root.Set(L"version", json::Value::Number(1));
-    root.Set(L"theme", json::Value::String(ui::ThemeName(g_settings.theme)));
+    root.Set(L"theme", json::Value::String(g_settings.theme.empty() ? L"dark" : g_settings.theme));
 
     json::Value terminal = json::Value::Object();
     terminal.Set(L"folder", json::Value::String(g_settings.terminal_folder));

@@ -118,6 +118,7 @@
     <ClCompile Include="ui\components\checkbox\checkbox_component.cpp" />
     <ClCompile Include="ui\components\combo\combo_component.cpp" />
     <ClCompile Include="ui\components\container\container_component.cpp" />
+    <ClCompile Include="ui\components\dialog\dialog_component.cpp" />
     <ClCompile Include="ui\components\input\input_component.cpp" />
     <ClCompile Include="ui\components\input\native_peer_geometry.cpp" />
     <ClCompile Include="ui\components\screen\screen_component.cpp" />
@@ -129,6 +130,7 @@
     <ClCompile Include="ui\config\resolved_ui_document.cpp" />
     <ClCompile Include="ui\config\ui_config_gate.cpp" />
     <ClCompile Include="ui\containers\logical_focus_coordinator.cpp" />
+    <ClCompile Include="ui\containers\modal_overlay_stack.cpp" />
     <ClCompile Include="ui\containers\overlay_plane.cpp" />
     <ClCompile Include="ui\containers\window_container.cpp" />
     <ClCompile Include="ui\theme\theme_platform_adapter.cpp" />
@@ -156,6 +158,7 @@
     <ClInclude Include="ui\components\checkbox\checkbox_component.h" />
     <ClInclude Include="ui\components\combo\combo_component.h" />
     <ClInclude Include="ui\components\container\container_component.h" />
+    <ClInclude Include="ui\components\dialog\dialog_component.h" />
     <ClInclude Include="ui\components\input\input_component.h" />
     <ClInclude Include="ui\components\input\native_peer_geometry.h" />
     <ClInclude Include="ui\components\screen\screen_component.h" />
@@ -167,6 +170,7 @@
     <ClInclude Include="ui\config\resolved_ui_document.h" />
     <ClInclude Include="ui\config\ui_config_gate.h" />
     <ClInclude Include="ui\containers\logical_focus_coordinator.h" />
+    <ClInclude Include="ui\containers\modal_overlay_stack.h" />
     <ClInclude Include="ui\containers\overlay_plane.h" />
     <ClInclude Include="ui\containers\window_container.h" />
     <ClInclude Include="ui\theme\theme_platform_adapter.h" />

@@ -1994,8 +1994,122 @@
                   "payload": {}
                 }
               }
+            },
+            {
+              "id": "terminal-dialog-action",
+              "type": "Button",
+              "style": {
+                "$ref": "styles.button-default"
+              },
+              "label": "Uji dialog",
+              "events": {
+                "click": {
+                  "action": "open-save-discard-dialog",
+                  "payload": {}
+                }
+              }
             }
           ]
+        },
+        {
+          "id": "save-discard-dialog",
+          "type": "Dialog",
+          "style": {
+            "$ref": "styles.dialog"
+          },
+          "title": "Simpan perubahan?",
+          "width": 480,
+          "maxHeight": 720,
+          "dismissPolicy": {
+            "escape": true,
+            "outsideClick": false,
+            "explicitAction": true
+          },
+          "children": [
+            {
+              "id": "save-dialog-description",
+              "type": "Text",
+              "style": {
+                "$ref": "styles.text-body"
+              },
+              "text": "Pilih Simpan, Buang, atau kembali tanpa mengubah apa pun.",
+              "variant": "body",
+              "wrap": true
+            },
+            {
+              "id": "save-dialog-actions",
+              "type": "Container",
+              "style": {
+                "$ref": "styles.surface"
+              },
+              "layout": {
+                "width": "fill"
+              },
+              "direction": "row",
+              "gap": 8,
+              "justify": "end",
+              "children": [
+                {
+                  "id": "save-dialog-save",
+                  "type": "Button",
+                  "style": {
+                    "$ref": "styles.button-primary"
+                  },
+                  "label": "Simpan",
+                  "variant": "primary",
+                  "events": {
+                    "click": {
+                      "action": "dialog-save",
+                      "payload": {}
+                    }
+                  }
+                },
+                {
+                  "id": "save-dialog-discard",
+                  "type": "Button",
+                  "style": {
+                    "$ref": "styles.button-danger"
+                  },
+                  "label": "Buang",
+                  "variant": "danger",
+                  "events": {
+                    "click": {
+                      "action": "dialog-discard",
+                      "payload": {}
+                    }
+                  }
+                },
+                {
+                  "id": "save-dialog-cancel",
+                  "type": "Button",
+                  "style": {
+                    "$ref": "styles.button-default"
+                  },
+                  "label": "Batal",
+                  "events": {
+                    "click": {
+                      "action": "dialog-cancel",
+                      "payload": {}
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "events": {
+            "accept": {
+              "action": "save-confirmation-accepted",
+              "payload": {}
+            },
+            "cancel": {
+              "action": "save-confirmation-cancelled",
+              "payload": {}
+            },
+            "dismiss": {
+              "action": "save-confirmation-dismissed",
+              "payload": {}
+            }
+          }
         }
       ]
     }

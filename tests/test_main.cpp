@@ -29,6 +29,7 @@
 #include "resource.h"
 #include "ui/components/component_registry.h"
 #include "ui/components/combo/combo_component.h"
+#include "ui/components/dialog/dialog_component.h"
 #include "ui/components/editable_draft_state.h"
 #include "ui/components/input/native_peer_geometry.h"
 #include "ui/components/scrollbar/scrollbar_component.h"
@@ -36,6 +37,7 @@
 #include "ui/application/stub_application_bridge.h"
 #include "ui/config/ui_config_gate.h"
 #include "ui/containers/logical_focus_coordinator.h"
+#include "ui/containers/modal_overlay_stack.h"
 #include "ui/containers/overlay_plane.h"
 #include "ui/theme/theme_platform_adapter.h"
 
@@ -168,6 +170,67 @@ public:
 
 private:
     bool focusable_ = false;
+};
+
+class ModalProbeComponent final : public ui::components::Component {
+public:
+    ModalProbeComponent(const ui::config::ResolvedComponent& definition,
+                        ui::components::ComponentHost& host, bool focusable = false,
+                        bool modal = false, bool suppressible = false)
+        : Component(definition, host), focusable_(focusable), modal_(modal),
+          suppressible_(suppressible) {}
+
+    ui::components::MeasuredSize Measure(HDC, int available_width, int available_height) override {
+        return {available_width, available_height};
+    }
+    void Paint(HDC) override {}
+    bool CanFocus() const noexcept override { return focusable_ && (!modal_ || active_); }
+    bool FocusNativePeer() override { return true; }
+    void CollectFocusable(std::vector<ui::components::Component*>& focusable) override {
+        if (!modal_ || active_) Component::CollectFocusable(focusable);
+    }
+    bool RequiresNativePeerSuppression() const noexcept override { return suppressible_; }
+    bool SuspendNativePeers(std::wstring& diagnostic) override {
+        ++suspend_calls;
+        if (fail_suspend) {
+            diagnostic = L"probe suspend failure";
+            return false;
+        }
+        suspended = true;
+        diagnostic.clear();
+        return true;
+    }
+    void ResumeNativePeers() override {
+        ++resume_calls;
+        suspended = false;
+    }
+    bool IsModalOverlay() const noexcept override { return modal_; }
+    bool IsModalActive() const noexcept override { return active_; }
+    bool ActivateModal(std::wstring& diagnostic) override {
+        if (!modal_ || active_) return false;
+        active_ = true;
+        diagnostic.clear();
+        return true;
+    }
+    bool DeactivateModal(std::wstring& diagnostic) override {
+        if (!modal_ || !active_) return false;
+        active_ = false;
+        diagnostic.clear();
+        return true;
+    }
+    void CompleteModal(ui::components::ModalResult result) override { last_result = result; }
+
+    int suspend_calls = 0;
+    int resume_calls = 0;
+    bool fail_suspend = false;
+    bool suspended = false;
+    std::optional<ui::components::ModalResult> last_result;
+
+private:
+    bool focusable_ = false;
+    bool modal_ = false;
+    bool suppressible_ = false;
+    bool active_ = false;
 };
 
 platform::AppPaths MakeTestPaths(const std::filesystem::path& root) {
@@ -430,10 +493,10 @@ void TestUiConfigGateEmbeddedDefault() {
         gate.document()->theme(ui::config::ThemeKind::HighContrast).tokens.at("window")));
     const auto& main_window = gate.document()->windows.at("main");
     REQUIRE_TRUE(main_window.type == ui::config::ComponentType::Window);
-    REQUIRE_TRUE(main_window.children.size() == 1);
+    REQUIRE_TRUE(main_window.children.size() == 2);
     const auto& shell = main_window.children.front();
     REQUIRE_TRUE(shell.type == ui::config::ComponentType::Container);
-    REQUIRE_TRUE(shell.children.size() == 6);
+    REQUIRE_TRUE(shell.children.size() == 7);
     REQUIRE_TRUE(shell.children[0].type == ui::config::ComponentType::Text);
     REQUIRE_TRUE(shell.children[2].type == ui::config::ComponentType::Input);
     REQUIRE_TRUE(shell.children[3].type == ui::config::ComponentType::Combo);
@@ -442,6 +505,10 @@ void TestUiConfigGateEmbeddedDefault() {
     REQUIRE_TRUE(shell.children[4].children[0].type == ui::config::ComponentType::Checkbox);
     REQUIRE_TRUE(shell.children[4].children[1].type == ui::config::ComponentType::Toggle);
     REQUIRE_TRUE(shell.children[5].type == ui::config::ComponentType::Button);
+    REQUIRE_TRUE(shell.children[6].type == ui::config::ComponentType::Button);
+    const auto& dialog = main_window.children[1];
+    REQUIRE_TRUE(dialog.type == ui::config::ComponentType::Dialog);
+    REQUIRE_TRUE(dialog.children.size() == 2);
 }
 
 void TestScrollbarMetrics() {
@@ -474,6 +541,7 @@ void TestComponentRegistryVerticalSlice() {
     REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Card));
     REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Scrollbar));
     REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Combo));
+    REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Dialog));
 }
 
 void TestComboPopupPlacement() {
@@ -487,6 +555,110 @@ void TestComboPopupPlacement() {
         RECT{700, 550, 780, 582}, work, SIZE{220, 160}, 2);
     REQUIRE_TRUE(above.opens_above);
     REQUIRE_TRUE(above.origin.x == 580 && above.origin.y == 388);
+}
+
+void TestModalOverlayStackNestedSuppressionAndFocus() {
+    rendering::RenderRuntime runtime;
+    ui::config::ResolvedTheme theme;
+    theme.styles.push_back(ui::config::ResolvedStyle{});
+    ui::components::ComponentHost host;
+    host.render_runtime = &runtime;
+    host.theme = &theme;
+    const auto definition = [](std::string id) {
+        ui::config::ResolvedComponent value;
+        value.id = std::move(id);
+        value.style_index = 0;
+        return value;
+    };
+
+    ModalProbeComponent root(definition("root"), host);
+    auto background_focus = std::make_unique<ModalProbeComponent>(
+        definition("background-focus"), host, true);
+    auto background_peer = std::make_unique<ModalProbeComponent>(
+        definition("background-peer"), host, false, false, true);
+    auto outer = std::make_unique<ModalProbeComponent>(definition("outer"), host, false, true);
+    auto outer_focus = std::make_unique<ModalProbeComponent>(definition("outer-focus"), host, true);
+    auto outer_peer = std::make_unique<ModalProbeComponent>(
+        definition("outer-peer"), host, false, false, true);
+    auto inner = std::make_unique<ModalProbeComponent>(definition("inner"), host, false, true);
+    auto inner_focus = std::make_unique<ModalProbeComponent>(definition("inner-focus"), host, true);
+
+    auto* background_focus_pointer = background_focus.get();
+    auto* background_peer_pointer = background_peer.get();
+    auto* outer_pointer = outer.get();
+    auto* outer_focus_pointer = outer_focus.get();
+    auto* outer_peer_pointer = outer_peer.get();
+    auto* inner_pointer = inner.get();
+    auto* inner_focus_pointer = inner_focus.get();
+    inner->AddChild(std::move(inner_focus));
+    outer->AddChild(std::move(outer_focus));
+    outer->AddChild(std::move(outer_peer));
+    outer->AddChild(std::move(inner));
+    root.AddChild(std::move(background_focus));
+    root.AddChild(std::move(background_peer));
+    root.AddChild(std::move(outer));
+
+    ui::containers::LogicalFocusCoordinator focus;
+    focus.Rebuild(root);
+    REQUIRE_TRUE(focus.RequestFocus(background_focus_pointer));
+    ui::containers::ModalOverlayStack stack;
+    std::wstring diagnostic;
+
+    background_peer_pointer->fail_suspend = true;
+    REQUIRE_TRUE(!stack.Push(*outer_pointer, root, focus, diagnostic));
+    REQUIRE_TRUE(!stack.active());
+    REQUIRE_TRUE(stack.suppression_depth(background_peer_pointer) == 0);
+    background_peer_pointer->fail_suspend = false;
+
+    REQUIRE_TRUE(stack.Push(*outer_pointer, root, focus, diagnostic));
+    REQUIRE_TRUE(stack.size() == 1);
+    REQUIRE_TRUE(stack.suppression_depth(background_peer_pointer) == 1);
+    REQUIRE_TRUE(background_peer_pointer->suspended);
+    REQUIRE_TRUE(focus.scope() == outer_pointer);
+    REQUIRE_TRUE(focus.focused() == outer_focus_pointer);
+    REQUIRE_TRUE(!focus.RequestFocus(background_focus_pointer));
+
+    REQUIRE_TRUE(stack.Push(*inner_pointer, root, focus, diagnostic));
+    REQUIRE_TRUE(stack.size() == 2);
+    REQUIRE_TRUE(stack.suppression_depth(background_peer_pointer) == 2);
+    REQUIRE_TRUE(stack.suppression_depth(outer_peer_pointer) == 1);
+    REQUIRE_TRUE(outer_peer_pointer->suspended);
+    REQUIRE_TRUE(focus.focused() == inner_focus_pointer);
+
+    REQUIRE_TRUE(stack.Pop(ui::components::ModalResult::Cancel, root, focus, diagnostic));
+    REQUIRE_TRUE(inner_pointer->last_result == ui::components::ModalResult::Cancel);
+    REQUIRE_TRUE(stack.suppression_depth(background_peer_pointer) == 1);
+    REQUIRE_TRUE(stack.suppression_depth(outer_peer_pointer) == 0);
+    REQUIRE_TRUE(!outer_peer_pointer->suspended);
+    REQUIRE_TRUE(focus.focused() == outer_focus_pointer);
+
+    REQUIRE_TRUE(stack.Pop(ui::components::ModalResult::Discard, root, focus, diagnostic));
+    REQUIRE_TRUE(outer_pointer->last_result == ui::components::ModalResult::Discard);
+    REQUIRE_TRUE(!stack.active());
+    REQUIRE_TRUE(!background_peer_pointer->suspended);
+    REQUIRE_TRUE(focus.focused() == background_focus_pointer);
+}
+
+void TestDialogExplicitDismissPolicy() {
+    rendering::RenderRuntime runtime;
+    ui::config::ResolvedTheme theme;
+    theme.styles.push_back(ui::config::ResolvedStyle{});
+    ui::components::ComponentHost host;
+    host.render_runtime = &runtime;
+    host.theme = &theme;
+    ui::config::ResolvedComponent definition;
+    definition.id = "policy-dialog";
+    definition.type = ui::config::ComponentType::Dialog;
+    definition.style_index = 0;
+    ui::config::DialogProperties properties;
+    properties.title = std::string("Policy");
+    properties.dismiss_explicit_action = false;
+    definition.properties = properties;
+    ui::components::DialogComponent dialog(definition, host);
+    REQUIRE_TRUE(!dialog.CanCompleteModal(ui::components::ModalResult::Accept));
+    REQUIRE_TRUE(!dialog.CanCompleteModal(ui::components::ModalResult::Discard));
+    REQUIRE_TRUE(!dialog.CanCompleteModal(ui::components::ModalResult::Cancel));
+    REQUIRE_TRUE(dialog.CanCompleteModal(ui::components::ModalResult::Dismiss));
 }
 
 void TestLayeredPopupPremultipliedSurface() {
@@ -1071,6 +1243,10 @@ void TestStubApplicationBridgePatch() {
     REQUIRE_TRUE(patch->view_state.at("stubStatus") == "completed");
     REQUIRE_TRUE(patch->window_title.has_value());
     REQUIRE_TRUE(patch->request_repaint);
+    const auto dialog = bridge.Dispatch({"open-save-discard-dialog", {}});
+    REQUIRE_TRUE(dialog.has_value() && dialog->dialog_request.has_value());
+    REQUIRE_TRUE(dialog->dialog_request->action == ui::application::DialogRequestAction::Open);
+    REQUIRE_TRUE(dialog->dialog_request->dialog_id == "save-discard-dialog");
     REQUIRE_TRUE(!bridge.Dispatch({"unknown-action", {}}).has_value());
 }
 
@@ -1087,9 +1263,11 @@ std::vector<TestCase> DiscoverTests() {
         {"AppPaths.Contract", TestAppPathsContract, __FILE__, __LINE__},
         {"ComponentRegistry.VerticalSlice", TestComponentRegistryVerticalSlice, __FILE__, __LINE__},
         {"Combo.PopupPlacement", TestComboPopupPlacement, __FILE__, __LINE__},
+        {"Dialog.ExplicitDismissPolicy", TestDialogExplicitDismissPolicy, __FILE__, __LINE__},
         {"EditableDraftState.Transactions", TestEditableDraftStateTransactions, __FILE__, __LINE__},
         {"IconResource.Embedded", TestIconResourceEmbedded, __FILE__, __LINE__},
         {"LogicalFocusCoordinator.Traversal", TestLogicalFocusCoordinatorTraversal, __FILE__, __LINE__},
+        {"ModalOverlayStack.NestedSuppressionAndFocus", TestModalOverlayStackNestedSuppressionAndFocus, __FILE__, __LINE__},
         {"LayeredPopupRenderContext.PremultipliedSurface", TestLayeredPopupPremultipliedSurface, __FILE__, __LINE__},
         {"NativePeerGdiResourceCache.LeaseSharing", TestNativePeerGdiResourceLeaseSharing, __FILE__, __LINE__},
         {"NativePeerGeometry.Containment", TestNativePeerGeometryContainment, __FILE__, __LINE__},

@@ -255,6 +255,8 @@ void InputComponent::ResumeNativePeers() {
     suspended_display_text_.clear();
 }
 
+bool InputComponent::RequiresNativePeerSuppression() const noexcept { return true; }
+
 void InputComponent::CollectEditableParticipants(std::vector<EditableParticipant*>& participants) {
     participants.push_back(this);
 }

@@ -107,6 +107,7 @@
     <ClCompile Include="..\src\ui\components\checkbox\checkbox_component.cpp" />
     <ClCompile Include="..\src\ui\components\combo\combo_component.cpp" />
     <ClCompile Include="..\src\ui\components\container\container_component.cpp" />
+    <ClCompile Include="..\src\ui\components\dialog\dialog_component.cpp" />
     <ClCompile Include="..\src\ui\components\input\input_component.cpp" />
     <ClCompile Include="..\src\ui\components\input\native_peer_geometry.cpp" />
     <ClCompile Include="..\src\ui\components\screen\screen_component.cpp" />
@@ -116,6 +117,7 @@
     <ClCompile Include="..\src\ui\components\window\window_component.cpp" />
     <ClCompile Include="..\src\ui\application\stub_application_bridge.cpp" />
     <ClCompile Include="..\src\ui\containers\logical_focus_coordinator.cpp" />
+    <ClCompile Include="..\src\ui\containers\modal_overlay_stack.cpp" />
     <ClCompile Include="..\src\ui\containers\overlay_plane.cpp" />
     <ClCompile Include="..\src\ui\config\resolved_ui_document.cpp" />
     <ClCompile Include="..\src\ui\config\ui_config_gate.cpp" />
