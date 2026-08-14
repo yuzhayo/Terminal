@@ -18,10 +18,11 @@
 #include <vector>
 
 #include "app/app_identity.h"
-#include "config/ui_config_gate.h"
 #include "platform/app_paths.h"
 #include "platform/windows_runtime.h"
 #include "resource.h"
+#include "ui/config/ui_config_gate.h"
+#include "ui/theme/theme_platform_adapter.h"
 
 namespace {
 
@@ -54,6 +55,89 @@ void Require(bool condition, const char* expression, const char* file, int line)
 }
 
 #define REQUIRE_TRUE(condition) Require((condition), #condition, __FILE__, __LINE__)
+
+template <typename Function>
+void RequireThrows(Function&& function, const char* expression, const char* file, int line) {
+    bool threw = false;
+    try {
+        function();
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    Require(threw, expression, file, line);
+}
+
+#define REQUIRE_THROWS(expression) \
+    RequireThrows([&] { static_cast<void>(expression); }, #expression, __FILE__, __LINE__)
+
+std::string ReadEmbeddedDefaultJson() {
+    const HINSTANCE instance = GetModuleHandleW(nullptr);
+    const HRSRC resource = FindResourceW(instance, MAKEINTRESOURCEW(IDR_UI_DEFAULT_JSON), RT_RCDATA);
+    REQUIRE_TRUE(resource != nullptr);
+    const DWORD size = SizeofResource(instance, resource);
+    REQUIRE_TRUE(size > 0);
+    const HGLOBAL loaded = LoadResource(instance, resource);
+    const auto* bytes = loaded ? static_cast<const char*>(LockResource(loaded)) : nullptr;
+    REQUIRE_TRUE(bytes != nullptr);
+    return std::string(bytes, bytes + size);
+}
+
+Json ReadEmbeddedDefaultDocument() {
+    return Json::parse(ReadEmbeddedDefaultJson());
+}
+
+Json EmptyOverrideDocument() {
+    return {
+        {"schema", "yuzha.terminal.ui"},
+        {"version", 1},
+        {"documentKind", "override"},
+        {"minimumReaderContract", 1},
+        {"writtenBy", {{"appVersion", "0.1.0"}, {"configContract", 1}}},
+        {"tokens", Json::object()},
+        {"styles", Json::object()},
+        {"windows", Json::object()},
+        {"screens", Json::object()},
+    };
+}
+
+class ScopedTestDirectory final {
+public:
+    explicit ScopedTestDirectory(std::string_view suffix) {
+        root_ = std::filesystem::temp_directory_path() /
+                ("Yuzha.Terminal.Tests-" + std::to_string(GetCurrentProcessId()) + "-" +
+                 std::string(suffix));
+        std::error_code error;
+        std::filesystem::remove_all(root_, error);
+        std::filesystem::create_directories(root_);
+    }
+
+    ~ScopedTestDirectory() {
+        std::error_code error;
+        std::filesystem::remove_all(root_, error);
+    }
+
+    const std::filesystem::path& path() const noexcept { return root_; }
+
+private:
+    std::filesystem::path root_;
+};
+
+platform::AppPaths MakeTestPaths(const std::filesystem::path& root) {
+    platform::AppPaths paths;
+    paths.data_root = root.wstring();
+    paths.ui_override = (root / "ui" / "override.v1.json").wstring();
+    paths.ui_config_log = (root / "logs" / "ui-config.log").wstring();
+    paths.updater_state = (root / "updater" / "state.json").wstring();
+    return paths;
+}
+
+void WriteUtf8(const std::filesystem::path& path, std::string_view contents) {
+    std::filesystem::create_directories(path.parent_path());
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    REQUIRE_TRUE(output.good());
+    output.write(contents.data(), static_cast<std::streamsize>(contents.size()));
+    REQUIRE_TRUE(output.good());
+}
 
 struct TestCase {
     std::string name;
@@ -263,17 +347,273 @@ void TestIconResourceEmbedded() {
 }
 
 void TestUiConfigGateEmbeddedDefault() {
-    platform::AppPaths paths;
+    ScopedTestDirectory directory("embedded");
+    platform::AppPaths paths = MakeTestPaths(directory.path());
     std::wstring diagnostic;
-    REQUIRE_TRUE(platform::ResolveAppPaths(paths, diagnostic));
-
-    config::UiConfigGate gate(GetModuleHandleW(nullptr), paths);
+    ui::config::UiConfigGate gate(GetModuleHandleW(nullptr), paths);
     REQUIRE_TRUE(gate.ResolveBootstrap(diagnostic));
     REQUIRE_TRUE(diagnostic.empty());
+    REQUIRE_TRUE(gate.document() != nullptr);
+    REQUIRE_TRUE(gate.document()->generation == 1);
     REQUIRE_TRUE(gate.metadata().schema == app_identity::kUiSchema);
     REQUIRE_TRUE(gate.metadata().version == app_identity::kUiSchemaVersion);
     REQUIRE_TRUE(gate.metadata().minimum_reader_contract <= app_identity::kReaderContract);
     REQUIRE_TRUE(gate.metadata().written_by_config_contract == app_identity::kWriterContract);
+    REQUIRE_TRUE(gate.document()->windows.size() == 1);
+    REQUIRE_TRUE(gate.document()->screens.size() == 7);
+    REQUIRE_TRUE(gate.document()->theme(ui::config::ThemeKind::Dark).styles.size() ==
+                 gate.document()->theme(ui::config::ThemeKind::Light).styles.size());
+    const auto& light_styles = gate.document()->theme(ui::config::ThemeKind::Light).styles;
+    const auto title_style = std::find_if(light_styles.begin(), light_styles.end(),
+                                          [](const ui::config::ResolvedStyle& style) {
+                                              return style.id == "text-title";
+                                          });
+    const auto mono_style = std::find_if(light_styles.begin(), light_styles.end(),
+                                         [](const ui::config::ResolvedStyle& style) {
+                                             return style.id == "text-monospace";
+                                         });
+    REQUIRE_TRUE(title_style != light_styles.end());
+    REQUIRE_TRUE(title_style->font.family == "Segoe UI");
+    REQUIRE_TRUE(title_style->font.point_size == 12);
+    REQUIRE_TRUE(mono_style != light_styles.end());
+    REQUIRE_TRUE(mono_style->font.family == "Cascadia Mono");
+    REQUIRE_TRUE(mono_style->font.fallback_family == "Consolas");
+    REQUIRE_TRUE(std::holds_alternative<ui::config::SystemColorSlot>(
+        gate.document()->theme(ui::config::ThemeKind::HighContrast).tokens.at("window")));
+}
+
+void TestUiConfigDuplicateKeyRejected() {
+    const std::string embedded = ReadEmbeddedDefaultJson();
+    const std::string duplicate = "{\"schema\":\"yuzha.terminal.ui\"," + embedded.substr(1);
+    REQUIRE_THROWS(ui::config::detail::ResolveDocuments(duplicate, std::nullopt, 1));
+}
+
+void TestUiConfigUnknownFieldRejected() {
+    Json embedded = ReadEmbeddedDefaultDocument();
+    embedded["unexpected"] = true;
+    const std::string bytes = embedded.dump();
+    REQUIRE_THROWS(ui::config::detail::ResolveDocuments(bytes, std::nullopt, 1));
+}
+
+void TestUiConfigMissingAndCyclicReferencesRejected() {
+    Json missing = ReadEmbeddedDefaultDocument();
+    missing["styles"]["window"]["states"]["normal"]["background"]["$ref"] =
+        "tokens.doesNotExist";
+    const std::string missing_bytes = missing.dump();
+    REQUIRE_THROWS(ui::config::detail::ResolveDocuments(missing_bytes, std::nullopt, 1));
+
+    Json cyclic = ReadEmbeddedDefaultDocument();
+    cyclic["tokens"]["dark"]["accent"] = {{"$ref", "tokens.accentHover"}};
+    cyclic["tokens"]["dark"]["accentHover"] = {{"$ref", "tokens.accent"}};
+    const std::string cyclic_bytes = cyclic.dump();
+    REQUIRE_THROWS(ui::config::detail::ResolveDocuments(cyclic_bytes, std::nullopt, 1));
+}
+
+void TestUiConfigOverrideMergeAndArrayReplacement() {
+    const std::string embedded = ReadEmbeddedDefaultJson();
+    Json override_document = EmptyOverrideDocument();
+    override_document["tokens"]["dark"]["accent"] = "#010203";
+    override_document["screens"]["terminal"]["children"] = Json::array();
+    const std::string override_bytes = override_document.dump();
+
+    const auto result = ui::config::detail::ResolveDocuments(embedded, override_bytes, 7);
+    REQUIRE_TRUE(result.document != nullptr);
+    REQUIRE_TRUE(!result.override_diagnostic.has_value());
+    REQUIRE_TRUE(result.document->generation == 7);
+    const auto color = std::get<ui::config::LiteralRgba>(
+        result.document->theme(ui::config::ThemeKind::Dark).tokens.at("accent"));
+    REQUIRE_TRUE((color == ui::config::LiteralRgba{1, 2, 3, 255}));
+    REQUIRE_TRUE(result.document->screens.at("terminal").children.empty());
+}
+
+void TestUiConfigOverrideRejectedAsWhole() {
+    const std::string embedded = ReadEmbeddedDefaultJson();
+    Json override_document = EmptyOverrideDocument();
+    override_document["unknown"] = true;
+    const std::string override_bytes = override_document.dump();
+
+    const auto result = ui::config::detail::ResolveDocuments(embedded, override_bytes, 5);
+    REQUIRE_TRUE(result.document != nullptr);
+    REQUIRE_TRUE(result.override_diagnostic.has_value());
+    REQUIRE_TRUE(result.override_diagnostic->code == "unknown-field");
+    REQUIRE_TRUE(result.document->generation == 5);
+    REQUIRE_TRUE(result.document->screens.at("terminal").children.size() == 1);
+}
+
+void TestUiConfigRollbackIncompatibleOverridePreserved() {
+    const std::string embedded = ReadEmbeddedDefaultJson();
+    Json override_document = EmptyOverrideDocument();
+    override_document["minimumReaderContract"] = app_identity::kReaderContract + 1;
+    const std::string override_bytes = override_document.dump();
+
+    const auto result = ui::config::detail::ResolveDocuments(embedded, override_bytes, 1);
+    REQUIRE_TRUE(result.override_diagnostic.has_value());
+    REQUIRE_TRUE(result.override_diagnostic->rollback_incompatible);
+    REQUIRE_TRUE(result.override_diagnostic->code == "reader-contract");
+}
+
+void TestUiConfigAllComponentSchemasResolve() {
+    Json embedded = ReadEmbeddedDefaultDocument();
+    Json& children = embedded["screens"]["terminal"]["children"];
+    children.push_back({{"id", "layout"}, {"type", "Container"},
+                        {"style", {{"$ref", "styles.surface"}}}, {"children", Json::array()}});
+    children.push_back({{"id", "action"}, {"type", "Button"},
+                        {"style", {{"$ref", "styles.button-primary"}}}, {"label", "Run"},
+                        {"events", {{"click", {{"action", "run-stub"}, {"payload", Json::object()}}}}}});
+    children.push_back({{"id", "input"}, {"type", "Input"},
+                        {"style", {{"$ref", "styles.input"}}},
+                        {"valueBinding", {{"$bind", "viewState.inputValue"}}},
+                        {"placeholder", "Value"}});
+    children.push_back({{"id", "combo"}, {"type", "Combo"},
+                        {"style", {{"$ref", "styles.combo"}}},
+                        {"itemsBinding", {{"$bind", "viewState.items"}}},
+                        {"selectedValueBinding", {{"$bind", "viewState.selectedValue"}}},
+                        {"placeholder", "Choose"}});
+    children.push_back({{"id", "checkbox"}, {"type", "Checkbox"},
+                        {"style", {{"$ref", "styles.checkbox"}}}, {"label", "Checked"},
+                        {"checkedBinding", {{"$bind", "viewState.checked"}}}});
+    children.push_back({{"id", "toggle"}, {"type", "Toggle"},
+                        {"style", {{"$ref", "styles.toggle"}}}, {"label", "Enabled"},
+                        {"checkedBinding", {{"$bind", "viewState.enabled"}}}});
+    children.push_back({{"id", "card"}, {"type", "Card"},
+                        {"style", {{"$ref", "styles.card"}}}, {"children", Json::array()}});
+    children.push_back({{"id", "list"}, {"type", "List"},
+                        {"style", {{"$ref", "styles.list"}}},
+                        {"automation", {{"name", "Items"}}},
+                        {"itemsBinding", {{"$bind", "viewState.items"}}},
+                        {"itemTemplate", {{"id", "list-item"}, {"type", "Card"},
+                                          {"style", {{"$ref", "styles.card"}}},
+                                          {"children", Json::array()}}}});
+    children.push_back({{"id", "scrollbar"}, {"type", "Scrollbar"},
+                        {"style", {{"$ref", "styles.scrollbar"}}},
+                        {"automation", {{"name", "Scroll"}}}});
+    children.push_back({{"id", "dialog"}, {"type", "Dialog"},
+                        {"style", {{"$ref", "styles.dialog"}}}, {"title", "Confirm"},
+                        {"children", Json::array()}});
+    const std::string bytes = embedded.dump();
+
+    const auto result = ui::config::detail::ResolveDocuments(bytes, std::nullopt, 1);
+    REQUIRE_TRUE(result.document != nullptr);
+    REQUIRE_TRUE(result.document->screens.at("terminal").children.size() == 11);
+}
+
+void TestUiConfigNativeSurfaceAlphaRejected() {
+    Json embedded = ReadEmbeddedDefaultDocument();
+    embedded["tokens"]["dark"]["input"] = "#181B2180";
+    embedded["screens"]["terminal"]["children"].push_back(
+        {{"id", "input"}, {"type", "Input"}, {"style", {{"$ref", "styles.input"}}},
+         {"valueBinding", {{"$bind", "viewState.inputValue"}}}, {"placeholder", "Value"}});
+    const std::string bytes = embedded.dump();
+    REQUIRE_THROWS(ui::config::detail::ResolveDocuments(bytes, std::nullopt, 1));
+}
+
+void TestUiConfigHighContrastMappingRejected() {
+    Json embedded = ReadEmbeddedDefaultDocument();
+    embedded["tokens"]["highContrast"]["accent"] = {{"$systemColor", "windowText"}};
+    const std::string bytes = embedded.dump();
+    REQUIRE_THROWS(ui::config::detail::ResolveDocuments(bytes, std::nullopt, 1));
+}
+
+void TestUiConfigComponentRangeRejected() {
+    Json embedded = ReadEmbeddedDefaultDocument();
+    embedded["screens"]["terminal"]["children"].push_back(
+        {{"id", "combo"}, {"type", "Combo"}, {"style", {{"$ref", "styles.combo"}}},
+         {"automation", {{"name", "Choose"}}},
+         {"itemsBinding", {{"$bind", "viewState.items"}}},
+         {"selectedValueBinding", {{"$bind", "viewState.selectedValue"}}},
+         {"maxVisibleItems", 51}});
+    const std::string bytes = embedded.dump();
+    REQUIRE_THROWS(ui::config::detail::ResolveDocuments(bytes, std::nullopt, 1));
+}
+
+void TestUiConfigReloadKeepsLastKnownGood() {
+    ScopedTestDirectory directory("reload");
+    const platform::AppPaths paths = MakeTestPaths(directory.path());
+    ui::config::UiConfigGate gate(GetModuleHandleW(nullptr), paths);
+    std::wstring diagnostic;
+    REQUIRE_TRUE(gate.ResolveBootstrap(diagnostic));
+    const auto original = gate.document();
+    REQUIRE_TRUE(original != nullptr);
+
+    WriteUtf8(paths.ui_override, "{}");
+    REQUIRE_TRUE(!gate.Reload(diagnostic));
+    REQUIRE_TRUE(!diagnostic.empty());
+    REQUIRE_TRUE(gate.document() == original);
+    REQUIRE_TRUE(gate.document()->generation == 1);
+    REQUIRE_TRUE(gate.active_diagnostic().has_value());
+    REQUIRE_TRUE(gate.active_diagnostic()->source == WideToUtf8(paths.ui_override));
+    REQUIRE_TRUE(!gate.active_diagnostic_text().empty());
+
+    Json override_document = EmptyOverrideDocument();
+    override_document["tokens"]["light"]["accent"] = "#102030";
+    WriteUtf8(paths.ui_override, override_document.dump());
+    REQUIRE_TRUE(gate.Reload(diagnostic));
+    REQUIRE_TRUE(diagnostic.empty());
+    REQUIRE_TRUE(gate.document()->generation == 2);
+    REQUIRE_TRUE(!gate.active_diagnostic().has_value());
+}
+
+void TestUiConfigBootstrapRejectsOverrideAndUsesDefault() {
+    ScopedTestDirectory directory("bootstrap-invalid-override");
+    const platform::AppPaths paths = MakeTestPaths(directory.path());
+    WriteUtf8(paths.ui_override, "{}");
+    ui::config::UiConfigGate gate(GetModuleHandleW(nullptr), paths);
+    std::wstring diagnostic;
+    REQUIRE_TRUE(gate.ResolveBootstrap(diagnostic));
+    REQUIRE_TRUE(diagnostic.empty());
+    REQUIRE_TRUE(gate.document() != nullptr);
+    REQUIRE_TRUE(gate.document()->screens.size() == 7);
+    REQUIRE_TRUE(gate.active_diagnostic().has_value());
+    REQUIRE_TRUE(std::filesystem::is_regular_file(paths.ui_config_log));
+}
+
+void TestUiConfigVersionRejected() {
+    Json embedded = ReadEmbeddedDefaultDocument();
+    embedded["version"] = 2;
+    const std::string embedded_bytes = embedded.dump();
+    REQUIRE_THROWS(ui::config::detail::ResolveDocuments(embedded_bytes, std::nullopt, 1));
+
+    const std::string valid_embedded = ReadEmbeddedDefaultJson();
+    Json override_document = EmptyOverrideDocument();
+    override_document["version"] = 2;
+    const std::string override_bytes = override_document.dump();
+    const auto result =
+        ui::config::detail::ResolveDocuments(valid_embedded, override_bytes, 1);
+    REQUIRE_TRUE(result.override_diagnostic.has_value());
+    REQUIRE_TRUE(result.override_diagnostic->code == "unsupported-version");
+}
+
+void TestUiConfigNeverReadsLegacyUiJson() {
+    ScopedTestDirectory directory("legacy");
+    const platform::AppPaths paths = MakeTestPaths(directory.path());
+    WriteUtf8(directory.path() / "ui.json", "not-json");
+    ui::config::UiConfigGate gate(GetModuleHandleW(nullptr), paths);
+    std::wstring diagnostic;
+    REQUIRE_TRUE(gate.ResolveBootstrap(diagnostic));
+    REQUIRE_TRUE(diagnostic.empty());
+    REQUIRE_TRUE(!gate.active_diagnostic().has_value());
+}
+
+void TestThemePlatformAdapterContract() {
+    ui::theme::ThemePlatformAdapter adapter(
+        {false, ui::theme::PlatformAppTheme::Dark, false});
+    REQUIRE_TRUE(adapter.Select(ui::config::ThemePreference::System) ==
+                 ui::config::ThemeKind::Dark);
+    REQUIRE_TRUE(adapter.Select(ui::config::ThemePreference::Light) ==
+                 ui::config::ThemeKind::Light);
+    REQUIRE_TRUE(adapter.resource_epoch() == 1);
+    REQUIRE_TRUE(adapter.QueueBackgroundSnapshot(
+        {false, ui::theme::PlatformAppTheme::Light, false}));
+    REQUIRE_TRUE(!adapter.QueueBackgroundSnapshot(
+        {true, ui::theme::PlatformAppTheme::Light, false}));
+    REQUIRE_TRUE(adapter.ApplyQueuedSnapshot());
+    REQUIRE_TRUE(adapter.resource_epoch() == 2);
+    REQUIRE_TRUE(adapter.Select(ui::config::ThemePreference::Dark) ==
+                 ui::config::ThemeKind::HighContrast);
+    REQUIRE_TRUE(!adapter.ApplyQueuedSnapshot());
+    std::wstring diagnostic;
+    REQUIRE_TRUE(!adapter.StartPostFirstFrameMonitoring(nullptr, WM_APP + 1, diagnostic));
+    REQUIRE_TRUE(!diagnostic.empty());
 }
 
 void TestWindowsRuntimeMinimumBuild() {
@@ -288,7 +628,22 @@ std::vector<TestCase> DiscoverTests() {
         {"AppIdentity.Contract", TestAppIdentityContract, __FILE__, __LINE__},
         {"AppPaths.Contract", TestAppPathsContract, __FILE__, __LINE__},
         {"IconResource.Embedded", TestIconResourceEmbedded, __FILE__, __LINE__},
+        {"ThemePlatformAdapter.Contract", TestThemePlatformAdapterContract, __FILE__, __LINE__},
+        {"UiConfigGate.AllComponentSchemas", TestUiConfigAllComponentSchemasResolve, __FILE__, __LINE__},
+        {"UiConfigGate.BootstrapInvalidOverrideFallback", TestUiConfigBootstrapRejectsOverrideAndUsesDefault, __FILE__, __LINE__},
+        {"UiConfigGate.ComponentRangeRejected", TestUiConfigComponentRangeRejected, __FILE__, __LINE__},
+        {"UiConfigGate.DuplicateKeyRejected", TestUiConfigDuplicateKeyRejected, __FILE__, __LINE__},
         {"UiConfigGate.EmbeddedDefault", TestUiConfigGateEmbeddedDefault, __FILE__, __LINE__},
+        {"UiConfigGate.HighContrastMappingRejected", TestUiConfigHighContrastMappingRejected, __FILE__, __LINE__},
+        {"UiConfigGate.LegacyUiJsonIgnored", TestUiConfigNeverReadsLegacyUiJson, __FILE__, __LINE__},
+        {"UiConfigGate.MissingAndCyclicReferences", TestUiConfigMissingAndCyclicReferencesRejected, __FILE__, __LINE__},
+        {"UiConfigGate.NativeSurfaceAlphaRejected", TestUiConfigNativeSurfaceAlphaRejected, __FILE__, __LINE__},
+        {"UiConfigGate.OverrideMergeArrayReplacement", TestUiConfigOverrideMergeAndArrayReplacement, __FILE__, __LINE__},
+        {"UiConfigGate.OverrideRejectedAsWhole", TestUiConfigOverrideRejectedAsWhole, __FILE__, __LINE__},
+        {"UiConfigGate.ReloadLastKnownGood", TestUiConfigReloadKeepsLastKnownGood, __FILE__, __LINE__},
+        {"UiConfigGate.RollbackIncompatible", TestUiConfigRollbackIncompatibleOverridePreserved, __FILE__, __LINE__},
+        {"UiConfigGate.UnknownFieldRejected", TestUiConfigUnknownFieldRejected, __FILE__, __LINE__},
+        {"UiConfigGate.VersionRejected", TestUiConfigVersionRejected, __FILE__, __LINE__},
         {"WindowsRuntime.MinimumBuild", TestWindowsRuntimeMinimumBuild, __FILE__, __LINE__},
     };
     std::sort(tests.begin(), tests.end(),

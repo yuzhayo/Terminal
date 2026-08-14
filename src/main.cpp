@@ -6,7 +6,6 @@
 #include <string>
 
 #include "app/app_identity.h"
-#include "config/ui_config_gate.h"
 #include "instrumentation/performance_trace.h"
 #include "platform/app_paths.h"
 #include "platform/single_instance.h"
@@ -14,6 +13,7 @@
 #include "platform/windows_runtime.h"
 #include "rendering/gdi_renderer.h"
 #include "resource.h"
+#include "ui/config/ui_config_gate.h"
 
 namespace {
 
@@ -138,10 +138,13 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
         return 12;
     }
 
-    config::UiConfigGate config_gate(instance, paths);
+    ui::config::UiConfigGate config_gate(instance, paths);
     if (!config_gate.ResolveBootstrap(diagnostic)) {
         ShowBootstrapError(diagnostic);
         return 13;
+    }
+    if (config_gate.active_diagnostic()) {
+        ShowBootstrapError(config_gate.active_diagnostic_text());
     }
     instrumentation::TraceConfigResolved();
 

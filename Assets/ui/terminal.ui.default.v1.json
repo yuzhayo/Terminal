@@ -7,8 +7,1975 @@
     "appVersion": "0.1.0",
     "configContract": 1
   },
-  "tokens": {},
-  "styles": {},
-  "windows": {},
-  "screens": {}
+  "tokens": {
+    "dark": {
+      "window": "#14161B",
+      "surface": "#1C1F26",
+      "surfaceAlt": "#232730",
+      "border": "#303540",
+      "borderStrong": "#444B5A",
+      "text": "#E9EDF4",
+      "textDim": "#A8B2C2",
+      "textMuted": "#788294",
+      "accent": "#60A5FA",
+      "accentHover": "#93C5FD",
+      "accentPressed": "#BFDBFE",
+      "accentText": "#0F172A",
+      "danger": "#EF6060",
+      "success": "#4AC48C",
+      "input": "#181B21",
+      "selection": "#263E64",
+      "scrim": "#00000099",
+      "transparent": "#00000000"
+    },
+    "light": {
+      "window": "#F5F6F9",
+      "surface": "#FFFFFF",
+      "surfaceAlt": "#F0F2F6",
+      "border": "#D8DCE3",
+      "borderStrong": "#BAC0CB",
+      "text": "#181C24",
+      "textDim": "#565F6E",
+      "textMuted": "#7E8796",
+      "accent": "#2563EB",
+      "accentHover": "#1D4ED8",
+      "accentPressed": "#1E40AF",
+      "accentText": "#FFFFFF",
+      "danger": "#CB3737",
+      "success": "#1C9460",
+      "input": "#FFFFFF",
+      "selection": "#CDE0FC",
+      "scrim": "#00000066",
+      "transparent": "#00000000"
+    },
+    "highContrast": {
+      "window": {
+        "$systemColor": "window"
+      },
+      "surface": {
+        "$systemColor": "window"
+      },
+      "surfaceAlt": {
+        "$systemColor": "window"
+      },
+      "border": {
+        "$systemColor": "windowText"
+      },
+      "borderStrong": {
+        "$systemColor": "windowText"
+      },
+      "text": {
+        "$systemColor": "windowText"
+      },
+      "textDim": {
+        "$systemColor": "windowText"
+      },
+      "textMuted": {
+        "$systemColor": "grayText"
+      },
+      "accent": {
+        "$systemColor": "highlight"
+      },
+      "accentHover": {
+        "$systemColor": "highlight"
+      },
+      "accentPressed": {
+        "$systemColor": "highlight"
+      },
+      "accentText": {
+        "$systemColor": "highlightText"
+      },
+      "danger": {
+        "$systemColor": "highlight"
+      },
+      "success": {
+        "$systemColor": "highlight"
+      },
+      "input": {
+        "$systemColor": "window"
+      },
+      "selection": {
+        "$systemColor": "highlight"
+      },
+      "scrim": {
+        "$systemColor": "window"
+      },
+      "transparent": {
+        "$systemColor": "window"
+      }
+    }
+  },
+  "styles": {
+    "window": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 0,
+      "contentPadding": {
+        "left": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0
+      },
+      "radius": 0,
+      "borderWidth": 0,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.window"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.window"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.window"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.window"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.window"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.window"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    },
+    "surface": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 0,
+      "contentPadding": {
+        "left": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0
+      },
+      "radius": 0,
+      "borderWidth": 0,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.surface"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.borderStrong"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.surface"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    },
+    "text-body": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 0,
+      "contentPadding": {
+        "left": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0
+      },
+      "radius": 0,
+      "borderWidth": 0,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.selection"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    },
+    "text-title": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 12,
+        "weight": 600
+      },
+      "minimumHeight": 0,
+      "contentPadding": {
+        "left": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0
+      },
+      "radius": 0,
+      "borderWidth": 0,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.selection"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    },
+    "text-caption": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 0,
+      "contentPadding": {
+        "left": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0
+      },
+      "radius": 0,
+      "borderWidth": 0,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.textDim"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.textDim"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.textDim"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.selection"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.textDim"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    },
+    "text-monospace": {
+      "font": {
+        "family": "Cascadia Mono",
+        "fallbackFamily": "Consolas",
+        "pointSize": 10,
+        "weight": 400
+      },
+      "minimumHeight": 0,
+      "contentPadding": {
+        "left": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0
+      },
+      "radius": 0,
+      "borderWidth": 0,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.selection"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    },
+    "button-default": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 32,
+      "contentPadding": {
+        "left": 12,
+        "top": 6,
+        "right": 12,
+        "bottom": 6
+      },
+      "radius": 6,
+      "borderWidth": 1,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.surface"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.borderStrong"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.surface"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    },
+    "button-primary": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 32,
+      "contentPadding": {
+        "left": 12,
+        "top": 6,
+        "right": 12,
+        "bottom": 6
+      },
+      "radius": 6,
+      "borderWidth": 1,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.accent"
+          },
+          "foreground": {
+            "$ref": "tokens.accentText"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.accentHover"
+          },
+          "foreground": {
+            "$ref": "tokens.accentText"
+          },
+          "border": {
+            "$ref": "tokens.accentHover"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.accentPressed"
+          },
+          "foreground": {
+            "$ref": "tokens.accentText"
+          },
+          "border": {
+            "$ref": "tokens.accentPressed"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.accentPressed"
+          },
+          "foreground": {
+            "$ref": "tokens.accentText"
+          },
+          "border": {
+            "$ref": "tokens.accentPressed"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.accent"
+          },
+          "foreground": {
+            "$ref": "tokens.accentText"
+          },
+          "border": {
+            "$ref": "tokens.accentHover"
+          }
+        }
+      }
+    },
+    "button-subtle": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 32,
+      "contentPadding": {
+        "left": 12,
+        "top": 6,
+        "right": 12,
+        "bottom": 6
+      },
+      "radius": 6,
+      "borderWidth": 1,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.textDim"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.textDim"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    },
+    "button-danger": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 32,
+      "contentPadding": {
+        "left": 12,
+        "top": 6,
+        "right": 12,
+        "bottom": 6
+      },
+      "radius": 6,
+      "borderWidth": 1,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.danger"
+          },
+          "foreground": {
+            "$ref": "tokens.accentText"
+          },
+          "border": {
+            "$ref": "tokens.danger"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.danger"
+          },
+          "foreground": {
+            "$ref": "tokens.accentText"
+          },
+          "border": {
+            "$ref": "tokens.borderStrong"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.danger"
+          },
+          "foreground": {
+            "$ref": "tokens.accentText"
+          },
+          "border": {
+            "$ref": "tokens.danger"
+          }
+        }
+      }
+    },
+    "button-navigation": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 32,
+      "contentPadding": {
+        "left": 12,
+        "top": 6,
+        "right": 12,
+        "bottom": 6
+      },
+      "radius": 8,
+      "borderWidth": 1,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.textDim"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.transparent"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.transparent"
+          },
+          "foreground": {
+            "$ref": "tokens.textDim"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    },
+    "button-bookmark": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 32,
+      "contentPadding": {
+        "left": 12,
+        "top": 6,
+        "right": 12,
+        "bottom": 6
+      },
+      "radius": 8,
+      "borderWidth": 1,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.surface"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.borderStrong"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.surface"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    },
+    "input": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 32,
+      "contentPadding": {
+        "left": 8,
+        "top": 6,
+        "right": 8,
+        "bottom": 6
+      },
+      "radius": 6,
+      "borderWidth": 1,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.input"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.input"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.borderStrong"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.input"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.input"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.input"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    },
+    "combo": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 32,
+      "contentPadding": {
+        "left": 8,
+        "top": 6,
+        "right": 8,
+        "bottom": 6
+      },
+      "radius": 6,
+      "borderWidth": 1,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.input"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.input"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.borderStrong"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.input"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.input"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.input"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    },
+    "checkbox": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 32,
+      "contentPadding": {
+        "left": 6,
+        "top": 6,
+        "right": 6,
+        "bottom": 6
+      },
+      "radius": 3,
+      "borderWidth": 1,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.input"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.input"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.borderStrong"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.accent"
+          },
+          "foreground": {
+            "$ref": "tokens.accentText"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.accent"
+          },
+          "foreground": {
+            "$ref": "tokens.accentText"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.input"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    },
+    "toggle": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 32,
+      "contentPadding": {
+        "left": 6,
+        "top": 6,
+        "right": 6,
+        "bottom": 6
+      },
+      "radius": 6,
+      "borderWidth": 1,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.input"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.input"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.borderStrong"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.accent"
+          },
+          "foreground": {
+            "$ref": "tokens.accentText"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.accent"
+          },
+          "foreground": {
+            "$ref": "tokens.accentText"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.input"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    },
+    "card": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 0,
+      "contentPadding": {
+        "left": 12,
+        "top": 12,
+        "right": 12,
+        "bottom": 12
+      },
+      "radius": 10,
+      "borderWidth": 1,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.surface"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.borderStrong"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.surface"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    },
+    "list": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 0,
+      "contentPadding": {
+        "left": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0
+      },
+      "radius": 0,
+      "borderWidth": 1,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.surface"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.borderStrong"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.surface"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    },
+    "scrollbar": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 0,
+      "contentPadding": {
+        "left": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0
+      },
+      "radius": 6,
+      "borderWidth": 1,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.borderStrong"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.accent"
+          },
+          "border": {
+            "$ref": "tokens.borderStrong"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.accent"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.selection"
+          },
+          "foreground": {
+            "$ref": "tokens.accent"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.surface"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    },
+    "dialog": {
+      "font": {
+        "family": "Segoe UI",
+        "fallbackFamily": "",
+        "pointSize": 9,
+        "weight": 400
+      },
+      "minimumHeight": 0,
+      "contentPadding": {
+        "left": 16,
+        "top": 16,
+        "right": 16,
+        "bottom": 16
+      },
+      "radius": 12,
+      "borderWidth": 1,
+      "focusWidth": 2,
+      "states": {
+        "normal": {
+          "background": {
+            "$ref": "tokens.surface"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.borderStrong"
+          }
+        },
+        "hover": {
+          "background": {
+            "$ref": "tokens.surface"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.borderStrong"
+          }
+        },
+        "pressed": {
+          "background": {
+            "$ref": "tokens.surface"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.borderStrong"
+          }
+        },
+        "selected": {
+          "background": {
+            "$ref": "tokens.surface"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.borderStrong"
+          }
+        },
+        "disabled": {
+          "background": {
+            "$ref": "tokens.surfaceAlt"
+          },
+          "foreground": {
+            "$ref": "tokens.textMuted"
+          },
+          "border": {
+            "$ref": "tokens.border"
+          }
+        },
+        "focus": {
+          "background": {
+            "$ref": "tokens.surface"
+          },
+          "foreground": {
+            "$ref": "tokens.text"
+          },
+          "border": {
+            "$ref": "tokens.accent"
+          }
+        }
+      }
+    }
+  },
+  "windows": {
+    "main": {
+      "id": "main-window",
+      "type": "Window",
+      "style": {
+        "$ref": "styles.window"
+      },
+      "title": "Terminal",
+      "initialWidth": 760,
+      "initialHeight": 520,
+      "minWidth": 620,
+      "minHeight": 420,
+      "resizable": true,
+      "children": []
+    }
+  },
+  "screens": {
+    "terminal": {
+      "id": "terminal-screen",
+      "type": "Screen",
+      "style": {
+        "$ref": "styles.surface"
+      },
+      "routeId": "terminal",
+      "children": [
+        {
+          "id": "terminal-title",
+          "type": "Text",
+          "style": {
+            "$ref": "styles.text-title"
+          },
+          "text": "Terminal",
+          "variant": "title"
+        }
+      ]
+    },
+    "json-inject": {
+      "id": "json-inject-screen",
+      "type": "Screen",
+      "style": {
+        "$ref": "styles.surface"
+      },
+      "routeId": "json-inject",
+      "children": [
+        {
+          "id": "json-inject-title",
+          "type": "Text",
+          "style": {
+            "$ref": "styles.text-title"
+          },
+          "text": "JSON INJECT",
+          "variant": "title"
+        }
+      ]
+    },
+    "json-editor": {
+      "id": "json-editor-screen",
+      "type": "Screen",
+      "style": {
+        "$ref": "styles.surface"
+      },
+      "routeId": "json-editor",
+      "children": [
+        {
+          "id": "json-editor-title",
+          "type": "Text",
+          "style": {
+            "$ref": "styles.text-title"
+          },
+          "text": "JSON Editor",
+          "variant": "title"
+        }
+      ]
+    },
+    "chrome-launcher": {
+      "id": "chrome-launcher-screen",
+      "type": "Screen",
+      "style": {
+        "$ref": "styles.surface"
+      },
+      "routeId": "chrome-launcher",
+      "children": [
+        {
+          "id": "chrome-launcher-title",
+          "type": "Text",
+          "style": {
+            "$ref": "styles.text-title"
+          },
+          "text": "Chrome Launcher",
+          "variant": "title"
+        }
+      ]
+    },
+    "chrome-profile-manager": {
+      "id": "chrome-profile-manager-screen",
+      "type": "Screen",
+      "style": {
+        "$ref": "styles.surface"
+      },
+      "routeId": "chrome-profile-manager",
+      "children": [
+        {
+          "id": "chrome-profile-manager-title",
+          "type": "Text",
+          "style": {
+            "$ref": "styles.text-title"
+          },
+          "text": "Chrome Profile Manager",
+          "variant": "title"
+        }
+      ]
+    },
+    "settings": {
+      "id": "settings-screen",
+      "type": "Screen",
+      "style": {
+        "$ref": "styles.surface"
+      },
+      "routeId": "settings",
+      "children": [
+        {
+          "id": "settings-title",
+          "type": "Text",
+          "style": {
+            "$ref": "styles.text-title"
+          },
+          "text": "Settings",
+          "variant": "title"
+        }
+      ]
+    },
+    "ui-editor": {
+      "id": "ui-editor-screen",
+      "type": "Screen",
+      "style": {
+        "$ref": "styles.surface"
+      },
+      "routeId": "ui-editor",
+      "children": [
+        {
+          "id": "ui-editor-title",
+          "type": "Text",
+          "style": {
+            "$ref": "styles.text-title"
+          },
+          "text": "UI Editor",
+          "variant": "title"
+        }
+      ]
+    }
+  }
 }

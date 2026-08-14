@@ -57,7 +57,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(VelopackDir)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>user32.lib;gdi32.lib;dwmapi.lib;advapi32.lib;shell32.lib;ole32.lib;uuid.lib;velopack_libc_win_x64_msvc.dll.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>user32.lib;gdi32.lib;dwmapi.lib;advapi32.lib;shell32.lib;ole32.lib;uuid.lib;windowsapp.lib;velopack_libc_win_x64_msvc.dll.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <AdditionalManifestFiles>$(ProjectDir)app.manifest</AdditionalManifestFiles>
@@ -89,16 +89,17 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="config\ui_config_gate.cpp" />
     <ClCompile Include="instrumentation\performance_trace.cpp" />
     <ClCompile Include="platform\app_paths.cpp" />
     <ClCompile Include="platform\single_instance.cpp" />
     <ClCompile Include="platform\updater.cpp" />
     <ClCompile Include="platform\windows_runtime.cpp" />
     <ClCompile Include="rendering\gdi_renderer.cpp" />
+    <ClCompile Include="ui\config\resolved_ui_document.cpp" />
+    <ClCompile Include="ui\config\ui_config_gate.cpp" />
+    <ClCompile Include="ui\theme\theme_platform_adapter.cpp" />
     <ClInclude Include="app\app_identity.h" />
     <ClInclude Include="app\app_version.h" />
-    <ClInclude Include="config\ui_config_gate.h" />
     <ClInclude Include="instrumentation\performance_trace.h" />
     <ClInclude Include="platform\app_paths.h" />
     <ClInclude Include="platform\single_instance.h" />
@@ -106,6 +107,9 @@
     <ClInclude Include="platform\windows_runtime.h" />
     <ClInclude Include="rendering\gdi_renderer.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="ui\config\resolved_ui_document.h" />
+    <ClInclude Include="ui\config\ui_config_gate.h" />
+    <ClInclude Include="ui\theme\theme_platform_adapter.h" />
     <None Include="app.manifest" />
     <None Include="..\Assets\Terminal-Icon.png" />
     <None Include="..\Assets\terminal.ico" />
