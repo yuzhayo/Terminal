@@ -97,9 +97,21 @@ function Stop-Terminal {
     if (Test-Path -LiteralPath $launcherExecutable -PathType Leaf) {
         Invoke-CheckedProcess -FilePath $launcherExecutable -ArgumentList '--exit' -TimeoutSeconds 15
     }
-    Get-Process -Name Terminal -ErrorAction SilentlyContinue |
-        Where-Object { $_.Path -and $_.Path.StartsWith($installRoot, [StringComparison]::OrdinalIgnoreCase) } |
-        ForEach-Object { $_.WaitForExit(5000) | Out-Null }
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        $remaining = @(Get-Process -Name Terminal -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Path -and
+                $_.Path.StartsWith($installRoot, [StringComparison]::OrdinalIgnoreCase)
+            })
+        if ($remaining.Count -eq 0) {
+            return
+        }
+        foreach ($process in $remaining) {
+            $process.WaitForExit(250) | Out-Null
+        }
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw "Terminal masih berjalan setelah orderly exit: $($remaining.Id -join ', ')."
 }
 
 New-Item -ItemType Directory -Path $ResultRoot -Force | Out-Null
@@ -158,11 +170,14 @@ try {
     Set-Phase -Name 'testing-single-instance'
     Stop-Terminal
     $startedAfter = [DateTime]::Now.AddSeconds(-2)
-    $launcherProcess = Start-Process -FilePath $launcherExecutable -PassThru
-    $first = $launcherProcess
-    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    $first = Start-Process -FilePath $currentExecutable -PassThru
+    $deadline = [DateTime]::UtcNow.AddSeconds(30)
     do {
         Start-Sleep -Milliseconds 100
+        $first.Refresh()
+        if ($first.HasExited) {
+            throw "Installed application keluar sebelum membuat main window. Exit code: $($first.ExitCode)."
+        }
         $candidate = Get-Process -Name Terminal -ErrorAction SilentlyContinue |
             Where-Object {
                 $_.Path -and
@@ -177,7 +192,7 @@ try {
         }
     } while ($first.MainWindowHandle -eq 0 -and [DateTime]::UtcNow -lt $deadline)
     if ($first.MainWindowHandle -eq 0) {
-        throw 'Installed application tidak membuat main window.'
+        throw 'Installed application tidak membuat main window dalam 30 detik.'
     }
 
     $second = Start-Process -FilePath $launcherExecutable -PassThru
