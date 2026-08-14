@@ -121,6 +121,7 @@
     <ClCompile Include="ui\components\dialog\dialog_component.cpp" />
     <ClCompile Include="ui\components\input\input_component.cpp" />
     <ClCompile Include="ui\components\input\native_peer_geometry.cpp" />
+    <ClCompile Include="ui\components\list\list_component.cpp" />
     <ClCompile Include="ui\components\screen\screen_component.cpp" />
     <ClCompile Include="ui\components\scrollbar\scrollbar_component.cpp" />
     <ClCompile Include="ui\components\text\text_component.cpp" />
@@ -161,6 +162,7 @@
     <ClInclude Include="ui\components\dialog\dialog_component.h" />
     <ClInclude Include="ui\components\input\input_component.h" />
     <ClInclude Include="ui\components\input\native_peer_geometry.h" />
+    <ClInclude Include="ui\components\list\list_component.h" />
     <ClInclude Include="ui\components\screen\screen_component.h" />
     <ClInclude Include="ui\components\scrollbar\scrollbar_component.h" />
     <ClInclude Include="ui\components\text\text_component.h" />

@@ -32,6 +32,7 @@
 #include "ui/components/dialog/dialog_component.h"
 #include "ui/components/editable_draft_state.h"
 #include "ui/components/input/native_peer_geometry.h"
+#include "ui/components/list/list_component.h"
 #include "ui/components/scrollbar/scrollbar_component.h"
 #include "ui/components/text/text_component.h"
 #include "ui/application/stub_application_bridge.h"
@@ -496,7 +497,7 @@ void TestUiConfigGateEmbeddedDefault() {
     REQUIRE_TRUE(main_window.children.size() == 2);
     const auto& shell = main_window.children.front();
     REQUIRE_TRUE(shell.type == ui::config::ComponentType::Container);
-    REQUIRE_TRUE(shell.children.size() == 7);
+    REQUIRE_TRUE(shell.children.size() == 8);
     REQUIRE_TRUE(shell.children[0].type == ui::config::ComponentType::Text);
     REQUIRE_TRUE(shell.children[2].type == ui::config::ComponentType::Input);
     REQUIRE_TRUE(shell.children[3].type == ui::config::ComponentType::Combo);
@@ -504,8 +505,9 @@ void TestUiConfigGateEmbeddedDefault() {
     REQUIRE_TRUE(shell.children[4].children.size() == 2);
     REQUIRE_TRUE(shell.children[4].children[0].type == ui::config::ComponentType::Checkbox);
     REQUIRE_TRUE(shell.children[4].children[1].type == ui::config::ComponentType::Toggle);
-    REQUIRE_TRUE(shell.children[5].type == ui::config::ComponentType::Button);
+    REQUIRE_TRUE(shell.children[5].type == ui::config::ComponentType::List);
     REQUIRE_TRUE(shell.children[6].type == ui::config::ComponentType::Button);
+    REQUIRE_TRUE(shell.children[7].type == ui::config::ComponentType::Button);
     const auto& dialog = main_window.children[1];
     REQUIRE_TRUE(dialog.type == ui::config::ComponentType::Dialog);
     REQUIRE_TRUE(dialog.children.size() == 2);
@@ -528,6 +530,65 @@ void TestScrollbarMetrics() {
     REQUIRE_TRUE(end.thumb_start == 75);
 }
 
+void TestListVirtualizationSelectionAndScroll() {
+    const auto initial = ui::components::CalculateListRealizationRange(100, 32, 0, 96, 2);
+    REQUIRE_TRUE(initial.first == 0);
+    REQUIRE_TRUE(initial.count == 5);
+    const auto middle = ui::components::CalculateListRealizationRange(100, 32, 320, 96, 2);
+    REQUIRE_TRUE(middle.first == 8);
+    REQUIRE_TRUE(middle.count == 7);
+    const auto end = ui::components::CalculateListRealizationRange(100, 32, 3104, 96, 2);
+    REQUIRE_TRUE(end.first == 95);
+    REQUIRE_TRUE(end.count == 5);
+
+    rendering::RenderRuntime runtime;
+    ui::config::ResolvedTheme theme;
+    ui::config::ResolvedStyle list_style;
+    list_style.id = "list";
+    theme.styles.push_back(list_style);
+    ui::config::ResolvedStyle scrollbar_style;
+    scrollbar_style.id = "scrollbar";
+    theme.styles.push_back(scrollbar_style);
+    ui::components::ComponentHost host;
+    host.render_runtime = &runtime;
+    host.theme = &theme;
+    host.resolve_string_items = [](std::string_view) {
+        std::vector<std::wstring> values;
+        for (int index = 0; index < 100; ++index) values.push_back(std::to_wstring(index));
+        return values;
+    };
+
+    auto item_template = std::make_shared<ui::config::ResolvedComponent>();
+    item_template->id = "row";
+    item_template->type = ui::config::ComponentType::Card;
+    item_template->style_index = 0;
+    item_template->properties = ui::config::CardProperties{};
+    ui::config::ResolvedComponent definition;
+    definition.id = "virtual-list";
+    definition.type = ui::config::ComponentType::List;
+    definition.style_index = 0;
+    ui::config::ListProperties properties;
+    properties.items_binding.path = "viewState.items";
+    properties.item_template = item_template;
+    properties.row_height = 32;
+    properties.overscan_rows = 2;
+    definition.properties = properties;
+
+    ui::components::ListComponent list(definition, host);
+    list.Arrange({0, 0, 200, 96});
+    REQUIRE_TRUE(list.realized_row_count() == 5);
+    REQUIRE_TRUE(list.ScrollMaximum() == 3104);
+    list.SetScrollValue(320);
+    REQUIRE_TRUE(list.realized_range().first == 8);
+    REQUIRE_TRUE(list.realized_row_count() == 7);
+    list.SetLogicalFocus(true, true);
+    REQUIRE_TRUE(list.HandleKeyDown(VK_END));
+    REQUIRE_TRUE(list.selected_index().has_value() && *list.selected_index() == 99);
+    REQUIRE_TRUE(list.ScrollValue() == list.ScrollMaximum());
+    REQUIRE_TRUE(list.realized_range().first == 95);
+    REQUIRE_TRUE(list.realized_row_count() == 5);
+}
+
 void TestComponentRegistryVerticalSlice() {
     ui::components::ComponentRegistry registry;
     REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Window));
@@ -542,6 +603,7 @@ void TestComponentRegistryVerticalSlice() {
     REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Scrollbar));
     REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Combo));
     REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Dialog));
+    REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::List));
 }
 
 void TestComboPopupPlacement() {
@@ -1237,6 +1299,10 @@ void TestStubApplicationBridgePatch() {
     const auto profiles = bridge.ResolveStringItems("terminalProfiles");
     REQUIRE_TRUE(profiles.size() == 3);
     REQUIRE_TRUE(profiles.front() == L"PowerShell");
+    const auto sessions = bridge.ResolveStringItems("viewState.terminalSessions");
+    REQUIRE_TRUE(sessions.size() == 80);
+    REQUIRE_TRUE(sessions.front() == L"Session 01 - PowerShell");
+    REQUIRE_TRUE(sessions.back() == L"Session 80 - Command Prompt");
     const auto patch = bridge.Dispatch({"run-terminal-stub", {}});
     REQUIRE_TRUE(patch.has_value());
     REQUIRE_TRUE(patch->generation == 1);
@@ -1264,6 +1330,7 @@ std::vector<TestCase> DiscoverTests() {
         {"ComponentRegistry.VerticalSlice", TestComponentRegistryVerticalSlice, __FILE__, __LINE__},
         {"Combo.PopupPlacement", TestComboPopupPlacement, __FILE__, __LINE__},
         {"Dialog.ExplicitDismissPolicy", TestDialogExplicitDismissPolicy, __FILE__, __LINE__},
+        {"List.VirtualizationSelectionAndScroll", TestListVirtualizationSelectionAndScroll, __FILE__, __LINE__},
         {"EditableDraftState.Transactions", TestEditableDraftStateTransactions, __FILE__, __LINE__},
         {"IconResource.Embedded", TestIconResourceEmbedded, __FILE__, __LINE__},
         {"LogicalFocusCoordinator.Traversal", TestLogicalFocusCoordinatorTraversal, __FILE__, __LINE__},

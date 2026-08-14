@@ -1981,6 +1981,49 @@
               }
             },
             {
+              "id": "terminal-sessions",
+              "type": "List",
+              "style": {
+                "$ref": "styles.list"
+              },
+              "layout": {
+                "width": "fill",
+                "height": 120
+              },
+              "automation": {
+                "name": "Sesi terminal"
+              },
+              "itemsBinding": {
+                "$bind": "viewState.terminalSessions"
+              },
+              "itemTemplate": {
+                "id": "terminal-session-row",
+                "type": "Card",
+                "style": {
+                  "$ref": "styles.card"
+                },
+                "children": []
+              },
+              "selectedIdBinding": {
+                "$bind": "viewState.selectedTerminalSession"
+              },
+              "rowHeight": 32,
+              "overscanRows": 2,
+              "selection": "single",
+              "emptyText": "Tidak ada sesi",
+              "scrollbar": "auto",
+              "events": {
+                "selectionChanged": {
+                  "action": "select-terminal-session",
+                  "payload": {}
+                },
+                "activate": {
+                  "action": "activate-terminal-session",
+                  "payload": {}
+                }
+              }
+            },
+            {
               "id": "terminal-stub-action",
               "type": "Button",
               "style": {

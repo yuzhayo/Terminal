@@ -110,6 +110,7 @@
     <ClCompile Include="..\src\ui\components\dialog\dialog_component.cpp" />
     <ClCompile Include="..\src\ui\components\input\input_component.cpp" />
     <ClCompile Include="..\src\ui\components\input\native_peer_geometry.cpp" />
+    <ClCompile Include="..\src\ui\components\list\list_component.cpp" />
     <ClCompile Include="..\src\ui\components\screen\screen_component.cpp" />
     <ClCompile Include="..\src\ui\components\scrollbar\scrollbar_component.cpp" />
     <ClCompile Include="..\src\ui\components\text\text_component.cpp" />
