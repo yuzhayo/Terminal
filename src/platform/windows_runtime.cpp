@@ -5,7 +5,7 @@
 namespace platform {
 
 WindowsRuntimeStatus CheckWindowsRuntime(std::wstring& diagnostic) {
-    static_assert(sizeof(void*) == 8, "Open Terminal Native supports x64 only.");
+    static_assert(sizeof(void*) == 8, "Terminal supports x64 only.");
 
     OSVERSIONINFOEXW requirement{};
     requirement.dwOSVersionInfoSize = sizeof(requirement);
@@ -25,7 +25,7 @@ WindowsRuntimeStatus CheckWindowsRuntime(std::wstring& diagnostic) {
     }
 
     if (GetLastError() == ERROR_OLD_WIN_VERSION) {
-        diagnostic = L"Open Terminal Native membutuhkan Windows 10 22H2 build 19045 atau yang lebih baru.";
+        diagnostic = L"Terminal membutuhkan Windows 10 22H2 build 19045 atau yang lebih baru.";
         return WindowsRuntimeStatus::Unsupported;
     }
 

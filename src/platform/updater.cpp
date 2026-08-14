@@ -15,7 +15,7 @@
 namespace updater {
 namespace {
 
-constexpr wchar_t kUpdateSourceEnvironment[] = L"OPEN_TERMINAL_NATIVE_UPDATE_SOURCE";
+constexpr wchar_t kUpdateSourceEnvironment[] = L"TERMINAL_UPDATE_SOURCE";
 constexpr char kGithubRepository[] = "https://github.com/yuzhayo/Terminal";
 
 std::optional<std::string> ToUtf8(const std::wstring& value) {
@@ -88,7 +88,7 @@ UpdateResult CheckDownloadAndApply() {
         Velopack::UpdateManager manager(std::move(github), &options);
         return ApplyFrom(manager);
     } catch (const std::exception& error) {
-        OutputDebugStringA("OpenTerminalNative updater failed: ");
+        OutputDebugStringA("Terminal updater failed: ");
         OutputDebugStringA(error.what());
         OutputDebugStringA("\n");
         return UpdateResult::Failed;

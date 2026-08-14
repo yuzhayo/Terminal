@@ -1,5 +1,5 @@
 {
-  "schema": "yuzha.open-terminal-native.ui",
+  "schema": "yuzha.terminal.ui",
   "version": 1,
   "documentKind": "default",
   "minimumReaderContract": 1,

@@ -18,7 +18,7 @@ if "%CONFIGS%"=="" set "CONFIGS=Debug Release"
 
 for %%C in (%CONFIGS%) do (
   echo === %%C ^| x64 ===
-  msbuild "%~dp0OpenTerminalNative.sln" /m /nologo /v:minimal ^
+  msbuild "%~dp0Terminal.sln" /m /nologo /v:minimal ^
     /p:Configuration=%%C /p:Platform=x64 || exit /b 1
 )
 

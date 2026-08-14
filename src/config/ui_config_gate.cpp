@@ -20,7 +20,7 @@ using Json = nlohmann::json;
 
 constexpr DWORD kMaximumDocumentBytes = 4U * 1024U * 1024U;
 constexpr int kMaximumNestingDepth = 64;
-constexpr wchar_t kEmbeddedSource[] = L"Assets\\ui\\open-terminal-native.ui.default.v1.json";
+constexpr wchar_t kEmbeddedSource[] = L"Assets\\ui\\terminal.ui.default.v1.json";
 
 std::wstring Utf8ToWide(const std::string& value) {
     if (value.empty()) {

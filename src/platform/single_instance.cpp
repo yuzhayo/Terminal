@@ -6,8 +6,8 @@
 namespace platform {
 namespace {
 
-constexpr wchar_t kWindowClass[] = L"OpenTerminalNative.MainWindow";
-constexpr wchar_t kMutexName[] = L"Local\\Yuzha.OpenTerminalNative.SingleInstance";
+constexpr wchar_t kWindowClass[] = L"Terminal.MainWindow";
+constexpr wchar_t kMutexName[] = L"Local\\Yuzha.Terminal.SingleInstance";
 constexpr ULONG_PTR kCopyDataId = 0x4F544E31;
 constexpr DWORD kFindWindowAttempts = 40;
 constexpr DWORD kFindWindowDelayMs = 50;

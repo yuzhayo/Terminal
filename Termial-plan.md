@@ -1,4 +1,4 @@
-# Open Terminal Greenfield Native — Locked Architecture and Delivery Plan
+# Terminal — Locked Architecture and Delivery Plan
 
 Status: **spesifikasi implementasi V1 final; scaffold dan implementasi boleh langsung dimulai**
 
@@ -15,7 +15,7 @@ memilih stack atau menahan source pertama.
 
 ## 1. Tujuan
 
-Membangun aplikasi Open Terminal native baru sebagai greenfield C++20 raw Win32 yang:
+Membangun aplikasi Terminal baru sebagai greenfield C++20 raw Win32 yang:
 
 - ringan dan responsif berdasarkan budget startup, input-to-paint, navigation, resize, memory,
   `HWND`, serta USER/GDI handle yang diukur dari installed Release build;
@@ -194,7 +194,7 @@ Bentuk tingkat atas yang dimaksud:
 
 ```json
 {
-  "schema": "yuzha.open-terminal-native.ui",
+  "schema": "yuzha.terminal.ui",
   "version": 1,
   "documentKind": "default",
   "minimumReaderContract": 1,
@@ -334,7 +334,7 @@ baru dipublikasikan.
   lalu replace/rename destination. File lama tetap utuh bila write/flush/replace gagal; temporary file
   dibersihkan secara best effort dan candidate baru tetap harus melewati `UiConfigGate` sebelum publish.
 - Config diagnostic log berada di
-  `%LOCALAPPDATA%\Yuzha\OpenTerminalNative\logs\ui-config.log`. Kegagalan membuat directory, membuka,
+  `%LOCALAPPDATA%\Yuzha\Terminal\logs\ui-config.log`. Kegagalan membuat directory, membuka,
   menulis, atau merotasi log tidak boleh menahan first frame, menggagalkan UI yang valid, atau memicu
   dialog berulang; diagnostic aktif di Settings/UI Editor tetap menjadi jalur user-facing canonical.
 
@@ -881,7 +881,7 @@ Model final:
 > Single-process, multi-window native application.
 
 ```text
-Open Terminal process
+Terminal process
 ├── top-level Window A → WindowContainer → Terminal
 └── top-level Window B → WindowContainer → Chrome Launcher
 ```
@@ -1135,15 +1135,15 @@ ke build baru.
 
 Kontrak yang dikunci:
 
-- Product display name: `Open Terminal Native`; executable: `OpenTerminalNative.exe`; solution:
-  `OpenTerminalNative.sln`; publisher: `Yuzha`; application/package ID: `Yuzha.OpenTerminalNative`.
+- Product display name: `Terminal`; executable: `Terminal.exe`; solution:
+  `Terminal.sln`; publisher: `Yuzha`; application/package ID: `Yuzha.Terminal`.
   Package version memakai SemVer `MAJOR.MINOR.PATCH`, Win32 file version memetakan ke
   `MAJOR.MINOR.PATCH.0`, dan release tag memakai `vMAJOR.MINOR.PATCH`.
 - V1 memakai dynamic Velopack C++ SDK dan CLI 1.2.0 yang dipin serta hash-verified menurut §25.2 dan
   §25.7. `vpk`/required .NET SDK hanya dependency mesin build/package dan tidak menjadi managed runtime
   dependency aplikasi.
-- `Setup.exe` memakai per-user install ke `%LOCALAPPDATA%\Yuzha.OpenTerminalNative`; persistent data
-  root terpisah di `%LOCALAPPDATA%\Yuzha\OpenTerminalNative`. Program files/current version tidak pernah
+- `Setup.exe` memakai per-user install ke `%LOCALAPPDATA%\Yuzha.Terminal`; persistent data
+  root terpisah di `%LOCALAPPDATA%\Yuzha\Terminal`. Program files/current version tidak pernah
   menjadi tempat config, log, updater state, cache, draft, atau credential.
 - Installer adalah jalur utama user testing; menjalankan loose EXE hanya supplemental developer smoke.
 - V1 menghasilkan installer untuk clean install serta update artifact/feed metadata untuk upgrade.
@@ -1176,7 +1176,7 @@ Kontrak yang dikunci:
   hanya setelah first complete frame dan idle; check tidak mengunduh otomatis. Download serta
   restart/apply membutuhkan persetujuan eksplisit user dan apply wajib melewati `PrepareCloseAll`.
 - Jadwal memakai updater-owned
-  `%LOCALAPPDATA%\Yuzha\OpenTerminalNative\updater\state.json` dengan `lastAttemptUtc` dan
+  `%LOCALAPPDATA%\Yuzha\Terminal\updater\state.json` dengan `lastAttemptUtc` dan
   `lastSuccessfulCheckUtc`, ditulis atomik. Metadata ini deployment state, bukan business settings:
   Phase 5 boleh menulisnya melalui updater infrastructure/harness meskipun component/business stub
   dilarang melakukan persistence. Kegagalan membaca/menulis state tidak memblokir first frame, manual
@@ -1842,9 +1842,9 @@ satu-satunya spesifikasi delivery root. Phase 0 dimulai dengan membuat scaffold,
 Build system V1 adalah native Visual Studio/MSBuild solution, bukan CMake, Meson, Bazel, atau generator
 yang dipilih kemudian:
 
-- solution `OpenTerminalNative.sln`; application project `src\OpenTerminalNative.vcxproj`; contract test
-  project `tests\OpenTerminalNativeTests.vcxproj`; performance harness project
-  `tests\performance\OpenTerminalNativePerformance.vcxproj`;
+- solution `Terminal.sln`; application project `src\Terminal.vcxproj`; contract test
+  project `tests\TerminalTests.vcxproj`; performance harness project
+  `tests\performance\TerminalPerformance.vcxproj`;
 - Visual Studio Build Tools 2022 `17.14.36` (`17.14.37502.11`), MSBuild `17.14.51.32402`, platform
   toolset `v143`, `VCToolsVersion=14.44.35207`, dan `cl.exe 19.44.35228` x64;
 - Windows SDK `10.0.26100.0`; `_WIN32_WINNT=0x0A00`, target x64 only, dan runtime gate tetap Windows 10
@@ -1872,9 +1872,9 @@ yang dipilih kemudian:
   `include\Velopack.hpp`, `lib\velopack_libc_win_x64_msvc.dll.lib`, dan meng-copy
   `lib\velopack_libc_win_x64_msvc.dll` ke publish output. Binary dependency hanya masuk build/package
   output, tidak source Git;
-- tidak ada Catch2, GoogleTest, atau framework test lain. `OpenTerminalNativeTests.exe` adalah runner
+- tidak ada Catch2, GoogleTest, atau framework test lain. `TerminalTests.exe` adalah runner
   kecil repository-owned. CLI exact:
-  `OpenTerminalNativeTests.exe [--filter <glob>] [--report-json <path>] [--report-junit <path>]`.
+  `TerminalTests.exe [--filter <glob>] [--report-json <path>] [--report-junit <path>]`.
   Tanpa filter menjalankan semua test dalam urutan nama ordinal. Default report adalah
   `artifacts\test-results\<Configuration>\results.json` dan `results.junit.xml`. JSON membawa
   `{ schemaVersion, configuration, startedUtc, durationMs, totals, tests[] }`; setiap test membawa
@@ -1892,7 +1892,7 @@ yang dipilih kemudian:
 Canonical MSBuild di balik `tools\Build.ps1` adalah:
 
 ```powershell
-& $msbuild .\OpenTerminalNative.sln /m /t:Build `
+& $msbuild .\Terminal.sln /m /t:Build `
   /p:Configuration=$Configuration /p:Platform=x64 `
   /p:PlatformToolset=v143 /p:VCToolsVersion=14.44.35207 `
   /p:WindowsTargetPlatformVersion=10.0.26100.0 /p:PreferredToolArchitecture=x64
@@ -1931,11 +1931,11 @@ pilihan.
 
 ### 25.4 Exact config identity, metadata, resource, path, dan diagnostic
 
-- schema identity exact: `yuzha.open-terminal-native.ui`; schema `version: 1`;
-- embedded source: `Assets\ui\open-terminal-native.ui.default.v1.json`; resource type `RT_RCDATA`,
+- schema identity exact: `yuzha.terminal.ui`; schema `version: 1`;
+- embedded source: `Assets\ui\terminal.ui.default.v1.json`; resource type `RT_RCDATA`,
   symbolic ID `IDR_UI_DEFAULT_JSON`, numeric ID `201`;
 - optional override exact:
-  `%LOCALAPPDATA%\Yuzha\OpenTerminalNative\ui\override.v1.json`;
+  `%LOCALAPPDATA%\Yuzha\Terminal\ui\override.v1.json`;
 - legacy filename/path tidak dicoba. Runtime tidak mencari `ui.json`, sibling executable config, nested
   repo assets, atau `%LOCALAPPDATA%\OpenTerminal`;
 - default memakai `documentKind: default`; override memakai `documentKind: override`. Keduanya membawa
@@ -1951,14 +1951,14 @@ pilihan.
   source/path, JSON pointer/line-column bila ada, dan pesan `Override UI tidak diterapkan`. Banner tidak
   hilang oleh navigation/close Settings dan baru clear setelah load/reload sukses; action yang tersedia
   hanya `Buka UI Editor` dan `Coba reload`, bukan silent reset/delete;
-- root data tetap `%LOCALAPPDATA%\Yuzha\OpenTerminalNative`; config log
+- root data tetap `%LOCALAPPDATA%\Yuzha\Terminal`; config log
   `logs\ui-config.log`; updater state `updater\state.json`; measurement artifact tidak pernah ditulis ke
   data root normal dan berada di ignored repository `artifacts\measurements` atau test temp directory.
 
 ### 25.5 Exact measurement contract
 
 Instrumentation memakai `QueryPerformanceCounter` dan TraceLogging provider
-`Yuzha.OpenTerminalNative.Performance`, GUID `{926b237e-f049-4ec4-8026-5db2e27a8239}`. Event minimal:
+`Yuzha.Terminal.Performance`, GUID `{926b237e-f049-4ec4-8026-5db2e27a8239}`. Event minimal:
 `ProcessEntry`, `VelopackHooksComplete`, `ConfigResolved`, `RenderBufferReady`, `FirstLayoutComplete`,
 `FirstPresentComplete`, `FirstFrameVisible`, `InputReceived`, `InputVisualPresented`,
 `NavigationRequested`, `NavigationPresented`, `ResizeFramePresented`, `ScenarioSettled`, dan
@@ -1968,7 +1968,7 @@ benar; timestamp dari message receipt sampai event setelah successful present.
 `FirstFrameVisible` dicatat setelah complete buffer dipresentasikan, top-level window di-show, dan satu
 `DwmFlush` selesai. Startup end-to-end dimulai dari timestamp harness tepat sebelum `CreateProcessW`,
 bukan dari sesudah `wWinMain`; report tetap menyimpan internal breakdown event. Harness adalah
-`OpenTerminalNativePerformance.exe`, memakai system-wide QPC yang sama, dan tidak mengukur dengan PowerShell
+`TerminalPerformance.exe`, memakai system-wide QPC yang sama, dan tidak mengukur dengan PowerShell
 `Measure-Command`.
 
 `tools\Measure-Performance.ps1` mengorkestrasi installed Release x64, `wpr.exe` file-mode profile, dan
@@ -2008,9 +2008,9 @@ menghasilkan pekerjaan optimasi dan tidak mengganti renderer atau menghentikan f
 V1 mengadopsi pola yang sudah bekerja di `Open-terminal-native`: named mutex + hidden infrastructure
 window + `WM_COPYDATA`. Tidak ada named pipe, listener thread, SDDL, atau IPC library.
 
-Primary membuat mutex `Local\Yuzha.OpenTerminalNative.Instance.v1.<userSidSha256-32hex>` memakai default
+Primary membuat mutex `Local\Yuzha.Terminal.Instance.v1.<userSidSha256-32hex>` memakai default
 current-token security dan message-only infrastructure window class
-`Yuzha.OpenTerminalNative.Infrastructure.v1`. Suffix adalah 16 byte pertama SHA-256 textual TokenUser
+`Yuzha.Terminal.Infrastructure.v1`. Suffix adalah 16 byte pertama SHA-256 textual TokenUser
 SID; `Local` membatasi session. Secondary menemukan receiver memakai
 `FindWindowExW(HWND_MESSAGE, nullptr, className, nullptr)`.
 
@@ -2019,7 +2019,7 @@ UTF-8 JSON tanpa NUL wajib. Request menolak duplicate/unknown field dan nesting 
 
 ```json
 {
-  "protocol": "yuzha.open-terminal-native.ipc",
+  "protocol": "yuzha.terminal.ipc",
   "version": 1,
   "requestId": "lowercase-uuid",
   "command": "open-route",
@@ -2063,7 +2063,7 @@ yang sudah terbukti.
   `UpdateOptions { AllowVersionDowngrade=false, ExplicitChannel=nullopt,
   MaximumDeltasBeforeFallback=1 }`. Channel tidak diganti lewat settings biasa;
 - test local source hanya diterima oleh `win-preview` package dari absolute directory environment
-  `OPEN_TERMINAL_NATIVE_UPDATE_SOURCE`; stable `win` package mengabaikan override tersebut;
+  `TERMINAL_UPDATE_SOURCE`; stable `win` package mengabaikan override tersebut;
 - `VelopackApp::Build().SetAutoApplyOnStartup(false)` serta install/update/uninstall hooks dipanggil paling
   awal di `wWinMain`, sebelum mutex, config, renderer, atau window. Download hanya setelah consent;
   apply lebih dahulu menjalankan `PrepareCloseAll`; setelah seluruh participant mengizinkan, deployment
@@ -2084,13 +2084,13 @@ yang diperlukan. Exact pack invocation baseline:
 ```powershell
 dotnet tool restore
 dotnet vpk pack `
-  --packId Yuzha.OpenTerminalNative `
+  --packId Yuzha.Terminal `
   --packVersion $Version `
   --packDir .\artifacts\publish\Release\x64 `
-  --mainExe OpenTerminalNative.exe `
-  --packTitle "Open Terminal Native" `
+  --mainExe Terminal.exe `
+  --packTitle "Terminal" `
   --packAuthors "Yuzha" `
-  --icon .\Assets\open-terminal-native.ico `
+  --icon .\Assets\terminal.ico `
   --outputDir ".\artifacts\releases\$Channel" `
   --runtime win-x64 `
   --channel $Channel `
@@ -2115,7 +2115,7 @@ current user hanya diizinkan dengan `-Environment CurrentUser -AllowInstallMutat
 mode tersebut bila instalasi production sudah ada. Uninstall/cleanup selalu dijalankan pada `finally`.
 
 Production release host adalah GitHub Releases repository `yuzhayo/Terminal`. Workflow hanya manual
-`workflow_dispatch`, branch `main`, concurrency `open-terminal-native-release`, current-commit CI harus
+`workflow_dispatch`, branch `main`, concurrency `terminal-release`, current-commit CI harus
 PASS, runner `windows-2022`, version source `version.props`, tag `vMAJOR.MINOR.PATCH`, dan tag/asset tidak
 pernah dioverwrite. Workflow mengadaptasi `.github\workflows\release.yml` dari `Open-terminal`: setup
 .NET 9.0.304, restore tool/package, download previous Velopack release untuk delta, build/test/package/
@@ -2128,7 +2128,7 @@ dotnet vpk upload github `
   --channel win `
   --token $env:GITHUB_TOKEN `
   --publish `
-  --releaseName "Open Terminal Native $Version" `
+  --releaseName "Terminal $Version" `
   --tag "v$Version" `
   --targetCommitish $CommitSha
 ```
@@ -2139,15 +2139,15 @@ instruksi eksplisit user; plan ini tidak mengotorisasi push, tag, workflow dispa
 ### 25.9 Exact uninstall-user-data UX dan deletion safety
 
 Default uninstall dari Windows Settings/Velopack selalu mempertahankan
-`%LOCALAPPDATA%\Yuzha\OpenTerminalNative`. Ia menghapus versioned program files, shortcuts, taskbar/Jump
+`%LOCALAPPDATA%\Yuzha\Terminal`. Ia menghapus versioned program files, shortcuts, taskbar/Jump
 List/Explorer integration milik aplikasi, serta installer registration; tidak menghapus config,
 settings, cache, history/bookmark, drafts, logs, updater diagnostic, atau credential tanpa pilihan user.
 
-Settings menyediakan action `Uninstall Open Terminal Native…`. In-surface confirmation menampilkan dua
+Settings menyediakan action `Uninstall Terminal…`. In-surface confirmation menampilkan dua
 radio option:
 
 1. `Pertahankan data saya (direkomendasikan)` — default/focused;
-2. `Hapus seluruh data Open Terminal Native dari PC ini` — menampilkan exact root path dan memerlukan
+2. `Hapus seluruh data Terminal dari PC ini` — menampilkan exact root path dan memerlukan
    checkbox kedua `Saya memahami data ini tidak dapat dipulihkan` sebelum tombol Uninstall enabled.
 
 Flow pilihan kedua lebih dahulu harus lulus `PrepareCloseAll`; Cancel tidak menulis marker atau
@@ -2155,7 +2155,7 @@ meluncurkan updater. Setelah prepare lulus, app menulis atomic one-time marker k
 `updater\uninstall-intent.json` berisi random 128-bit nonce, package ID, installed version, exact
 canonical data root, dan UTC expiry 10 menit, lalu menjalankan `Update.exe uninstall --silent` dengan
 nonce yang sama hanya pada inherited environment
-`OPEN_TERMINAL_NATIVE_UNINSTALL_NONCE`. `OnBeforeUninstall` menghapus data hanya bila environment nonce
+`TERMINAL_UNINSTALL_NONCE`. `OnBeforeUninstall` menghapus data hanya bila environment nonce
 dan marker cocok, marker valid/unexpired, serta package identity/version/root cocok. Marker invalid,
 stale, system-initiated uninstall, atau hook error kembali ke preserve-data default dan menghasilkan
 diagnostic, bukan aggressive cleanup.
@@ -2165,7 +2165,7 @@ dengan exact canonical root, bukan hanya prefix. Root yang merupakan unexpected 
 enumeration tidak mengikuti reparse point dan hanya menghapus link entry. Deletion scope tidak pernah
 naik ke `%LOCALAPPDATA%`, `%LOCALAPPDATA%\Yuzha`, repository, nested repo, atau arbitrary user path.
 Windows Credential Manager entry hanya dihapus untuk exact target prefix
-`Yuzha.OpenTerminalNative/`; credential provider lain tidak disentuh. Failure menampilkan path yang
+`Yuzha.Terminal/`; credential provider lain tidak disentuh. Failure menampilkan path yang
 tersisa dan tidak mengklaim full deletion.
 
 Setelah normal preserve-data uninstall, Apps entry tidak menawarkan cleanup kedua. Dokumentasi final

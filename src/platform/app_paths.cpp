@@ -18,7 +18,7 @@ bool ResolveAppPaths(AppPaths& paths, std::wstring& diagnostic) {
         return false;
     }
 
-    paths.data_root = std::wstring(local_app_data) + L"\\Yuzha\\OpenTerminalNative";
+    paths.data_root = std::wstring(local_app_data) + L"\\Yuzha\\Terminal";
     CoTaskMemFree(local_app_data);
 
     paths.ui_override = paths.data_root + L"\\ui\\override.v1.json";

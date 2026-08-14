@@ -33,18 +33,18 @@ if (Test-Path -LiteralPath $publishPath) {
 New-Item -ItemType Directory -Path $publishPath -Force | Out-Null
 New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
 
-Copy-Item -LiteralPath (Join-Path $repositoryRoot 'build\x64\Release\OpenTerminalNative.exe') -Destination $publishPath
+Copy-Item -LiteralPath (Join-Path $repositoryRoot 'build\x64\Release\Terminal.exe') -Destination $publishPath
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'build\x64\Release\velopack_libc.dll') -Destination $publishPath
 
 & dotnet tool restore
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & dotnet vpk pack `
-    --packId Yuzha.OpenTerminalNative `
+    --packId Yuzha.Terminal `
     --packVersion $Version `
     --packDir $publishPath `
-    --mainExe OpenTerminalNative.exe `
-    --packTitle 'Open Terminal Native' `
+    --mainExe Terminal.exe `
+    --packTitle 'Terminal' `
     --packAuthors Yuzha `
     --outputDir $outputPath `
     --runtime win-x64 `

@@ -23,7 +23,7 @@ Release/
 # Published/runtime output and WebView2 user data
 **/publish/
 **/publish-installer/
-**/OpenTerminal.exe.WebView2/
+**/Terminal.exe.WebView2/
 
 # Installer output and compiled binaries are release assets, not source
 **/dist/
