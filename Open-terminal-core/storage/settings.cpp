@@ -75,7 +75,8 @@ void LoadSettingsFile() {
     json::Value root;
     if (!json::Parse(text, &root, nullptr) || !root.is_object()) return;
 
-    g_settings.theme = ui::ThemeFromName(root.StringField(L"theme", L"dark"));
+    g_settings.theme = root.StringField(L"theme", L"dark");
+    if (g_settings.theme != L"light") g_settings.theme = L"dark";
 
     if (const json::Value* terminal = root.ObjectField(L"terminal")) {
         g_settings.terminal_folder = terminal->StringField(L"folder");
@@ -188,7 +189,6 @@ ChromeRuntimeState& ChromeStateFor(const std::wstring& runtime) {
 void Load() {
     LoadSettingsFile();
     LoadProvidersFile();
-    ui::SetTheme(g_settings.theme);
 }
 
 bool SaveSettings() {
