@@ -39,6 +39,19 @@ public:
     void OnDpiChanged() override;
     bool PrepareResources(COLORREF parent_background) override;
     AutomationRole automation_role() const noexcept override;
+    bool automation_supports_item_container() const noexcept override;
+    bool automation_supports_selection() const noexcept override;
+    std::size_t automation_item_count() const noexcept override;
+    std::wstring automation_item_name(std::size_t index) const override;
+    std::optional<RECT> automation_item_screen_bounds(
+        std::size_t index) const noexcept override;
+    bool automation_item_realized(std::size_t index) const noexcept override;
+    bool automation_item_selected(std::size_t index) const noexcept override;
+    bool AutomationSelectItem(std::size_t index) override;
+    bool AutomationRealizeItem(std::size_t index) override;
+    std::optional<AutomationScrollState> automation_scroll_state() const noexcept override;
+    bool AutomationScrollVertical(AutomationScrollAmount amount) override;
+    bool AutomationSetVerticalScrollPercent(double percent) override;
 
     int ScrollMinimum() const noexcept override;
     int ScrollMaximum() const noexcept override;

@@ -17,8 +17,40 @@ namespace ui::components {
 
 class Component;
 
-enum class AutomationRole { None, Button, Checkbox, ToggleButton, Edit, Combo, Scrollbar, Group };
-enum class AutomationAction { Focus, Invoke, Toggle, Expand, Collapse, SetRangeValue };
+enum class AutomationRole {
+    None,
+    Button,
+    Checkbox,
+    ToggleButton,
+    Edit,
+    Combo,
+    List,
+    Scrollbar,
+    Group,
+    Dialog,
+};
+enum class AutomationAction {
+    Focus,
+    Invoke,
+    Toggle,
+    Expand,
+    Collapse,
+    SetRangeValue,
+    Close,
+    SelectItem,
+    RealizeItem,
+    ScrollVertical,
+    SetVerticalScrollPercent,
+    SelectPopupItem,
+    RealizePopupItem,
+};
+enum class AutomationScrollAmount {
+    LargeDecrement,
+    SmallDecrement,
+    NoAmount,
+    LargeIncrement,
+    SmallIncrement,
+};
 enum class ModalResult { Accept, Discard, Cancel, Dismiss };
 
 struct AutomationRangeValue {
@@ -27,6 +59,15 @@ struct AutomationRangeValue {
     double maximum = 0.0;
     double large_change = 0.0;
     double small_change = 0.0;
+};
+
+struct AutomationScrollState {
+    bool horizontally_scrollable = false;
+    double horizontal_scroll_percent = -1.0;
+    double horizontal_view_size = 100.0;
+    bool vertically_scrollable = false;
+    double vertical_scroll_percent = -1.0;
+    double vertical_view_size = 100.0;
 };
 
 struct MeasuredSize {
@@ -50,6 +91,7 @@ struct ComponentHost {
     std::function<bool(AutomationAction, Component*, double)> request_automation_action;
     std::function<void(bool)> request_focus_traversal;
     std::function<bool(Component*, ModalResult)> request_modal_close;
+    std::function<LRESULT(Component*, HWND, WPARAM, LPARAM)> return_popup_automation_provider;
 };
 
 class Component {
@@ -97,6 +139,7 @@ public:
     virtual void CollectAutomationElements(std::vector<Component*>& elements);
     virtual AutomationRole automation_role() const noexcept;
     virtual std::wstring automation_name() const;
+    virtual RECT automation_bounds() const noexcept;
     virtual bool automation_supports_invoke() const noexcept;
     virtual bool AutomationInvoke();
     virtual std::optional<bool> automation_toggle_state() const noexcept;
@@ -106,12 +149,46 @@ public:
     virtual bool AutomationCollapse();
     virtual std::optional<AutomationRangeValue> automation_range_value() const noexcept;
     virtual bool AutomationSetRangeValue(double value);
+    virtual bool automation_is_dialog() const noexcept;
+    virtual bool automation_is_modal() const noexcept;
+    virtual bool AutomationClose();
+    virtual bool automation_supports_item_container() const noexcept;
+    virtual bool automation_supports_selection() const noexcept;
+    virtual bool automation_selection_required() const noexcept;
+    virtual std::size_t automation_item_count() const noexcept;
+    virtual std::wstring automation_item_name(std::size_t index) const;
+    virtual std::optional<RECT> automation_item_screen_bounds(std::size_t index) const noexcept;
+    virtual bool automation_item_realized(std::size_t index) const noexcept;
+    virtual bool automation_item_selected(std::size_t index) const noexcept;
+    virtual bool AutomationSelectItem(std::size_t index);
+    virtual bool AutomationRealizeItem(std::size_t index);
+    virtual std::optional<AutomationScrollState> automation_scroll_state() const noexcept;
+    virtual bool AutomationScrollVertical(AutomationScrollAmount amount);
+    virtual bool AutomationSetVerticalScrollPercent(double percent);
+    virtual bool automation_has_popup_fragment() const noexcept;
+    virtual bool automation_popup_visible() const noexcept;
+    virtual HWND automation_popup_hwnd() const noexcept;
+    virtual std::size_t automation_popup_item_count() const noexcept;
+    virtual std::wstring automation_popup_item_name(std::size_t index) const;
+    virtual std::optional<RECT> automation_popup_item_screen_bounds(
+        std::size_t index) const noexcept;
+    virtual bool automation_popup_item_realized(std::size_t index) const noexcept;
+    virtual bool automation_popup_item_selected(std::size_t index) const noexcept;
+    virtual bool AutomationSelectPopupItem(std::size_t index);
+    virtual bool AutomationRealizePopupItem(std::size_t index);
     bool RequestAutomationFocus();
     bool RequestAutomationInvoke();
     bool RequestAutomationToggle();
     bool RequestAutomationExpand();
     bool RequestAutomationCollapse();
     bool RequestAutomationSetRangeValue(double value);
+    bool RequestAutomationClose();
+    bool RequestAutomationSelectItem(std::size_t index);
+    bool RequestAutomationRealizeItem(std::size_t index);
+    bool RequestAutomationScrollVertical(AutomationScrollAmount amount);
+    bool RequestAutomationSetVerticalScrollPercent(double percent);
+    bool RequestAutomationSelectPopupItem(std::size_t index);
+    bool RequestAutomationRealizePopupItem(std::size_t index);
     virtual HWND automation_native_peer() const noexcept;
     virtual bool automation_is_password() const noexcept;
     virtual void OnDpiChanged();

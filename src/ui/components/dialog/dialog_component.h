@@ -28,6 +28,12 @@ public:
                            const RECT& invalid_region) override;
     bool CanCompleteModal(ModalResult result) const noexcept override;
     void CompleteModal(ModalResult result) override;
+    AutomationRole automation_role() const noexcept override;
+    std::wstring automation_name() const override;
+    RECT automation_bounds() const noexcept override;
+    bool automation_is_dialog() const noexcept override;
+    bool automation_is_modal() const noexcept override;
+    bool AutomationClose() override;
 
     const RECT& panel_bounds() const noexcept;
 

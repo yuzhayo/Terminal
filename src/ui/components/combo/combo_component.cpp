@@ -1,6 +1,9 @@
 #include "ui/components/combo/combo_component.h"
 
 #include <windowsx.h>
+#include <ole2.h>
+#include <oleacc.h>
+#include <UIAutomation.h>
 
 #include <algorithm>
 
@@ -215,6 +218,51 @@ bool ComboComponent::AutomationCollapse() {
     return !popup_open_;
 }
 
+bool ComboComponent::automation_has_popup_fragment() const noexcept { return true; }
+bool ComboComponent::automation_popup_visible() const noexcept {
+    return popup_open_ && popup_ && IsWindowVisible(popup_);
+}
+HWND ComboComponent::automation_popup_hwnd() const noexcept { return popup_; }
+std::size_t ComboComponent::automation_popup_item_count() const noexcept { return items_.size(); }
+std::wstring ComboComponent::automation_popup_item_name(std::size_t index) const {
+    return index < items_.size() ? items_[index] : std::wstring{};
+}
+std::optional<RECT> ComboComponent::automation_popup_item_screen_bounds(
+    std::size_t index) const noexcept {
+    if (!automation_popup_item_realized(index)) return std::nullopt;
+    RECT popup_bounds{};
+    if (!GetWindowRect(popup_, &popup_bounds)) return std::nullopt;
+    const int row = static_cast<int>(index) - first_visible_index_;
+    return RECT{popup_bounds.left + shadow_margin_,
+                popup_bounds.top + shadow_margin_ + row * item_height_,
+                popup_bounds.right - shadow_margin_,
+                popup_bounds.top + shadow_margin_ + (row + 1) * item_height_};
+}
+bool ComboComponent::automation_popup_item_realized(std::size_t index) const noexcept {
+    return automation_popup_visible() && index >= static_cast<std::size_t>(first_visible_index_) &&
+           index < static_cast<std::size_t>(first_visible_index_ + visible_rows_) &&
+           index < items_.size();
+}
+bool ComboComponent::automation_popup_item_selected(std::size_t index) const noexcept {
+    return selected_index_ && *selected_index_ == index;
+}
+bool ComboComponent::AutomationSelectPopupItem(std::size_t index) {
+    if (!enabled() || index >= items_.size()) return false;
+    if (!popup_open_) OpenPopup();
+    highlighted_index_ = static_cast<int>(index);
+    EnsureHighlightVisible();
+    SelectHighlighted();
+    return selected_index_ && *selected_index_ == index;
+}
+bool ComboComponent::AutomationRealizePopupItem(std::size_t index) {
+    if (!enabled() || index >= items_.size()) return false;
+    if (!popup_open_) OpenPopup();
+    highlighted_index_ = static_cast<int>(index);
+    EnsureHighlightVisible();
+    PositionAndRenderPopup();
+    return automation_popup_item_realized(index);
+}
+
 bool ComboComponent::EnsurePopup() {
     if (popup_) return true;
     WNDCLASSEXW popup_class{};
@@ -422,6 +470,12 @@ LRESULT CALLBACK ComboComponent::PopupProcedure(HWND window, UINT message, WPARA
 
 LRESULT ComboComponent::HandlePopupMessage(UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
+        case WM_GETOBJECT:
+            if (host_.return_popup_automation_provider &&
+                static_cast<LONG>(lparam) == UiaRootObjectId) {
+                return host_.return_popup_automation_provider(this, popup_, wparam, lparam);
+            }
+            break;
         case WM_MOUSEACTIVATE: return MA_NOACTIVATE;
         case WM_ERASEBKGND: return 1;
         case WM_NCHITTEST: return HTCLIENT;

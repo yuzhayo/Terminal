@@ -154,6 +154,7 @@ AutomationRole Component::automation_role() const noexcept { return AutomationRo
 std::wstring Component::automation_name() const {
     return ResolveAutomationName(definition_, Utf8ToWide(definition_.id));
 }
+RECT Component::automation_bounds() const noexcept { return bounds_; }
 
 bool Component::automation_supports_invoke() const noexcept { return false; }
 bool Component::AutomationInvoke() { return false; }
@@ -166,6 +167,38 @@ std::optional<AutomationRangeValue> Component::automation_range_value() const no
     return std::nullopt;
 }
 bool Component::AutomationSetRangeValue(double) { return false; }
+bool Component::automation_is_dialog() const noexcept { return false; }
+bool Component::automation_is_modal() const noexcept { return false; }
+bool Component::AutomationClose() { return false; }
+bool Component::automation_supports_item_container() const noexcept { return false; }
+bool Component::automation_supports_selection() const noexcept { return false; }
+bool Component::automation_selection_required() const noexcept { return false; }
+std::size_t Component::automation_item_count() const noexcept { return 0; }
+std::wstring Component::automation_item_name(std::size_t) const { return {}; }
+std::optional<RECT> Component::automation_item_screen_bounds(std::size_t) const noexcept {
+    return std::nullopt;
+}
+bool Component::automation_item_realized(std::size_t) const noexcept { return false; }
+bool Component::automation_item_selected(std::size_t) const noexcept { return false; }
+bool Component::AutomationSelectItem(std::size_t) { return false; }
+bool Component::AutomationRealizeItem(std::size_t) { return false; }
+std::optional<AutomationScrollState> Component::automation_scroll_state() const noexcept {
+    return std::nullopt;
+}
+bool Component::AutomationScrollVertical(AutomationScrollAmount) { return false; }
+bool Component::AutomationSetVerticalScrollPercent(double) { return false; }
+bool Component::automation_has_popup_fragment() const noexcept { return false; }
+bool Component::automation_popup_visible() const noexcept { return false; }
+HWND Component::automation_popup_hwnd() const noexcept { return nullptr; }
+std::size_t Component::automation_popup_item_count() const noexcept { return 0; }
+std::wstring Component::automation_popup_item_name(std::size_t) const { return {}; }
+std::optional<RECT> Component::automation_popup_item_screen_bounds(std::size_t) const noexcept {
+    return std::nullopt;
+}
+bool Component::automation_popup_item_realized(std::size_t) const noexcept { return false; }
+bool Component::automation_popup_item_selected(std::size_t) const noexcept { return false; }
+bool Component::AutomationSelectPopupItem(std::size_t) { return false; }
+bool Component::AutomationRealizePopupItem(std::size_t) { return false; }
 bool Component::RequestAutomationFocus() {
     return host_.request_automation_action
                ? host_.request_automation_action(AutomationAction::Focus, this, 0.0)
@@ -195,6 +228,47 @@ bool Component::RequestAutomationSetRangeValue(double value) {
     return host_.request_automation_action
                ? host_.request_automation_action(AutomationAction::SetRangeValue, this, value)
                : AutomationSetRangeValue(value);
+}
+bool Component::RequestAutomationClose() {
+    return host_.request_automation_action
+               ? host_.request_automation_action(AutomationAction::Close, this, 0.0)
+               : AutomationClose();
+}
+bool Component::RequestAutomationSelectItem(std::size_t index) {
+    return host_.request_automation_action
+               ? host_.request_automation_action(AutomationAction::SelectItem, this,
+                                                  static_cast<double>(index))
+               : AutomationSelectItem(index);
+}
+bool Component::RequestAutomationRealizeItem(std::size_t index) {
+    return host_.request_automation_action
+               ? host_.request_automation_action(AutomationAction::RealizeItem, this,
+                                                  static_cast<double>(index))
+               : AutomationRealizeItem(index);
+}
+bool Component::RequestAutomationScrollVertical(AutomationScrollAmount amount) {
+    return host_.request_automation_action
+               ? host_.request_automation_action(AutomationAction::ScrollVertical, this,
+                                                  static_cast<double>(amount))
+               : AutomationScrollVertical(amount);
+}
+bool Component::RequestAutomationSetVerticalScrollPercent(double percent) {
+    return host_.request_automation_action
+               ? host_.request_automation_action(AutomationAction::SetVerticalScrollPercent,
+                                                  this, percent)
+               : AutomationSetVerticalScrollPercent(percent);
+}
+bool Component::RequestAutomationSelectPopupItem(std::size_t index) {
+    return host_.request_automation_action
+               ? host_.request_automation_action(AutomationAction::SelectPopupItem, this,
+                                                  static_cast<double>(index))
+               : AutomationSelectPopupItem(index);
+}
+bool Component::RequestAutomationRealizePopupItem(std::size_t index) {
+    return host_.request_automation_action
+               ? host_.request_automation_action(AutomationAction::RealizePopupItem, this,
+                                                  static_cast<double>(index))
+               : AutomationRealizePopupItem(index);
 }
 HWND Component::automation_native_peer() const noexcept { return nullptr; }
 bool Component::automation_is_password() const noexcept { return false; }

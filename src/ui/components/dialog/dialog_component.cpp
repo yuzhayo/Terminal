@@ -218,6 +218,22 @@ void DialogComponent::CompleteModal(ModalResult result) {
     }
 }
 
+AutomationRole DialogComponent::automation_role() const noexcept {
+    return AutomationRole::Dialog;
+}
+
+std::wstring DialogComponent::automation_name() const {
+    return ResolveAutomationName(definition_, ResolveText(Properties().title));
+}
+RECT DialogComponent::automation_bounds() const noexcept { return panel_bounds_; }
+
+bool DialogComponent::automation_is_dialog() const noexcept { return true; }
+bool DialogComponent::automation_is_modal() const noexcept { return active_; }
+bool DialogComponent::AutomationClose() {
+    return active_ && host_.request_modal_close &&
+           host_.request_modal_close(this, ModalResult::Dismiss);
+}
+
 void DialogComponent::Dispatch(std::string_view event_name) {
     const auto found = definition_.events.find(std::string(event_name));
     if (found != definition_.events.end() && host_.dispatch_event) host_.dispatch_event(found->second);

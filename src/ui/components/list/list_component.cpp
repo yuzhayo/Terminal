@@ -339,7 +339,81 @@ bool ListComponent::PrepareResources(COLORREF parent_background) {
 }
 
 AutomationRole ListComponent::automation_role() const noexcept {
-    return AutomationRole::Group;
+    return AutomationRole::List;
+}
+
+bool ListComponent::automation_supports_item_container() const noexcept { return true; }
+bool ListComponent::automation_supports_selection() const noexcept {
+    return Properties().selection == config::SelectionMode::Single;
+}
+std::size_t ListComponent::automation_item_count() const noexcept { return items_.size(); }
+std::wstring ListComponent::automation_item_name(std::size_t index) const {
+    return index < items_.size() ? items_[index] : std::wstring{};
+}
+std::optional<RECT> ListComponent::automation_item_screen_bounds(
+    std::size_t index) const noexcept {
+    const auto found = std::find_if(realized_rows_.begin(), realized_rows_.end(),
+                                    [index](const RealizedRow& row) {
+                                        return row.item_index == index;
+                                    });
+    if (found == realized_rows_.end()) return std::nullopt;
+    RECT clipped{};
+    if (!IntersectRect(&clipped, &found->bounds, &viewport_)) return std::nullopt;
+    POINT origin{clipped.left, clipped.top};
+    if (!ClientToScreen(host_.window, &origin)) return std::nullopt;
+    return RECT{origin.x, origin.y, origin.x + clipped.right - clipped.left,
+                origin.y + clipped.bottom - clipped.top};
+}
+bool ListComponent::automation_item_realized(std::size_t index) const noexcept {
+    return std::any_of(realized_rows_.begin(), realized_rows_.end(),
+                       [index](const RealizedRow& row) { return row.item_index == index; });
+}
+bool ListComponent::automation_item_selected(std::size_t index) const noexcept {
+    return selected_index_ && *selected_index_ == index;
+}
+bool ListComponent::AutomationSelectItem(std::size_t index) {
+    if (!enabled() || index >= items_.size() ||
+        Properties().selection != config::SelectionMode::Single) return false;
+    Select(index, true);
+    RequestAutomationFocus();
+    return true;
+}
+bool ListComponent::AutomationRealizeItem(std::size_t index) {
+    if (index >= items_.size()) return false;
+    const int top = static_cast<int>(index) * RowHeight();
+    const int bottom = top + RowHeight();
+    if (top < scroll_value_) SetScrollValue(top);
+    else if (bottom > scroll_value_ + viewport_extent_) {
+        SetScrollValue(bottom - viewport_extent_);
+    }
+    return automation_item_realized(index);
+}
+std::optional<AutomationScrollState> ListComponent::automation_scroll_state() const noexcept {
+    const int maximum = ScrollMaximum();
+    const int content = std::max(1, content_extent_);
+    return AutomationScrollState{
+        false, -1.0, 100.0, maximum > 0,
+        maximum > 0 ? 100.0 * scroll_value_ / maximum : -1.0,
+        std::min(100.0, 100.0 * viewport_extent_ / content)};
+}
+bool ListComponent::AutomationScrollVertical(AutomationScrollAmount amount) {
+    if (ScrollMaximum() <= 0 || amount == AutomationScrollAmount::NoAmount) return false;
+    int delta = RowHeight();
+    if (amount == AutomationScrollAmount::LargeDecrement ||
+        amount == AutomationScrollAmount::LargeIncrement) {
+        delta = std::max(RowHeight(), viewport_extent_);
+    }
+    if (amount == AutomationScrollAmount::LargeDecrement ||
+        amount == AutomationScrollAmount::SmallDecrement) delta = -delta;
+    const int previous = scroll_value_;
+    SetScrollValue(scroll_value_ + delta);
+    return scroll_value_ != previous;
+}
+bool ListComponent::AutomationSetVerticalScrollPercent(double percent) {
+    if (!std::isfinite(percent) || percent < 0.0 || percent > 100.0 ||
+        ScrollMaximum() <= 0) return false;
+    SetScrollValue(static_cast<int>(std::lround(ScrollMaximum() * percent / 100.0)));
+    return true;
 }
 
 int ListComponent::ScrollMinimum() const noexcept { return 0; }

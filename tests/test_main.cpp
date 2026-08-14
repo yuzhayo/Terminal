@@ -27,6 +27,7 @@
 #include "rendering/software_compositor.h"
 #include "rendering/window_render_context.h"
 #include "resource.h"
+#include "ui/accessibility/automation_provider.h"
 #include "ui/components/component_registry.h"
 #include "ui/components/combo/combo_component.h"
 #include "ui/components/dialog/dialog_component.h"
@@ -552,6 +553,7 @@ void TestListVirtualizationSelectionAndScroll() {
     ui::components::ComponentHost host;
     host.render_runtime = &runtime;
     host.theme = &theme;
+    host.window = GetDesktopWindow();
     host.resolve_string_items = [](std::string_view) {
         std::vector<std::wstring> values;
         for (int index = 0; index < 100; ++index) values.push_back(std::to_wstring(index));
@@ -587,6 +589,239 @@ void TestListVirtualizationSelectionAndScroll() {
     REQUIRE_TRUE(list.ScrollValue() == list.ScrollMaximum());
     REQUIRE_TRUE(list.realized_range().first == 95);
     REQUIRE_TRUE(list.realized_row_count() == 5);
+}
+
+void TestAdvancedAutomationListPatterns() {
+    rendering::RenderRuntime runtime;
+    ui::config::ResolvedTheme theme;
+    ui::config::ResolvedStyle list_style;
+    list_style.id = "list";
+    theme.styles.push_back(list_style);
+    ui::config::ResolvedStyle scrollbar_style;
+    scrollbar_style.id = "scrollbar";
+    theme.styles.push_back(scrollbar_style);
+    ui::components::ComponentHost host;
+    host.window = GetDesktopWindow();
+    host.render_runtime = &runtime;
+    host.theme = &theme;
+    host.resolve_string_items = [](std::string_view) {
+        std::vector<std::wstring> values;
+        for (int index = 0; index < 100; ++index) values.push_back(std::to_wstring(index));
+        return values;
+    };
+
+    auto item_template = std::make_shared<ui::config::ResolvedComponent>();
+    item_template->id = "row";
+    item_template->type = ui::config::ComponentType::Card;
+    item_template->style_index = 0;
+    item_template->properties = ui::config::CardProperties{};
+    ui::config::ResolvedComponent definition;
+    definition.id = "automation-list";
+    definition.type = ui::config::ComponentType::List;
+    definition.style_index = 0;
+    ui::config::ListProperties properties;
+    properties.items_binding.path = "viewState.items";
+    properties.item_template = item_template;
+    definition.properties = properties;
+
+    ui::components::ListComponent list(definition, host);
+    list.Arrange({0, 0, 200, 96});
+    auto* root = new ui::accessibility::AutomationRootProvider(
+        host.window, list, [&list] { return static_cast<ui::components::Component*>(&list); });
+    IRawElementProviderFragment* fragment = nullptr;
+    REQUIRE_TRUE(SUCCEEDED(root->Navigate(NavigateDirection_FirstChild, &fragment)) && fragment);
+    IRawElementProviderSimple* simple = nullptr;
+    REQUIRE_TRUE(SUCCEEDED(fragment->QueryInterface(IID_IRawElementProviderSimple,
+                                                    reinterpret_cast<void**>(&simple))));
+    IItemContainerProvider* item_container = nullptr;
+    ISelectionProvider* selection = nullptr;
+    IScrollProvider* scroll = nullptr;
+    REQUIRE_TRUE(SUCCEEDED(simple->QueryInterface(IID_IItemContainerProvider,
+                                                  reinterpret_cast<void**>(&item_container))));
+    REQUIRE_TRUE(SUCCEEDED(simple->QueryInterface(IID_ISelectionProvider,
+                                                  reinterpret_cast<void**>(&selection))));
+    REQUIRE_TRUE(SUCCEEDED(simple->QueryInterface(IID_IScrollProvider,
+                                                  reinterpret_cast<void**>(&scroll))));
+    BOOL vertically_scrollable = FALSE;
+    REQUIRE_TRUE(SUCCEEDED(scroll->get_VerticallyScrollable(&vertically_scrollable)) &&
+                 vertically_scrollable == TRUE);
+
+    VARIANT query;
+    VariantInit(&query);
+    query.vt = VT_BSTR;
+    query.bstrVal = SysAllocString(L"99");
+    IRawElementProviderSimple* item = nullptr;
+    REQUIRE_TRUE(SUCCEEDED(item_container->FindItemByProperty(
+                     nullptr, UIA_NamePropertyId, query, &item)) && item);
+    VariantClear(&query);
+    IVirtualizedItemProvider* virtualized = nullptr;
+    REQUIRE_TRUE(SUCCEEDED(item->QueryInterface(IID_IVirtualizedItemProvider,
+                                                reinterpret_cast<void**>(&virtualized))));
+    REQUIRE_TRUE(SUCCEEDED(virtualized->Realize()));
+    REQUIRE_TRUE(list.realized_range().first == 95);
+    ISelectionItemProvider* selection_item = nullptr;
+    REQUIRE_TRUE(SUCCEEDED(item->QueryInterface(IID_ISelectionItemProvider,
+                                                reinterpret_cast<void**>(&selection_item))));
+    REQUIRE_TRUE(SUCCEEDED(selection_item->Select()));
+    REQUIRE_TRUE(list.selected_index().has_value() && *list.selected_index() == 99);
+    SAFEARRAY* selected = nullptr;
+    REQUIRE_TRUE(SUCCEEDED(selection->GetSelection(&selected)) && selected);
+    REQUIRE_TRUE(SafeArrayGetDim(selected) == 1);
+    LONG lower = 0;
+    LONG upper = -1;
+    SafeArrayGetLBound(selected, 1, &lower);
+    SafeArrayGetUBound(selected, 1, &upper);
+    REQUIRE_TRUE(upper - lower + 1 == 1);
+    SafeArrayDestroy(selected);
+    REQUIRE_TRUE(SUCCEEDED(scroll->SetScrollPercent(UIA_ScrollPatternNoScroll, 0.0)));
+    REQUIRE_TRUE(list.ScrollValue() == 0);
+
+    selection_item->Release();
+    virtualized->Release();
+    item->Release();
+    scroll->Release();
+    selection->Release();
+    item_container->Release();
+    simple->Release();
+    fragment->Release();
+    root->Release();
+}
+
+void TestAdvancedAutomationDialogPatterns() {
+    rendering::RenderRuntime runtime;
+    ui::config::ResolvedTheme theme;
+    theme.styles.push_back(ui::config::ResolvedStyle{});
+    ui::components::ComponentHost host;
+    host.window = GetDesktopWindow();
+    host.render_runtime = &runtime;
+    host.theme = &theme;
+    ui::config::ResolvedComponent definition;
+    definition.id = "automation-dialog";
+    definition.type = ui::config::ComponentType::Dialog;
+    definition.style_index = 0;
+    ui::config::DialogProperties properties;
+    properties.title = std::string("Confirmation");
+    definition.properties = properties;
+    ui::components::DialogComponent dialog(definition, host);
+    std::wstring diagnostic;
+    REQUIRE_TRUE(dialog.ActivateModal(diagnostic));
+    dialog.ArrangeModal({0, 0, 800, 600});
+    auto* root = new ui::accessibility::AutomationRootProvider(
+        host.window, dialog,
+        [&dialog] { return static_cast<ui::components::Component*>(&dialog); });
+    IRawElementProviderFragment* fragment = nullptr;
+    REQUIRE_TRUE(SUCCEEDED(root->Navigate(NavigateDirection_FirstChild, &fragment)) && fragment);
+    IRawElementProviderSimple* simple = nullptr;
+    REQUIRE_TRUE(SUCCEEDED(fragment->QueryInterface(IID_IRawElementProviderSimple,
+                                                    reinterpret_cast<void**>(&simple))));
+    VARIANT is_dialog;
+    VariantInit(&is_dialog);
+    REQUIRE_TRUE(SUCCEEDED(simple->GetPropertyValue(UIA_IsDialogPropertyId, &is_dialog)));
+    REQUIRE_TRUE(is_dialog.vt == VT_BOOL && is_dialog.boolVal == VARIANT_TRUE);
+    VariantClear(&is_dialog);
+    IWindowProvider* window = nullptr;
+    ITransformProvider* transform = nullptr;
+    REQUIRE_TRUE(SUCCEEDED(simple->QueryInterface(IID_IWindowProvider,
+                                                  reinterpret_cast<void**>(&window))));
+    REQUIRE_TRUE(SUCCEEDED(simple->QueryInterface(IID_ITransformProvider,
+                                                  reinterpret_cast<void**>(&transform))));
+    BOOL modal = FALSE;
+    BOOL can_move = TRUE;
+    REQUIRE_TRUE(SUCCEEDED(window->get_IsModal(&modal)) && modal == TRUE);
+    REQUIRE_TRUE(SUCCEEDED(transform->get_CanMove(&can_move)) && can_move == FALSE);
+    UiaRect bounds{};
+    REQUIRE_TRUE(SUCCEEDED(fragment->get_BoundingRectangle(&bounds)));
+    REQUIRE_TRUE(bounds.width == dialog.panel_bounds().right - dialog.panel_bounds().left);
+    REQUIRE_TRUE(bounds.height == dialog.panel_bounds().bottom - dialog.panel_bounds().top);
+
+    transform->Release();
+    window->Release();
+    simple->Release();
+    fragment->Release();
+    root->Release();
+}
+
+void TestAdvancedAutomationModalScopeIdentity() {
+    rendering::RenderRuntime runtime;
+    ui::config::ResolvedTheme theme;
+    theme.styles.push_back(ui::config::ResolvedStyle{});
+    ui::components::ComponentHost host;
+    host.window = GetDesktopWindow();
+    host.render_runtime = &runtime;
+    host.theme = &theme;
+
+    ui::config::ResolvedComponent root_definition;
+    root_definition.id = "scope-root";
+    root_definition.type = ui::config::ComponentType::Window;
+    root_definition.style_index = 0;
+    root_definition.properties = ui::config::WindowProperties{};
+    ui::config::ResolvedComponent background;
+    background.id = "background-action";
+    background.type = ui::config::ComponentType::Button;
+    background.style_index = 0;
+    ui::config::ButtonProperties background_properties;
+    background_properties.label = std::string("Background");
+    background.properties = background_properties;
+    ui::config::ResolvedComponent dialog_definition;
+    dialog_definition.id = "scope-dialog";
+    dialog_definition.type = ui::config::ComponentType::Dialog;
+    dialog_definition.style_index = 0;
+    ui::config::DialogProperties dialog_properties;
+    dialog_properties.title = std::string("Scope dialog");
+    dialog_definition.properties = dialog_properties;
+    ui::config::ResolvedComponent dialog_action;
+    dialog_action.id = "dialog-action";
+    dialog_action.type = ui::config::ComponentType::Button;
+    dialog_action.style_index = 0;
+    ui::config::ButtonProperties dialog_action_properties;
+    dialog_action_properties.label = std::string("Confirm");
+    dialog_action.properties = dialog_action_properties;
+    dialog_definition.children.push_back(dialog_action);
+    root_definition.children.push_back(background);
+    root_definition.children.push_back(dialog_definition);
+
+    ui::components::ComponentRegistry registry;
+    std::unique_ptr<ui::components::Component> component_root =
+        registry.CreateTree(root_definition, host);
+    auto* root = new ui::accessibility::AutomationRootProvider(
+        host.window, *component_root, [] { return static_cast<ui::components::Component*>(nullptr); });
+    IRawElementProviderFragment* background_fragment = nullptr;
+    REQUIRE_TRUE(SUCCEEDED(root->Navigate(NavigateDirection_FirstChild,
+                                          &background_fragment)) && background_fragment);
+    IRawElementProviderSimple* background_simple = nullptr;
+    REQUIRE_TRUE(SUCCEEDED(background_fragment->QueryInterface(
+        IID_IRawElementProviderSimple, reinterpret_cast<void**>(&background_simple))));
+
+    ui::components::Component* dialog = component_root->FindById("scope-dialog");
+    REQUIRE_TRUE(dialog != nullptr);
+    std::wstring diagnostic;
+    REQUIRE_TRUE(dialog->ActivateModal(diagnostic));
+    root->SetActiveScope(dialog);
+    IRawElementProviderFragment* scoped = nullptr;
+    REQUIRE_TRUE(SUCCEEDED(root->Navigate(NavigateDirection_FirstChild, &scoped)) && scoped);
+    IRawElementProviderSimple* scoped_simple = nullptr;
+    REQUIRE_TRUE(SUCCEEDED(scoped->QueryInterface(IID_IRawElementProviderSimple,
+                                                  reinterpret_cast<void**>(&scoped_simple))));
+    VARIANT id;
+    VariantInit(&id);
+    REQUIRE_TRUE(SUCCEEDED(scoped_simple->GetPropertyValue(UIA_AutomationIdPropertyId, &id)));
+    REQUIRE_TRUE(id.vt == VT_BSTR && std::wstring(id.bstrVal) == L"scope-dialog");
+    VariantClear(&id);
+    VARIANT enabled;
+    VariantInit(&enabled);
+    REQUIRE_TRUE(SUCCEEDED(background_simple->GetPropertyValue(UIA_IsEnabledPropertyId, &enabled)));
+    REQUIRE_TRUE(enabled.vt == VT_BOOL && enabled.boolVal == VARIANT_FALSE);
+    VariantClear(&enabled);
+    IRawElementProviderFragment* dialog_child = nullptr;
+    REQUIRE_TRUE(SUCCEEDED(scoped->Navigate(NavigateDirection_FirstChild, &dialog_child)) &&
+                 dialog_child);
+    dialog_child->Release();
+
+    scoped_simple->Release();
+    scoped->Release();
+    background_simple->Release();
+    background_fragment->Release();
+    root->Release();
 }
 
 void TestComponentRegistryVerticalSlice() {
@@ -1330,6 +1565,9 @@ std::vector<TestCase> DiscoverTests() {
         {"ComponentRegistry.VerticalSlice", TestComponentRegistryVerticalSlice, __FILE__, __LINE__},
         {"Combo.PopupPlacement", TestComboPopupPlacement, __FILE__, __LINE__},
         {"Dialog.ExplicitDismissPolicy", TestDialogExplicitDismissPolicy, __FILE__, __LINE__},
+        {"Automation.DialogPatterns", TestAdvancedAutomationDialogPatterns, __FILE__, __LINE__},
+        {"Automation.ListPatterns", TestAdvancedAutomationListPatterns, __FILE__, __LINE__},
+        {"Automation.ModalScopeIdentity", TestAdvancedAutomationModalScopeIdentity, __FILE__, __LINE__},
         {"List.VirtualizationSelectionAndScroll", TestListVirtualizationSelectionAndScroll, __FILE__, __LINE__},
         {"EditableDraftState.Transactions", TestEditableDraftStateTransactions, __FILE__, __LINE__},
         {"IconResource.Embedded", TestIconResourceEmbedded, __FILE__, __LINE__},

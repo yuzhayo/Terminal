@@ -121,6 +121,7 @@ bool WindowContainer::BuildComponentTree(std::wstring& diagnostic) {
             [this](const config::EventDefinition& event) { DispatchStubEvent(event); };
         component_host_->native_focus_changed = [this](components::Component* component, bool focused) {
             focus_coordinator_.NotifyNativeFocus(component, focused);
+            if (focused && automation_provider_) automation_provider_->NotifyFocusChanged();
         };
         component_host_->popup_state_changed = [this](components::Component* component, bool open) {
             if (open) {
@@ -130,6 +131,9 @@ bool WindowContainer::BuildComponentTree(std::wstring& diagnostic) {
                 active_popup_owner_ = component;
             } else if (active_popup_owner_ == component) {
                 active_popup_owner_ = nullptr;
+            }
+            if (automation_provider_) {
+                automation_provider_->NotifyPopupStateChanged(component, open);
             }
         };
         component_host_->resolve_string_items = [this](std::string_view binding) {
@@ -157,6 +161,26 @@ bool WindowContainer::BuildComponentTree(std::wstring& diagnostic) {
                             return component && component->AutomationCollapse();
                         case components::AutomationAction::SetRangeValue:
                             return component && component->AutomationSetRangeValue(value);
+                        case components::AutomationAction::Close:
+                            return component && component->AutomationClose();
+                        case components::AutomationAction::SelectItem:
+                            return component && component->AutomationSelectItem(
+                                                    static_cast<std::size_t>(value));
+                        case components::AutomationAction::RealizeItem:
+                            return component && component->AutomationRealizeItem(
+                                                    static_cast<std::size_t>(value));
+                        case components::AutomationAction::ScrollVertical:
+                            return component && component->AutomationScrollVertical(
+                                                    static_cast<components::AutomationScrollAmount>(
+                                                        static_cast<int>(value)));
+                        case components::AutomationAction::SetVerticalScrollPercent:
+                            return component && component->AutomationSetVerticalScrollPercent(value);
+                        case components::AutomationAction::SelectPopupItem:
+                            return component && component->AutomationSelectPopupItem(
+                                                    static_cast<std::size_t>(value));
+                        case components::AutomationAction::RealizePopupItem:
+                            return component && component->AutomationRealizePopupItem(
+                                                    static_cast<std::size_t>(value));
                     }
                     return false;
                 }
@@ -176,6 +200,13 @@ bool WindowContainer::BuildComponentTree(std::wstring& diagnostic) {
         focus_coordinator_.Rebuild(*root_);
         automation_provider_ = new accessibility::AutomationRootProvider(
             window_, *root_, [this] { return focus_coordinator_.focused(); });
+        component_host_->return_popup_automation_provider =
+            [this](components::Component* component, HWND popup, WPARAM wparam, LPARAM lparam) {
+                return automation_provider_
+                           ? automation_provider_->ReturnPopupProvider(component, popup, wparam,
+                                                                       lparam)
+                           : 0;
+            };
         diagnostic.clear();
         return true;
     } catch (const std::exception&) {
@@ -295,7 +326,37 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             case components::AutomationAction::SetRangeValue:
                 request->result = request->component->AutomationSetRangeValue(request->value);
                 break;
+            case components::AutomationAction::Close:
+                request->result = request->component->AutomationClose();
+                break;
+            case components::AutomationAction::SelectItem:
+                request->result = request->component->AutomationSelectItem(
+                    static_cast<std::size_t>(request->value));
+                break;
+            case components::AutomationAction::RealizeItem:
+                request->result = request->component->AutomationRealizeItem(
+                    static_cast<std::size_t>(request->value));
+                break;
+            case components::AutomationAction::ScrollVertical:
+                request->result = request->component->AutomationScrollVertical(
+                    static_cast<components::AutomationScrollAmount>(
+                        static_cast<int>(request->value)));
+                break;
+            case components::AutomationAction::SetVerticalScrollPercent:
+                request->result = request->component->AutomationSetVerticalScrollPercent(
+                    request->value);
+                break;
+            case components::AutomationAction::SelectPopupItem:
+                request->result = request->component->AutomationSelectPopupItem(
+                    static_cast<std::size_t>(request->value));
+                break;
+            case components::AutomationAction::RealizePopupItem:
+                request->result = request->component->AutomationRealizePopupItem(
+                    static_cast<std::size_t>(request->value));
+                break;
         }
+        if (request->result && request->action == components::AutomationAction::Focus &&
+            automation_provider_) automation_provider_->NotifyFocusChanged();
         return request->result ? 1 : 0;
     }
     switch (message) {
@@ -595,6 +656,7 @@ bool WindowContainer::OpenModal(std::string_view dialog_id, std::wstring& diagno
     if (GetCapture()) ReleaseCapture();
     pointer_target_ = nullptr;
     if (!modal_stack_.Push(*dialog, *root_, focus_coordinator_, diagnostic)) return false;
+    if (automation_provider_) automation_provider_->SetActiveScope(dialog);
     RECT client{};
     GetClientRect(window_, &client);
     modal_stack_.Arrange(client);
@@ -612,6 +674,7 @@ bool WindowContainer::CloseModal(components::ModalResult result, std::wstring& d
     if (GetCapture()) ReleaseCapture();
     pointer_target_ = nullptr;
     if (!modal_stack_.Pop(result, *root_, focus_coordinator_, diagnostic)) return false;
+    if (automation_provider_) automation_provider_->SetActiveScope(modal_stack_.top());
     frame_ready_ = false;
     render_context_.InvalidateAll();
     InvalidateRect(window_, nullptr, FALSE);

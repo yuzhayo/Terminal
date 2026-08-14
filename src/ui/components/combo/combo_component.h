@@ -43,6 +43,17 @@ public:
     std::optional<bool> automation_expanded() const noexcept override;
     bool AutomationExpand() override;
     bool AutomationCollapse() override;
+    bool automation_has_popup_fragment() const noexcept override;
+    bool automation_popup_visible() const noexcept override;
+    HWND automation_popup_hwnd() const noexcept override;
+    std::size_t automation_popup_item_count() const noexcept override;
+    std::wstring automation_popup_item_name(std::size_t index) const override;
+    std::optional<RECT> automation_popup_item_screen_bounds(
+        std::size_t index) const noexcept override;
+    bool automation_popup_item_realized(std::size_t index) const noexcept override;
+    bool automation_popup_item_selected(std::size_t index) const noexcept override;
+    bool AutomationSelectPopupItem(std::size_t index) override;
+    bool AutomationRealizePopupItem(std::size_t index) override;
 
 private:
     static LRESULT CALLBACK PopupProcedure(HWND window, UINT message, WPARAM wparam,
