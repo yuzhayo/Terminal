@@ -8,6 +8,7 @@
 #include "app/app_identity.h"
 #include "instrumentation/performance_trace.h"
 #include "platform/app_paths.h"
+#include "platform/infrastructure_window.h"
 #include "platform/single_instance.h"
 #include "platform/updater.h"
 #include "platform/windows_runtime.h"
@@ -61,11 +62,14 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
 
     platform::SingleInstance single_instance;
     const platform::InstanceClaim claim = single_instance.Claim(command_line);
-    if (claim == platform::InstanceClaim::SecondaryNotified) {
-        return 0;
-    }
-    if (claim == platform::InstanceClaim::Error) {
-        return 4;
+    switch (claim) {
+        case platform::InstanceClaim::Primary: break;
+        case platform::InstanceClaim::SecondaryAccepted: return 0;
+        case platform::InstanceClaim::SecondaryReceiverNotFound: return 20;
+        case platform::InstanceClaim::SecondaryRejected: return 21;
+        case platform::InstanceClaim::SecondaryBusy: return 22;
+        case platform::InstanceClaim::SecondaryTimedOut: return 23;
+        case platform::InstanceClaim::Error: return 4;
     }
     if (HasSwitch(command_line, L"--exit")) {
         return 0;
@@ -97,6 +101,22 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
         ShowBootstrapError(diagnostic);
         return 2;
     }
+    platform::InfrastructureWindow infrastructure_window;
+    if (!infrastructure_window.Create(
+            instance,
+            [&window_container](const platform::IpcRequest& request) {
+                window_container.HandleIpcRequest(request);
+            },
+            [&theme_adapter, &window_container] {
+                if (theme_adapter.Reconcile(theme_adapter.ReadPostFirstFrameSnapshot())) {
+                    window_container.ApplyTheme(
+                        theme_adapter.Select(ui::config::ThemePreference::System));
+                }
+            },
+            diagnostic)) {
+        ShowBootstrapError(diagnostic);
+        return 16;
+    }
     instrumentation::TraceFirstLayoutComplete();
 
     if (!window_container.PrepareFirstFrame(diagnostic)) {
@@ -110,6 +130,10 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
         instrumentation::TraceFirstFrameVisible();
         instrumentation::TraceResourceSnapshot(render_runtime.diagnostics());
     }
+    if (!theme_adapter.StartPostFirstFrameMonitoring(
+            infrastructure_window.hwnd(), infrastructure_window.theme_signal_message(), diagnostic)) {
+        OutputDebugStringW((diagnostic + L"\n").c_str());
+    }
 
     MSG message{};
     BOOL result = 0;
@@ -117,6 +141,8 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
+
+    infrastructure_window.BeginShutdown();
 
     return result == -1 ? 3 : static_cast<int>(message.wParam);
 }

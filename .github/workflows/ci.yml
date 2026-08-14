@@ -23,9 +23,13 @@ jobs:
 
       - uses: microsoft/setup-msbuild@v3
 
+      - name: Verify pinned toolchain
+        shell: pwsh
+        run: ./tools/Test-Toolchain.ps1
+
       - name: Build Debug
         shell: pwsh
-        run: msbuild Terminal.sln /m /nologo /v:minimal /p:Configuration=Debug /p:Platform=x64
+        run: ./tools/Build.ps1 -Configuration Debug
 
       - name: Run Debug tests
         shell: pwsh
@@ -33,7 +37,7 @@ jobs:
 
       - name: Build Release
         shell: pwsh
-        run: msbuild Terminal.sln /m /nologo /v:minimal /p:Configuration=Release /p:Platform=x64
+        run: ./tools/Build.ps1 -Configuration Release
 
       - name: Run Release tests
         shell: pwsh

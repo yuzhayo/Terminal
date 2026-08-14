@@ -81,12 +81,10 @@ void InputComponent::ApplyNativeStyle() {
 }
 
 MeasuredSize InputComponent::Measure(HDC dc, int available_width, int available_height) {
-    HFONT font = host_.render_runtime->Font(style().font, host_.dpi);
-    HGDIOBJ previous = font ? SelectObject(dc, font) : nullptr;
-    TEXTMETRICW metrics{};
-    GetTextMetricsW(dc, &metrics);
-    if (previous) SelectObject(dc, previous);
-    const int content_height = metrics.tmHeight +
+    (void)dc;
+    const SIZE metrics = host_.render_runtime->MeasureText(
+        L"Mg", style().font, host_.dpi, available_width, DT_SINGLELINE | DT_NOPREFIX);
+    const int content_height = metrics.cy +
                                ScaleDip(style().content_padding.top + style().content_padding.bottom,
                                         host_.dpi);
     const int height = std::max(ScaleDip(style().minimum_height, host_.dpi), content_height);

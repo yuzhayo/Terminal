@@ -25,6 +25,7 @@ struct ComponentHost {
     UINT dpi = 96;
     HDC layout_dc = nullptr;
     rendering::RenderRuntime* render_runtime = nullptr;
+    rendering::WindowRenderContext* render_context = nullptr;
     const config::ResolvedTheme* theme = nullptr;
     std::function<void(const RECT&)> invalidate;
     std::function<void(const config::EventDefinition&)> dispatch_event;
@@ -60,6 +61,7 @@ public:
     virtual void ResumeNativePeers();
     virtual void CollectEditableParticipants(std::vector<EditableParticipant*>& participants);
     virtual void OnDpiChanged();
+    virtual bool PrepareResources(COLORREF parent_background);
     virtual void AddChild(std::unique_ptr<Component> child);
 
     const RECT& bounds() const noexcept;

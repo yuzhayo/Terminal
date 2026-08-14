@@ -47,6 +47,8 @@
       <WarningLevel>Level4</WarningLevel>
       <TreatWarningAsError>true</TreatWarningAsError>
       <ConformanceMode>true</ConformanceMode>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX;WINVER=0x0A00;_WIN32_WINNT=0x0A00;TERMINAL_VERSION_MAJOR=$(TerminalVersionMajor);TERMINAL_VERSION_MINOR=$(TerminalVersionMinor);TERMINAL_VERSION_PATCH=$(TerminalVersionPatch);TERMINAL_VERSION_BUILD=$(TerminalVersionBuild);TERMINAL_VERSION_COMMA=$(TerminalVersionMajor),$(TerminalVersionMinor),$(TerminalVersionPatch),$(TerminalVersionBuild);TERMINAL_VERSION_STRING=&quot;$(TerminalVersion)&quot;;TERMINAL_VERSION_STRING_W=L&quot;$(TerminalVersion)&quot;;TERMINAL_FILE_VERSION_STRING=&quot;$(TerminalVersion).$(TerminalVersionBuild)&quot;;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(ProjectDir)..\src;$(NlohmannJsonDir)single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -55,7 +57,12 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>user32.lib;gdi32.lib;comctl32.lib;imm32.lib;shell32.lib;uxtheme.lib;ole32.lib;uuid.lib;windowsapp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <RandomizedBaseAddress>true</RandomizedBaseAddress>
+      <DataExecutionPrevention>true</DataExecutionPrevention>
+      <HighEntropyVA>true</HighEntropyVA>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
+      <AdditionalOptions>/CETCOMPAT %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalDependencies>user32.lib;gdi32.lib;comctl32.lib;imm32.lib;shell32.lib;uxtheme.lib;ole32.lib;uuid.lib;windowsapp.lib;advapi32.lib;usp10.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <AdditionalManifestFiles>$(ProjectDir)..\src\app.manifest</AdditionalManifestFiles>
@@ -64,6 +71,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -98,12 +106,14 @@
     <ClCompile Include="..\src\ui\components\input\native_peer_geometry.cpp" />
     <ClCompile Include="..\src\ui\components\text\text_component.cpp" />
     <ClCompile Include="..\src\ui\components\window\window_component.cpp" />
+    <ClCompile Include="..\src\ui\application\stub_application_bridge.cpp" />
     <ClCompile Include="..\src\ui\containers\logical_focus_coordinator.cpp" />
     <ClCompile Include="..\src\ui\containers\overlay_plane.cpp" />
     <ClCompile Include="..\src\ui\config\resolved_ui_document.cpp" />
     <ClCompile Include="..\src\ui\config\ui_config_gate.cpp" />
     <ClCompile Include="..\src\ui\theme\theme_platform_adapter.cpp" />
     <ClCompile Include="..\src\platform\app_paths.cpp" />
+    <ClCompile Include="..\src\platform\single_instance.cpp" />
     <ClCompile Include="..\src\platform\windows_runtime.cpp" />
     <ResourceCompile Include="test_resources.rc" />
   </ItemGroup>

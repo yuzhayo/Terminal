@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <stdexcept>
 
+#include "rendering/window_render_context.h"
+
 namespace ui::components {
 namespace {
 
@@ -122,6 +124,20 @@ void Component::OnDpiChanged() {
     for (const auto& child : children_) child->OnDpiChanged();
 }
 
+bool Component::PrepareResources(COLORREF parent_background) {
+    const config::ResolvedStyle& resolved_style = style();
+    if (!host_.render_runtime->PrepareStyleResources(resolved_style, host_.dpi, parent_background)) {
+        return false;
+    }
+    const rendering::RgbaColor normal = host_.render_runtime->ResolveColor(
+        resolved_style.states[StateIndex(config::VisualState::Normal)].background);
+    const COLORREF child_background = rendering::CompositeOverOpaque(parent_background, normal);
+    for (const auto& child : children_) {
+        if (!child->PrepareResources(child_background)) return false;
+    }
+    return true;
+}
+
 void Component::AddChild(std::unique_ptr<Component> child) {
     if (child) children_.push_back(std::move(child));
 }
@@ -157,6 +173,10 @@ void Component::PaintStyleBox(HDC dc, config::VisualState state, const RECT& bou
     const int radius = ScaleDip(resolved_style.radius, host_.dpi);
     const int border_width = ScaleDip(resolved_style.border_width, host_.dpi);
 
+    if ((background.alpha < 255 || border.alpha < 255) && host_.render_context) {
+        host_.render_context->SourceOverRounded(bounds, radius, border_width, background, border);
+        return;
+    }
     COLORREF opaque_background = GetPixel(dc, bounds.left, bounds.top);
     if (opaque_background == CLR_INVALID) opaque_background = GetSysColor(COLOR_WINDOW);
     host_.render_runtime->PaintRoundedStyleBox(

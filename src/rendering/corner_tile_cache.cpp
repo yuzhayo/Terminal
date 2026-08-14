@@ -59,8 +59,8 @@ bool CornerTileCache::Paint(HDC target, const RECT& bounds, const CornerTileKey&
         return true;
     }
 
-    HBITMAP disc = DiscFor(key);
-    HDC source = disc ? SourceDc() : nullptr;
+    HBITMAP disc = DiscFor(key, false);
+    HDC source = disc ? source_dc_ : nullptr;
     if (!source) {
         HGDIOBJ previous_pen = SelectObject(
             target, key.thickness > 0 && fallback_pen ? fallback_pen : GetStockObject(NULL_PEN));
@@ -112,6 +112,13 @@ bool CornerTileCache::Paint(HDC target, const RECT& bounds, const CornerTileKey&
     return true;
 }
 
+bool CornerTileCache::Prepare(const CornerTileKey& requested) noexcept {
+    CornerTileKey key = requested;
+    if (key.radius <= 0) return true;
+    if (!SourceDc()) return false;
+    return DiscFor(key, true) != nullptr;
+}
+
 void CornerTileCache::Clear() noexcept {
     for (const auto& [key, bitmap] : tiles_) {
         (void)key;
@@ -159,8 +166,9 @@ HBITMAP CornerTileCache::BuildDisc(const CornerTileKey& key) noexcept {
     return bitmap;
 }
 
-HBITMAP CornerTileCache::DiscFor(const CornerTileKey& key) noexcept {
+HBITMAP CornerTileCache::DiscFor(const CornerTileKey& key, bool allow_create) noexcept {
     if (const auto existing = tiles_.find(key); existing != tiles_.end()) return existing->second;
+    if (!allow_create) return nullptr;
     if (tiles_.size() >= kMaximumEntries) Clear();
     HBITMAP bitmap = BuildDisc(key);
     if (bitmap) tiles_.emplace(key, bitmap);

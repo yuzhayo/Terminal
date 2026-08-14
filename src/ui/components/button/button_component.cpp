@@ -12,12 +12,10 @@ const config::ButtonProperties& Properties(const config::ResolvedComponent& defi
 }  // namespace
 
 MeasuredSize ButtonComponent::Measure(HDC dc, int available_width, int available_height) {
+    (void)dc;
     const std::wstring label = ResolveText(Properties(definition_).label);
-    HFONT font = host_.render_runtime->Font(style().font, host_.dpi);
-    HGDIOBJ previous = font ? SelectObject(dc, font) : nullptr;
-    SIZE text_size{};
-    GetTextExtentPoint32W(dc, label.c_str(), static_cast<int>(label.size()), &text_size);
-    if (previous) SelectObject(dc, previous);
+    const SIZE text_size = host_.render_runtime->MeasureText(
+        label, style().font, host_.dpi, available_width, DT_SINGLELINE | DT_NOPREFIX);
     const int width = text_size.cx + ScaleDip(style().content_padding.left +
                                               style().content_padding.right, host_.dpi);
     const int text_height = text_size.cy + ScaleDip(style().content_padding.top +
@@ -31,14 +29,9 @@ void ButtonComponent::Paint(HDC dc) {
     const std::wstring label = ResolveText(Properties(definition_).label);
     const config::ResolvedVisualState& visual = style().states[static_cast<std::size_t>(State())];
     const rendering::RgbaColor foreground = host_.render_runtime->ResolveColor(visual.foreground);
-    HFONT font = host_.render_runtime->Font(style().font, host_.dpi);
-    HGDIOBJ previous = font ? SelectObject(dc, font) : nullptr;
-    SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, rendering::ToColorRef(foreground));
-    RECT text_bounds = bounds_;
-    DrawTextW(dc, label.c_str(), static_cast<int>(label.size()), &text_bounds,
-              DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-    if (previous) SelectObject(dc, previous);
+    host_.render_runtime->DrawTextRun(dc, label, style().font, host_.dpi, bounds_,
+                                      DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+                                      rendering::ToColorRef(foreground));
 }
 
 bool ButtonComponent::PointerMove(POINT point) {

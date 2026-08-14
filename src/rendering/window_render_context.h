@@ -34,10 +34,13 @@ public:
     void SetRedrawRequest(std::function<void()> request);
 
     void SourceOver(const RECT& region, const RgbaColor& color) noexcept;
+    void SourceOverRounded(const RECT& region, int radius, int border_width,
+                           const RgbaColor& fill, const RgbaColor& border) noexcept;
     std::uint32_t PixelAt(int x, int y) const noexcept;
     void ForceOpaqueAlpha(const RECT& region) noexcept;
     void ForceOpaqueAlpha() noexcept;
     bool Present(HDC target, const RECT& region) const noexcept;
+    bool PresentScaled(HDC target, const RECT& target_region) const noexcept;
     void Reset() noexcept;
 
 private:

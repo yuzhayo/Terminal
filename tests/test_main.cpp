@@ -19,6 +19,7 @@
 
 #include "app/app_identity.h"
 #include "platform/app_paths.h"
+#include "platform/single_instance.h"
 #include "platform/windows_runtime.h"
 #include "rendering/render_runtime.h"
 #include "rendering/native_peer_gdi_resource_cache.h"
@@ -28,6 +29,8 @@
 #include "ui/components/component_registry.h"
 #include "ui/components/editable_draft_state.h"
 #include "ui/components/input/native_peer_geometry.h"
+#include "ui/components/text/text_component.h"
+#include "ui/application/stub_application_bridge.h"
 #include "ui/config/ui_config_gate.h"
 #include "ui/containers/logical_focus_coordinator.h"
 #include "ui/containers/overlay_plane.h"
@@ -537,6 +540,67 @@ void TestRenderRuntimeCornerCacheAndEpoch() {
     ReleaseDC(nullptr, screen);
 }
 
+void TestRenderRuntimePaintHotPathAndHeadlessMeasure() {
+    rendering::RenderRuntime runtime;
+    ui::config::ResolvedTheme theme;
+    ui::config::ResolvedStyle style;
+    style.font = {"Segoe UI", "", 9, 400};
+    style.radius = 4;
+    style.border_width = 1;
+    for (auto& state : style.states) {
+        state.background = ui::config::LiteralRgba{20, 30, 40, 255};
+        state.foreground = ui::config::LiteralRgba{240, 240, 240, 255};
+        state.border = ui::config::LiteralRgba{80, 90, 100, 255};
+    }
+    theme.styles.push_back(style);
+    REQUIRE_TRUE(runtime.PrepareStyleResources(theme.styles.front(), 96, RGB(0, 0, 0)));
+    const auto prepared = runtime.diagnostics();
+
+    rendering::WindowRenderContext context(&runtime);
+    HDC screen = GetDC(nullptr);
+    REQUIRE_TRUE(screen != nullptr && context.EnsureSize(screen, 32, 32));
+    runtime.BeginPaintScope();
+    REQUIRE_TRUE(runtime.PaintRoundedStyleBox(
+        context.dc(), RECT{0, 0, 24, 24}, 4, 1, rendering::RgbaColor{20, 30, 40, 255},
+        rendering::RgbaColor{80, 90, 100, 255}, RGB(0, 0, 0), 96, 0));
+    runtime.EndPaintScope();
+    const auto painted = runtime.diagnostics();
+    REQUIRE_TRUE(painted.cached_fonts == prepared.cached_fonts);
+    REQUIRE_TRUE(painted.cached_brushes == prepared.cached_brushes);
+    REQUIRE_TRUE(painted.cached_pens == prepared.cached_pens);
+    REQUIRE_TRUE(painted.cached_corner_tiles == prepared.cached_corner_tiles);
+
+    ui::components::ComponentHost host;
+    host.dpi = 96;
+    host.render_runtime = &runtime;
+    host.render_context = &context;
+    host.theme = &theme;
+    ui::config::ResolvedComponent definition;
+    definition.id = "headless-text";
+    definition.type = ui::config::ComponentType::Text;
+    definition.style_index = 0;
+    definition.properties = ui::config::TextProperties{std::string("مرحبا"),
+        ui::config::TextVariant::Body, false, false, ui::config::TextAlign::Start};
+    ui::components::TextComponent text(definition, host);
+    const auto measured = text.Measure(nullptr, 300, 100);
+    REQUIRE_TRUE(measured.width > 0 && measured.height > 0);
+    ReleaseDC(nullptr, screen);
+}
+
+void TestWindowRenderContextRoundedSourceOver() {
+    rendering::WindowRenderContext context;
+    HDC screen = GetDC(nullptr);
+    REQUIRE_TRUE(screen != nullptr && context.EnsureSize(screen, 4, 4));
+    context.SourceOver(RECT{0, 0, 4, 4}, rendering::RgbaColor{0, 0, 255, 255});
+    context.SourceOverRounded(RECT{0, 0, 4, 4}, 0, 0,
+                              rendering::RgbaColor{255, 0, 0, 128},
+                              rendering::RgbaColor{0, 0, 0, 0});
+    const std::uint32_t expected = rendering::SourceOverPremultiplied(
+        0xFF0000FFu, rendering::Premultiply(rendering::RgbaColor{255, 0, 0, 128}));
+    REQUIRE_TRUE(context.PixelAt(1, 1) == expected);
+    ReleaseDC(nullptr, screen);
+}
+
 void TestOverlayPlanePaintOrder() {
     rendering::RenderRuntime runtime;
     rendering::WindowRenderContext context(&runtime);
@@ -917,6 +981,39 @@ void TestThemePlatformAdapterContract() {
     REQUIRE_TRUE(!diagnostic.empty());
 }
 
+void TestSingleInstanceIpcContract() {
+    const std::wstring mutex_name = platform::BuildCurrentUserMutexName();
+    REQUIRE_TRUE(mutex_name.starts_with(L"Local\\Yuzha.Terminal.Instance.v1."));
+    REQUIRE_TRUE(mutex_name.size() == std::wstring(L"Local\\Yuzha.Terminal.Instance.v1.").size() + 32);
+
+    const platform::IpcRequest request{
+        "01234567-89ab-cdef-0123-456789abcdef", platform::IpcCommand::OpenRoute, "settings"};
+    const std::string payload = platform::SerializeIpcRequest(request);
+    REQUIRE_TRUE(!payload.empty());
+    const auto parsed = platform::ParseIpcPayload(payload.data(), payload.size());
+    REQUIRE_TRUE(parsed.request.has_value());
+    REQUIRE_TRUE(*parsed.request == request);
+
+    const std::string unknown =
+        R"({"protocol":"yuzha.terminal.ipc","version":1,"requestId":"01234567-89ab-cdef-0123-456789abcdef","command":"nope","arguments":{}})";
+    REQUIRE_TRUE(platform::ParseIpcPayload(unknown.data(), unknown.size()).error ==
+                 platform::IpcError::UnsupportedCommand);
+    const std::string duplicate =
+        R"({"protocol":"yuzha.terminal.ipc","protocol":"yuzha.terminal.ipc","version":1,"requestId":"01234567-89ab-cdef-0123-456789abcdef","command":"activate-default","arguments":{}})";
+    REQUIRE_TRUE(!platform::ParseIpcPayload(duplicate.data(), duplicate.size()).request.has_value());
+}
+
+void TestStubApplicationBridgePatch() {
+    ui::application::StubApplicationBridge bridge;
+    const auto patch = bridge.Dispatch({"run-terminal-stub", {}});
+    REQUIRE_TRUE(patch.has_value());
+    REQUIRE_TRUE(patch->generation == 1);
+    REQUIRE_TRUE(patch->view_state.at("stubStatus") == "completed");
+    REQUIRE_TRUE(patch->window_title.has_value());
+    REQUIRE_TRUE(patch->request_repaint);
+    REQUIRE_TRUE(!bridge.Dispatch({"unknown-action", {}}).has_value());
+}
+
 void TestWindowsRuntimeMinimumBuild() {
     std::wstring diagnostic;
     REQUIRE_TRUE(platform::CheckWindowsRuntime(diagnostic) ==
@@ -936,7 +1033,10 @@ std::vector<TestCase> DiscoverTests() {
         {"NativePeerGeometry.Containment", TestNativePeerGeometryContainment, __FILE__, __LINE__},
         {"OverlayPlane.PaintOrder", TestOverlayPlanePaintOrder, __FILE__, __LINE__},
         {"RenderRuntime.CornerCacheAndEpoch", TestRenderRuntimeCornerCacheAndEpoch, __FILE__, __LINE__},
+        {"RenderRuntime.PaintHotPathAndHeadlessMeasure", TestRenderRuntimePaintHotPathAndHeadlessMeasure, __FILE__, __LINE__},
         {"SoftwareCompositor.SourceOver", TestSoftwareSourceOver, __FILE__, __LINE__},
+        {"SingleInstance.IpcContract", TestSingleInstanceIpcContract, __FILE__, __LINE__},
+        {"StubApplicationBridge.Patch", TestStubApplicationBridgePatch, __FILE__, __LINE__},
         {"ThemePlatformAdapter.Contract", TestThemePlatformAdapterContract, __FILE__, __LINE__},
         {"UiConfigGate.AllComponentSchemas", TestUiConfigAllComponentSchemasResolve, __FILE__, __LINE__},
         {"UiConfigGate.BootstrapInvalidOverrideFallback", TestUiConfigBootstrapRejectsOverrideAndUsesDefault, __FILE__, __LINE__},
@@ -955,6 +1055,7 @@ std::vector<TestCase> DiscoverTests() {
         {"UiConfigGate.VersionRejected", TestUiConfigVersionRejected, __FILE__, __LINE__},
         {"WindowRenderContext.PersistentAllocation", TestWindowRenderContextPersistentAllocation, __FILE__, __LINE__},
         {"WindowRenderContext.InvalidationUnion", TestWindowRenderContextInvalidationUnion, __FILE__, __LINE__},
+        {"WindowRenderContext.RoundedSourceOver", TestWindowRenderContextRoundedSourceOver, __FILE__, __LINE__},
         {"WindowsRuntime.MinimumBuild", TestWindowsRuntimeMinimumBuild, __FILE__, __LINE__},
     };
     std::sort(tests.begin(), tests.end(),

@@ -5,6 +5,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <string_view>
 
 #include "rendering/corner_tile_cache.h"
 #include "rendering/native_peer_gdi_resource_cache.h"
@@ -46,6 +47,15 @@ public:
     HFONT Font(const ui::config::ResolvedFont& descriptor, UINT dpi);
     HBRUSH Brush(COLORREF color);
     HPEN Pen(COLORREF color, int width);
+    bool PrepareStyleResources(const ui::config::ResolvedStyle& style, UINT dpi,
+                               COLORREF opaque_background);
+    HDC MeasurementDc();
+    SIZE MeasureText(std::wstring_view text, const ui::config::ResolvedFont& font, UINT dpi,
+                     int available_width, UINT flags);
+    bool DrawTextRun(HDC target, std::wstring_view text, const ui::config::ResolvedFont& font,
+                     UINT dpi, const RECT& bounds, UINT flags, COLORREF color);
+    void BeginPaintScope() noexcept;
+    void EndPaintScope() noexcept;
     bool PaintRoundedStyleBox(HDC target, const RECT& bounds, int radius, int border_width,
                               const RgbaColor& fill, const RgbaColor& border,
                               COLORREF opaque_background, UINT dpi,
@@ -83,6 +93,8 @@ private:
     CornerTileCache corner_tiles_;
     NativePeerGdiResourceCache native_peer_resources_;
     std::set<WindowRenderContext*> window_contexts_;
+    HDC measurement_dc_ = nullptr;
+    bool in_paint_scope_ = false;
     std::uint64_t resource_epoch_ = 1;
 };
 

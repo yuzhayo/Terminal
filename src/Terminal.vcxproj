@@ -48,6 +48,8 @@
       <WarningLevel>Level4</WarningLevel>
       <TreatWarningAsError>true</TreatWarningAsError>
       <ConformanceMode>true</ConformanceMode>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX;WINVER=0x0A00;_WIN32_WINNT=0x0A00;TERMINAL_VERSION_MAJOR=$(TerminalVersionMajor);TERMINAL_VERSION_MINOR=$(TerminalVersionMinor);TERMINAL_VERSION_PATCH=$(TerminalVersionPatch);TERMINAL_VERSION_BUILD=$(TerminalVersionBuild);TERMINAL_VERSION_COMMA=$(TerminalVersionMajor),$(TerminalVersionMinor),$(TerminalVersionPatch),$(TerminalVersionBuild);TERMINAL_VERSION_STRING=&quot;$(TerminalVersion)&quot;;TERMINAL_VERSION_STRING_W=L&quot;$(TerminalVersion)&quot;;TERMINAL_FILE_VERSION_STRING=&quot;$(TerminalVersion).$(TerminalVersionBuild)&quot;;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(ProjectDir);$(VelopackDir)include;$(NlohmannJsonDir)single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -56,8 +58,13 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <RandomizedBaseAddress>true</RandomizedBaseAddress>
+      <DataExecutionPrevention>true</DataExecutionPrevention>
+      <HighEntropyVA>true</HighEntropyVA>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
+      <AdditionalOptions>/CETCOMPAT %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(VelopackDir)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>user32.lib;gdi32.lib;comctl32.lib;imm32.lib;dwmapi.lib;psapi.lib;advapi32.lib;shell32.lib;uxtheme.lib;ole32.lib;uuid.lib;windowsapp.lib;velopack_libc_win_x64_msvc.dll.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>comctl32.lib;shell32.lib;shlwapi.lib;ole32.lib;oleaut32.lib;uuid.lib;dwmapi.lib;uxtheme.lib;advapi32.lib;crypt32.lib;user32.lib;gdi32.lib;propsys.lib;uiautomationcore.lib;usp10.lib;psapi.lib;windowsapp.lib;imm32.lib;velopack_libc_win_x64_msvc.dll.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <AdditionalManifestFiles>$(ProjectDir)app.manifest</AdditionalManifestFiles>
@@ -69,6 +76,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -91,6 +99,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="instrumentation\performance_trace.cpp" />
     <ClCompile Include="platform\app_paths.cpp" />
+    <ClCompile Include="platform\infrastructure_window.cpp" />
     <ClCompile Include="platform\single_instance.cpp" />
     <ClCompile Include="platform\updater.cpp" />
     <ClCompile Include="platform\windows_runtime.cpp" />
@@ -108,6 +117,7 @@
     <ClCompile Include="ui\components\input\native_peer_geometry.cpp" />
     <ClCompile Include="ui\components\text\text_component.cpp" />
     <ClCompile Include="ui\components\window\window_component.cpp" />
+    <ClCompile Include="ui\application\stub_application_bridge.cpp" />
     <ClCompile Include="ui\config\resolved_ui_document.cpp" />
     <ClCompile Include="ui\config\ui_config_gate.cpp" />
     <ClCompile Include="ui\containers\logical_focus_coordinator.cpp" />
@@ -118,6 +128,7 @@
     <ClInclude Include="app\app_version.h" />
     <ClInclude Include="instrumentation\performance_trace.h" />
     <ClInclude Include="platform\app_paths.h" />
+    <ClInclude Include="platform\infrastructure_window.h" />
     <ClInclude Include="platform\single_instance.h" />
     <ClInclude Include="platform\updater.h" />
     <ClInclude Include="platform\windows_runtime.h" />
@@ -136,6 +147,7 @@
     <ClInclude Include="ui\components\input\native_peer_geometry.h" />
     <ClInclude Include="ui\components\text\text_component.h" />
     <ClInclude Include="ui\components\window\window_component.h" />
+    <ClInclude Include="ui\application\stub_application_bridge.h" />
     <ClInclude Include="ui\config\resolved_ui_document.h" />
     <ClInclude Include="ui\config\ui_config_gate.h" />
     <ClInclude Include="ui\containers\logical_focus_coordinator.h" />

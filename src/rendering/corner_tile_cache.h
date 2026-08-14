@@ -31,12 +31,13 @@ public:
 
     bool Paint(HDC target, const RECT& bounds, const CornerTileKey& key, HBRUSH fill_brush,
                HBRUSH border_brush, HPEN fallback_pen) noexcept;
+    bool Prepare(const CornerTileKey& key) noexcept;
     void Clear() noexcept;
     std::size_t entry_count() const noexcept;
 
 private:
     HBITMAP BuildDisc(const CornerTileKey& key) noexcept;
-    HBITMAP DiscFor(const CornerTileKey& key) noexcept;
+    HBITMAP DiscFor(const CornerTileKey& key, bool allow_create) noexcept;
     HDC SourceDc() noexcept;
 
     HDC source_dc_ = nullptr;

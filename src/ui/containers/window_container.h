@@ -3,10 +3,13 @@
 #include <windows.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "rendering/render_runtime.h"
 #include "rendering/window_render_context.h"
+#include "platform/single_instance.h"
+#include "ui/application/stub_application_bridge.h"
 #include "ui/components/component.h"
 #include "ui/components/component_registry.h"
 #include "ui/config/resolved_ui_document.h"
@@ -30,6 +33,8 @@ public:
     bool SuspendNativePeers(std::wstring& diagnostic);
     void ResumeNativePeers();
     void Show(int show_command);
+    void ApplyTheme(config::ThemeKind theme_kind);
+    void HandleIpcRequest(const platform::IpcRequest& request);
     HWND hwnd() const noexcept;
 
 private:
@@ -39,6 +44,8 @@ private:
     bool BuildComponentTree(std::wstring& diagnostic);
     bool RenderCompleteFrame(HDC reference);
     bool RenderFrame(HDC reference, const RECT& requested_region, bool force_full);
+    bool PrepareRenderResources();
+    void TraceInputStart();
     void Layout();
     void TrackPointer(POINT point);
     void DispatchStubEvent(const config::EventDefinition& event);
@@ -57,6 +64,12 @@ private:
     std::unique_ptr<components::ComponentHost> component_host_;
     std::unique_ptr<components::Component> root_;
     components::Component* pointer_target_ = nullptr;
+    application::StubApplicationBridge application_bridge_;
+    std::optional<std::uint64_t> pending_input_correlation_;
+    std::optional<std::uint64_t> pending_resize_correlation_;
+    std::optional<std::uint64_t> pending_navigation_correlation_;
+    std::uint64_t last_scenario_correlation_ = 0;
+    bool resources_prepared_ = false;
     bool frame_ready_ = false;
 };
 

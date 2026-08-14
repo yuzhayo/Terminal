@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cmath>
 
 #include "rendering/render_runtime.h"
 #include "rendering/software_compositor.h"
@@ -138,6 +139,59 @@ void WindowRenderContext::SourceOver(const RECT& region, const RgbaColor& color)
     SourceOverSolid(pixels_, width_, height_, width_, region, color);
 }
 
+void WindowRenderContext::SourceOverRounded(const RECT& region, int radius, int border_width,
+                                            const RgbaColor& fill,
+                                            const RgbaColor& border) noexcept {
+    if (!valid()) return;
+    const RECT clipped{std::max(0L, region.left), std::max(0L, region.top),
+                       std::min(static_cast<LONG>(width_), region.right),
+                       std::min(static_cast<LONG>(height_), region.bottom)};
+    if (clipped.right <= clipped.left || clipped.bottom <= clipped.top) return;
+    const double width = static_cast<double>(region.right - region.left);
+    const double height = static_cast<double>(region.bottom - region.top);
+    const double outer_radius = std::clamp(static_cast<double>(radius), 0.0,
+                                           std::min(width, height) / 2.0);
+    const double inset = std::clamp(static_cast<double>(border_width), 0.0, outer_radius);
+    const double center_x = (region.left + region.right) / 2.0;
+    const double center_y = (region.top + region.bottom) / 2.0;
+    const auto coverage = [](double x, double y, double half_width, double half_height,
+                             double shape_radius) {
+        const double qx = std::abs(x) - (half_width - shape_radius);
+        const double qy = std::abs(y) - (half_height - shape_radius);
+        const double outside = std::hypot(std::max(qx, 0.0), std::max(qy, 0.0));
+        const double inside = std::min(std::max(qx, qy), 0.0);
+        return std::clamp(0.5 - (outside + inside - shape_radius), 0.0, 1.0);
+    };
+    for (LONG y = clipped.top; y < clipped.bottom; ++y) {
+        std::uint32_t* row = pixels_ + static_cast<std::size_t>(y) * width_;
+        for (LONG x = clipped.left; x < clipped.right; ++x) {
+            const double local_x = x + 0.5 - center_x;
+            const double local_y = y + 0.5 - center_y;
+            const double outer = coverage(local_x, local_y, width / 2.0, height / 2.0,
+                                          outer_radius);
+            if (outer <= 0.0) continue;
+            double inner = 0.0;
+            if (inset > 0.0) {
+                inner = coverage(local_x, local_y, width / 2.0 - inset,
+                                 height / 2.0 - inset,
+                                 std::max(0.0, outer_radius - inset));
+                const double border_coverage = outer * (1.0 - inner);
+                if (border_coverage > 0.0) {
+                    RgbaColor edge = border;
+                    edge.alpha = static_cast<BYTE>(edge.alpha * border_coverage + 0.5);
+                    row[x] = SourceOverPremultiplied(row[x], Premultiply(edge));
+                }
+            }
+            const double fill_coverage = inset > 0.0 ? inner : outer;
+            if (fill_coverage > 0.0) {
+                RgbaColor inner_fill = fill;
+                inner_fill.alpha = static_cast<BYTE>(inner_fill.alpha * fill_coverage + 0.5);
+                row[x] = SourceOverPremultiplied(row[x], Premultiply(inner_fill));
+            }
+        }
+    }
+}
+
 std::uint32_t WindowRenderContext::PixelAt(int x, int y) const noexcept {
     if (!valid() || x < 0 || y < 0 || x >= width_ || y >= height_) return 0;
     return pixels_[static_cast<std::size_t>(y) * width_ + x];
@@ -166,6 +220,18 @@ bool WindowRenderContext::Present(HDC target, const RECT& region) const noexcept
     if (clipped.right <= clipped.left || clipped.bottom <= clipped.top) return true;
     return BitBlt(target, clipped.left, clipped.top, clipped.right - clipped.left,
                   clipped.bottom - clipped.top, memory_dc_, clipped.left, clipped.top, SRCCOPY) != FALSE;
+}
+
+bool WindowRenderContext::PresentScaled(HDC target, const RECT& target_region) const noexcept {
+    if (!valid() || !target || target_region.right <= target_region.left ||
+        target_region.bottom <= target_region.top) return false;
+    const int previous_mode = SetStretchBltMode(target, COLORONCOLOR);
+    const bool presented = StretchBlt(target, target_region.left, target_region.top,
+                                      target_region.right - target_region.left,
+                                      target_region.bottom - target_region.top,
+                                      memory_dc_, 0, 0, width_, height_, SRCCOPY) != FALSE;
+    if (previous_mode != 0) SetStretchBltMode(target, previous_mode);
+    return presented;
 }
 
 void WindowRenderContext::Reset() noexcept {
