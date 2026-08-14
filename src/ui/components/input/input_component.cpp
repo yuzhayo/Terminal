@@ -160,16 +160,19 @@ bool InputComponent::HandleCommand(HWND source, WORD notification) {
         if (host_.native_focus_changed) host_.native_focus_changed(this, true);
         Arrange(bounds_);
         Invalidate();
+        EmitEvent("focus");
     } else if (notification == EN_KILLFOCUS) {
         native_focused_ = false;
         if (host_.native_focus_changed) host_.native_focus_changed(this, false);
         Arrange(bounds_);
         Invalidate();
+        EmitEvent("blur");
     } else if (notification == EN_CHANGE) {
         draft_.Update(ReadPeerText());
         Arrange(bounds_);
-        const auto event = definition_.events.find("changed");
-        if (event != definition_.events.end() && host_.dispatch_event) host_.dispatch_event(event->second);
+        config::EventPayloadValue value;
+        value.value = WideToUtf8(draft_.value());
+        EmitEvent("changed", {{"value", std::move(value)}});
     }
     return true;
 }

@@ -148,8 +148,9 @@ config::VisualState ToggleComponent::State() const noexcept {
 void ToggleComponent::Toggle() {
     checked_ = !checked_;
     Invalidate();
-    const auto event = definition_.events.find("changed");
-    if (event != definition_.events.end() && host_.dispatch_event) host_.dispatch_event(event->second);
+    config::EventPayloadValue checked;
+    checked.value = checked_;
+    EmitEvent("changed", {{"checked", std::move(checked)}});
 }
 
 }  // namespace ui::components

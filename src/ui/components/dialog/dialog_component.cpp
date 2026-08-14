@@ -235,8 +235,7 @@ bool DialogComponent::AutomationClose() {
 }
 
 void DialogComponent::Dispatch(std::string_view event_name) {
-    const auto found = definition_.events.find(std::string(event_name));
-    if (found != definition_.events.end() && host_.dispatch_event) host_.dispatch_event(found->second);
+    EmitEvent(event_name);
 }
 
 const RECT& DialogComponent::panel_bounds() const noexcept { return panel_bounds_; }

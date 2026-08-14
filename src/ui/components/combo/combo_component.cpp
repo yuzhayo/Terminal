@@ -443,8 +443,14 @@ void ComboComponent::EnsureHighlightVisible() {
 }
 
 void ComboComponent::Dispatch(std::string_view name) {
-    const auto found = definition_.events.find(std::string(name));
-    if (found != definition_.events.end() && host_.dispatch_event) host_.dispatch_event(found->second);
+    config::EventPayloadValue selected_index;
+    selected_index.value = selected_index_ ? static_cast<std::int64_t>(*selected_index_) : -1;
+    config::EventPayloadValue selected_value;
+    selected_value.value = selected_index_ && *selected_index_ < items_.size()
+                               ? WideToUtf8(items_[*selected_index_])
+                               : std::string{};
+    EmitEvent(name, {{"selectedIndex", std::move(selected_index)},
+                     {"selectedValue", std::move(selected_value)}});
 }
 
 config::VisualState ComboComponent::State() const noexcept {

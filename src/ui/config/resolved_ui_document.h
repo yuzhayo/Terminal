@@ -114,6 +114,7 @@ enum class Orientation { Vertical, Horizontal };
 
 struct WindowProperties {
     TextValue title;
+    std::string initial_route;
     int initial_width = 760;
     int initial_height = 520;
     int minimum_width = 620;

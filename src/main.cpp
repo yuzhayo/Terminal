@@ -3,6 +3,7 @@
 #include <shellapi.h>
 
 #include <cwchar>
+#include <memory>
 #include <string>
 
 #include "app/app_identity.h"
@@ -14,6 +15,7 @@
 #include "platform/windows_runtime.h"
 #include "rendering/render_runtime.h"
 #include "ui/config/ui_config_gate.h"
+#include "ui/application/stub_application_bridge.h"
 #include "ui/containers/window_container.h"
 #include "ui/theme/theme_platform_adapter.h"
 
@@ -94,12 +96,19 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
     ui::theme::ThemePlatformAdapter theme_adapter(
         ui::theme::ThemePlatformAdapter::ReadInitialSnapshot());
     rendering::RenderRuntime render_runtime;
+    auto application_bridge = std::make_shared<ui::application::StubApplicationBridge>();
     ui::containers::WindowContainer window_container(
         instance, render_runtime, config_gate.document(),
-        theme_adapter.Select(ui::config::ThemePreference::System));
+        theme_adapter.Select(ui::config::ThemePreference::System), application_bridge);
     if (!window_container.Create("main", diagnostic)) {
         ShowBootstrapError(diagnostic);
         return 2;
+    }
+    const auto startup_request = platform::BuildIpcRequestFromCommandLine(command_line);
+    if (startup_request && startup_request->command == platform::IpcCommand::OpenRoute &&
+        !window_container.Navigate(startup_request->route_id, diagnostic)) {
+        ShowBootstrapError(diagnostic);
+        return 17;
     }
     platform::InfrastructureWindow infrastructure_window;
     if (!infrastructure_window.Create(

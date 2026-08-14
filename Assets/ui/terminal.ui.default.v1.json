@@ -1840,6 +1840,18 @@
       "minWidth": 620,
       "minHeight": 420,
       "resizable": true,
+      "initialRoute": "terminal",
+      "children": []
+    }
+  },
+  "screens": {
+    "terminal": {
+      "id": "terminal-screen",
+      "type": "Screen",
+      "style": {
+        "$ref": "styles.surface"
+      },
+      "routeId": "terminal",
       "children": [
         {
           "id": "terminal-shell",
@@ -2051,6 +2063,22 @@
                   "payload": {}
                 }
               }
+            },
+            {
+              "id": "terminal-settings-action",
+              "type": "Button",
+              "style": {
+                "$ref": "styles.button-default"
+              },
+              "label": "Buka Settings",
+              "events": {
+                "click": {
+                  "action": "navigate-route",
+                  "payload": {
+                    "routeId": "settings"
+                  }
+                }
+              }
             }
           ]
         },
@@ -2155,27 +2183,6 @@
           }
         }
       ]
-    }
-  },
-  "screens": {
-    "terminal": {
-      "id": "terminal-screen",
-      "type": "Screen",
-      "style": {
-        "$ref": "styles.surface"
-      },
-      "routeId": "terminal",
-      "children": [
-        {
-          "id": "terminal-title",
-          "type": "Text",
-          "style": {
-            "$ref": "styles.text-title"
-          },
-          "text": "Terminal",
-          "variant": "title"
-        }
-      ]
     },
     "json-inject": {
       "id": "json-inject-screen",
@@ -2269,6 +2276,22 @@
           },
           "text": "Settings",
           "variant": "title"
+        },
+        {
+          "id": "settings-terminal-action",
+          "type": "Button",
+          "style": {
+            "$ref": "styles.button-default"
+          },
+          "label": "Kembali ke Terminal",
+          "events": {
+            "click": {
+              "action": "navigate-route",
+              "payload": {
+                "routeId": "terminal"
+              }
+            }
+          }
         }
       ]
     },

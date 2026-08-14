@@ -83,7 +83,8 @@ struct ComponentHost {
     rendering::WindowRenderContext* render_context = nullptr;
     const config::ResolvedTheme* theme = nullptr;
     std::function<void(const RECT&)> invalidate;
-    std::function<void(const config::EventDefinition&)> dispatch_event;
+    std::function<void(Component&, std::string_view, const config::EventDefinition&)>
+        dispatch_event;
     std::function<void(Component*, bool)> native_focus_changed;
     std::function<void(Component*, bool)> popup_state_changed;
     std::function<std::vector<std::wstring>(std::string_view)> resolve_string_items;
@@ -198,6 +199,7 @@ public:
 
     const RECT& bounds() const noexcept;
     const config::ResolvedComponent& definition() const noexcept;
+    std::uint64_t instance_id() const noexcept;
     const config::ResolvedStyle& style() const;
     bool visible() const noexcept;
     bool enabled() const noexcept;
@@ -208,12 +210,15 @@ public:
 protected:
     void PaintStyleBox(HDC dc, config::VisualState state, const RECT& bounds) const;
     void PaintChildren(HDC dc);
+    void EmitEvent(std::string_view event_type,
+                   config::EventPayloadValue::Object runtime_payload = {});
     MeasuredSize ApplyConstraints(MeasuredSize measured, int available_width,
                                   int available_height) const noexcept;
     void Invalidate() const;
 
     const config::ResolvedComponent& definition_;
     ComponentHost& host_;
+    std::uint64_t instance_id_ = 0;
     RECT bounds_{};
     Component* parent_ = nullptr;
     std::vector<std::unique_ptr<Component>> children_;
@@ -224,6 +229,7 @@ std::wstring ResolveText(const config::TextValue& value);
 std::wstring ResolveAutomationName(const config::ResolvedComponent& definition,
                                    std::wstring fallback);
 std::wstring Utf8ToWide(std::string_view value);
+std::string WideToUtf8(std::wstring_view value);
 bool PointInRectInclusive(const RECT& bounds, POINT point) noexcept;
 
 }  // namespace ui::components

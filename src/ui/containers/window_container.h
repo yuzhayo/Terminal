@@ -3,13 +3,14 @@
 #include <windows.h>
 
 #include <memory>
+#include <map>
 #include <optional>
 #include <string>
 
 #include "rendering/render_runtime.h"
 #include "rendering/window_render_context.h"
 #include "platform/single_instance.h"
-#include "ui/application/stub_application_bridge.h"
+#include "ui/application/ui_application_bridge.h"
 #include "ui/accessibility/automation_provider.h"
 #include "ui/components/component.h"
 #include "ui/components/component_registry.h"
@@ -24,7 +25,8 @@ class WindowContainer final {
 public:
     WindowContainer(HINSTANCE instance, rendering::RenderRuntime& render_runtime,
                     std::shared_ptr<const config::ResolvedUiDocument> document,
-                    config::ThemeKind theme_kind);
+                    config::ThemeKind theme_kind,
+                    std::shared_ptr<application::UiApplicationBridge> application_bridge);
     ~WindowContainer();
 
     WindowContainer(const WindowContainer&) = delete;
@@ -36,21 +38,27 @@ public:
     void ResumeNativePeers();
     void Show(int show_command);
     void ApplyTheme(config::ThemeKind theme_kind);
+    bool Navigate(std::string_view route_id, std::wstring& diagnostic);
     void HandleIpcRequest(const platform::IpcRequest& request);
     HWND hwnd() const noexcept;
+    std::string_view active_route() const noexcept;
+    std::size_t cached_screen_count() const noexcept;
 
 private:
     static LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
     LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
 
     bool BuildComponentTree(std::wstring& diagnostic);
+    bool ActivateRoute(std::string_view route_id, std::wstring& diagnostic);
+    void ResetAutomationProvider();
     bool RenderCompleteFrame(HDC reference);
     bool RenderFrame(HDC reference, const RECT& requested_region, bool force_full);
     bool PrepareRenderResources();
     void TraceInputStart();
     void Layout();
     void TrackPointer(POINT point);
-    void DispatchStubEvent(const config::EventDefinition& event);
+    void DispatchUiEvent(components::Component& source, std::string_view event_type,
+                         const config::EventDefinition& event);
     bool OpenModal(std::string_view dialog_id, std::wstring& diagnostic);
     bool CloseModal(components::ModalResult result, std::wstring& diagnostic);
     components::Component* HitTestInteractive(POINT point) const;
@@ -68,11 +76,21 @@ private:
     ModalOverlayStack modal_stack_;
     OverlayPlane overlay_plane_;
     std::unique_ptr<components::ComponentHost> component_host_;
-    std::unique_ptr<components::Component> root_;
+    struct ScreenEntry {
+        std::uint64_t instance_id = 0;
+        std::unique_ptr<components::Component> root;
+        bool suspended = false;
+    };
+    std::map<std::string, ScreenEntry, std::less<>> screen_cache_;
+    components::Component* root_ = nullptr;
+    std::string window_id_;
+    std::string active_route_;
+    std::uint64_t window_instance_id_ = 0;
+    std::uint64_t active_screen_instance_id_ = 0;
     accessibility::AutomationRootProvider* automation_provider_ = nullptr;
     components::Component* pointer_target_ = nullptr;
     components::Component* active_popup_owner_ = nullptr;
-    application::StubApplicationBridge application_bridge_;
+    std::shared_ptr<application::UiApplicationBridge> application_bridge_;
     std::optional<std::uint64_t> pending_input_correlation_;
     std::optional<std::uint64_t> pending_resize_correlation_;
     std::optional<std::uint64_t> pending_navigation_correlation_;

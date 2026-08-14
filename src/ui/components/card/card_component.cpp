@@ -144,8 +144,7 @@ config::VisualState CardComponent::State() const noexcept {
 }
 
 void CardComponent::Activate() {
-    const auto event = definition_.events.find("activate");
-    if (event != definition_.events.end() && host_.dispatch_event) host_.dispatch_event(event->second);
+    EmitEvent("activate");
 }
 
 }  // namespace ui::components

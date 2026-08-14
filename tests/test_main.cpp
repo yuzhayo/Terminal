@@ -495,10 +495,14 @@ void TestUiConfigGateEmbeddedDefault() {
         gate.document()->theme(ui::config::ThemeKind::HighContrast).tokens.at("window")));
     const auto& main_window = gate.document()->windows.at("main");
     REQUIRE_TRUE(main_window.type == ui::config::ComponentType::Window);
-    REQUIRE_TRUE(main_window.children.size() == 2);
-    const auto& shell = main_window.children.front();
+    REQUIRE_TRUE(main_window.children.empty());
+    REQUIRE_TRUE(std::get<ui::config::WindowProperties>(main_window.properties).initial_route ==
+                 "terminal");
+    const auto& terminal_screen = gate.document()->screens.at("terminal");
+    REQUIRE_TRUE(terminal_screen.children.size() == 2);
+    const auto& shell = terminal_screen.children.front();
     REQUIRE_TRUE(shell.type == ui::config::ComponentType::Container);
-    REQUIRE_TRUE(shell.children.size() == 8);
+    REQUIRE_TRUE(shell.children.size() == 9);
     REQUIRE_TRUE(shell.children[0].type == ui::config::ComponentType::Text);
     REQUIRE_TRUE(shell.children[2].type == ui::config::ComponentType::Input);
     REQUIRE_TRUE(shell.children[3].type == ui::config::ComponentType::Combo);
@@ -509,9 +513,33 @@ void TestUiConfigGateEmbeddedDefault() {
     REQUIRE_TRUE(shell.children[5].type == ui::config::ComponentType::List);
     REQUIRE_TRUE(shell.children[6].type == ui::config::ComponentType::Button);
     REQUIRE_TRUE(shell.children[7].type == ui::config::ComponentType::Button);
-    const auto& dialog = main_window.children[1];
+    REQUIRE_TRUE(shell.children[8].type == ui::config::ComponentType::Button);
+    const auto& dialog = terminal_screen.children[1];
     REQUIRE_TRUE(dialog.type == ui::config::ComponentType::Dialog);
     REQUIRE_TRUE(dialog.children.size() == 2);
+}
+
+void TestUiConfigDynamicScreenInventory() {
+    Json embedded = ReadEmbeddedDefaultDocument();
+    embedded["screens"]["plugin-dashboard"] = {
+        {"id", "plugin-dashboard-screen"},
+        {"type", "Screen"},
+        {"style", {{"$ref", "styles.surface"}}},
+        {"routeId", "plugin-dashboard"},
+        {"children", Json::array({{{"id", "plugin-dashboard-title"},
+                                    {"type", "Text"},
+                                    {"style", {{"$ref", "styles.text-title"}}},
+                                    {"text", "Plugin Dashboard"},
+                                    {"variant", "title"}}})},
+    };
+    embedded["windows"]["main"]["initialRoute"] = "plugin-dashboard";
+    const auto result = ui::config::detail::ResolveDocuments(
+        embedded.dump(), std::nullopt, 1);
+    REQUIRE_TRUE(result.document->screens.size() == 8);
+    REQUIRE_TRUE(result.document->screens.contains("plugin-dashboard"));
+    REQUIRE_TRUE(std::get<ui::config::WindowProperties>(
+                     result.document->windows.at("main").properties)
+                     .initial_route == "plugin-dashboard");
 }
 
 void TestScrollbarMetrics() {
@@ -1328,7 +1356,7 @@ void TestUiConfigOverrideRejectedAsWhole() {
     REQUIRE_TRUE(result.override_diagnostic.has_value());
     REQUIRE_TRUE(result.override_diagnostic->code == "unknown-field");
     REQUIRE_TRUE(result.document->generation == 5);
-    REQUIRE_TRUE(result.document->screens.at("terminal").children.size() == 1);
+    REQUIRE_TRUE(result.document->screens.at("terminal").children.size() == 2);
 }
 
 void TestUiConfigRollbackIncompatibleOverridePreserved() {
@@ -1385,7 +1413,7 @@ void TestUiConfigAllComponentSchemasResolve() {
 
     const auto result = ui::config::detail::ResolveDocuments(bytes, std::nullopt, 1);
     REQUIRE_TRUE(result.document != nullptr);
-    REQUIRE_TRUE(result.document->screens.at("terminal").children.size() == 11);
+    REQUIRE_TRUE(result.document->screens.at("terminal").children.size() == 12);
 }
 
 void TestUiConfigNativeSurfaceAlphaRejected() {
@@ -1520,6 +1548,19 @@ void TestSingleInstanceIpcContract() {
     REQUIRE_TRUE(parsed.request.has_value());
     REQUIRE_TRUE(*parsed.request == request);
 
+    const platform::IpcRequest dynamic_route{
+        "01234567-89ab-cdef-0123-456789abcdef", platform::IpcCommand::OpenRoute,
+        "plugin-dashboard"};
+    const std::string dynamic_payload = platform::SerializeIpcRequest(dynamic_route);
+    REQUIRE_TRUE(!dynamic_payload.empty());
+    REQUIRE_TRUE(platform::ParseIpcPayload(dynamic_payload.data(), dynamic_payload.size())
+                     .request == dynamic_route);
+
+    const platform::IpcRequest malformed_route{
+        "01234567-89ab-cdef-0123-456789abcdef", platform::IpcCommand::OpenRoute,
+        "Plugin Dashboard"};
+    REQUIRE_TRUE(platform::SerializeIpcRequest(malformed_route).empty());
+
     const std::string unknown =
         R"({"protocol":"yuzha.terminal.ipc","version":1,"requestId":"01234567-89ab-cdef-0123-456789abcdef","command":"nope","arguments":{}})";
     REQUIRE_TRUE(platform::ParseIpcPayload(unknown.data(), unknown.size()).error ==
@@ -1531,6 +1572,7 @@ void TestSingleInstanceIpcContract() {
 
 void TestStubApplicationBridgePatch() {
     ui::application::StubApplicationBridge bridge;
+    REQUIRE_TRUE(bridge.registered_action_count() == 16);
     const auto profiles = bridge.ResolveStringItems("terminalProfiles");
     REQUIRE_TRUE(profiles.size() == 3);
     REQUIRE_TRUE(profiles.front() == L"PowerShell");
@@ -1549,6 +1591,30 @@ void TestStubApplicationBridgePatch() {
     REQUIRE_TRUE(dialog->dialog_request->action == ui::application::DialogRequestAction::Open);
     REQUIRE_TRUE(dialog->dialog_request->dialog_id == "save-discard-dialog");
     REQUIRE_TRUE(!bridge.Dispatch({"unknown-action", {}}).has_value());
+
+    ui::config::EventPayloadValue route;
+    route.value = std::string("settings");
+    const auto navigation = bridge.Dispatch({"navigate-route", {{"routeId", route}}});
+    REQUIRE_TRUE(navigation.has_value());
+    REQUIRE_TRUE(navigation->route_id == "settings");
+
+    bool custom_called = false;
+    REQUIRE_TRUE(bridge.RegisterAction(
+        "feature-custom", [&custom_called](const ui::application::UiEvent& event) {
+            custom_called = event.source.component_id == "custom-button";
+            ui::application::UiPatch patch;
+            patch.view_state["custom"] = "done";
+            return std::optional<ui::application::UiPatch>(std::move(patch));
+        }));
+    REQUIRE_TRUE(!bridge.RegisterAction("feature-custom", [](const auto&) {
+        return std::optional<ui::application::UiPatch>{};
+    }));
+    ui::application::UiEvent custom_event{"feature-custom", {}};
+    custom_event.source.component_id = "custom-button";
+    const auto custom_patch = bridge.Dispatch(custom_event);
+    REQUIRE_TRUE(custom_called);
+    REQUIRE_TRUE(custom_patch.has_value());
+    REQUIRE_TRUE(custom_patch->view_state.at("custom") == "done");
 }
 
 void TestWindowsRuntimeMinimumBuild() {
@@ -1589,6 +1655,7 @@ std::vector<TestCase> DiscoverTests() {
         {"UiConfigGate.ComponentRangeRejected", TestUiConfigComponentRangeRejected, __FILE__, __LINE__},
         {"UiConfigGate.DuplicateKeyRejected", TestUiConfigDuplicateKeyRejected, __FILE__, __LINE__},
         {"UiConfigGate.EmbeddedDefault", TestUiConfigGateEmbeddedDefault, __FILE__, __LINE__},
+        {"UiConfigGate.DynamicScreenInventory", TestUiConfigDynamicScreenInventory, __FILE__, __LINE__},
         {"UiConfigGate.HighContrastMappingRejected", TestUiConfigHighContrastMappingRejected, __FILE__, __LINE__},
         {"UiConfigGate.LegacyUiJsonIgnored", TestUiConfigNeverReadsLegacyUiJson, __FILE__, __LINE__},
         {"UiConfigGate.MissingAndCyclicReferences", TestUiConfigMissingAndCyclicReferencesRejected, __FILE__, __LINE__},

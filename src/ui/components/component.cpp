@@ -1,6 +1,7 @@
 #include "ui/components/component.h"
 
 #include <algorithm>
+#include <atomic>
 #include <stdexcept>
 
 #include "rendering/window_render_context.h"
@@ -21,10 +22,15 @@ int ResolveDimension(const config::Dimension& dimension, int measured, int avail
     return measured;
 }
 
+std::uint64_t NextComponentInstanceId() noexcept {
+    static std::atomic_uint64_t next{1};
+    return next.fetch_add(1, std::memory_order_relaxed);
+}
+
 }  // namespace
 
 Component::Component(const config::ResolvedComponent& definition, ComponentHost& host)
-    : definition_(definition), host_(host) {
+    : definition_(definition), host_(host), instance_id_(NextComponentInstanceId()) {
     if (!host_.render_runtime || !host_.theme) {
         throw std::invalid_argument("Component host requires renderer and theme.");
     }
@@ -311,6 +317,10 @@ const config::ResolvedComponent& Component::definition() const noexcept {
     return definition_;
 }
 
+std::uint64_t Component::instance_id() const noexcept {
+    return instance_id_;
+}
+
 const config::ResolvedStyle& Component::style() const {
     if (definition_.style_index >= host_.theme->styles.size()) {
         throw std::out_of_range("Resolved component style index is invalid.");
@@ -371,6 +381,17 @@ void Component::PaintChildren(HDC dc) {
     }
 }
 
+void Component::EmitEvent(std::string_view event_type,
+                          config::EventPayloadValue::Object runtime_payload) {
+    const auto found = definition_.events.find(event_type);
+    if (found == definition_.events.end() || !host_.dispatch_event) return;
+    config::EventDefinition emitted = found->second;
+    for (auto& [key, value] : runtime_payload) {
+        emitted.payload.insert_or_assign(std::move(key), std::move(value));
+    }
+    host_.dispatch_event(*this, event_type, emitted);
+}
+
 MeasuredSize Component::ApplyConstraints(MeasuredSize measured, int available_width,
                                          int available_height) const noexcept {
     const config::LayoutDefinition& layout = definition_.layout;
@@ -411,6 +432,21 @@ std::wstring Utf8ToWide(std::string_view value) {
     std::wstring result(static_cast<std::size_t>(count), L'\0');
     MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
                         static_cast<int>(value.size()), result.data(), count);
+    return result;
+}
+
+std::string WideToUtf8(std::wstring_view value) {
+    if (value.empty()) return {};
+    const int count = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, value.data(),
+                                          static_cast<int>(value.size()), nullptr, 0, nullptr,
+                                          nullptr);
+    if (count <= 0) return {};
+    std::string result(static_cast<std::size_t>(count), '\0');
+    if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, value.data(),
+                            static_cast<int>(value.size()), result.data(), count, nullptr,
+                            nullptr) <= 0) {
+        return {};
+    }
     return result;
 }
 

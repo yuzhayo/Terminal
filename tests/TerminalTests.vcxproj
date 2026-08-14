@@ -117,6 +117,7 @@
     <ClCompile Include="..\src\ui\components\toggle\toggle_component.cpp" />
     <ClCompile Include="..\src\ui\components\window\window_component.cpp" />
     <ClCompile Include="..\src\ui\application\stub_application_bridge.cpp" />
+    <ClCompile Include="..\src\ui\application\ui_action_registry.cpp" />
     <ClCompile Include="..\src\ui\containers\logical_focus_coordinator.cpp" />
     <ClCompile Include="..\src\ui\containers\modal_overlay_stack.cpp" />
     <ClCompile Include="..\src\ui\containers\overlay_plane.cpp" />

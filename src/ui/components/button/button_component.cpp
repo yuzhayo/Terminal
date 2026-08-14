@@ -107,8 +107,7 @@ config::VisualState ButtonComponent::State() const noexcept {
 }
 
 void ButtonComponent::Activate() {
-    const auto event = definition_.events.find("click");
-    if (event != definition_.events.end() && host_.dispatch_event) host_.dispatch_event(event->second);
+    EmitEvent("click");
 }
 
 }  // namespace ui::components

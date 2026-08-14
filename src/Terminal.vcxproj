@@ -128,6 +128,7 @@
     <ClCompile Include="ui\components\toggle\toggle_component.cpp" />
     <ClCompile Include="ui\components\window\window_component.cpp" />
     <ClCompile Include="ui\application\stub_application_bridge.cpp" />
+    <ClCompile Include="ui\application\ui_action_registry.cpp" />
     <ClCompile Include="ui\config\resolved_ui_document.cpp" />
     <ClCompile Include="ui\config\ui_config_gate.cpp" />
     <ClCompile Include="ui\containers\logical_focus_coordinator.cpp" />
@@ -169,6 +170,8 @@
     <ClInclude Include="ui\components\toggle\toggle_component.h" />
     <ClInclude Include="ui\components\window\window_component.h" />
     <ClInclude Include="ui\application\stub_application_bridge.h" />
+    <ClInclude Include="ui\application\ui_action_registry.h" />
+    <ClInclude Include="ui\application\ui_application_bridge.h" />
     <ClInclude Include="ui\config\resolved_ui_document.h" />
     <ClInclude Include="ui\config\ui_config_gate.h" />
     <ClInclude Include="ui\containers\logical_focus_coordinator.h" />

@@ -29,15 +29,21 @@ constexpr wchar_t kInfrastructureClass[] = L"Yuzha.Terminal.Infrastructure.v1";
 constexpr wchar_t kMutexPrefix[] = L"Local\\Yuzha.Terminal.Instance.v1.";
 constexpr UINT kSendTimeoutMs = 1000;
 constexpr std::array<DWORD, 5> kReceiverScheduleMs{0, 50, 150, 350, 750};
-constexpr std::array<std::string_view, 7> kRoutes{
-    "terminal", "json-inject", "json-editor", "chrome-launcher",
-    "chrome-profile-manager", "settings", "ui-editor"};
-
 bool IsRoute(std::string_view route) noexcept {
-    for (const std::string_view candidate : kRoutes) {
-        if (candidate == route) return true;
+    if (route.empty() || route.size() > 128 || route.front() == '-' || route.back() == '-') {
+        return false;
     }
-    return false;
+    bool previous_hyphen = false;
+    for (const unsigned char character : route) {
+        const bool hyphen = character == '-';
+        if (!(character >= 'a' && character <= 'z') &&
+            !(character >= '0' && character <= '9') && !hyphen) {
+            return false;
+        }
+        if (hyphen && previous_hyphen) return false;
+        previous_hyphen = hyphen;
+    }
+    return true;
 }
 
 std::string WideToUtf8(const std::wstring& value) {

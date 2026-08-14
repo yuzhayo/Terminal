@@ -736,7 +736,7 @@ ComponentType ParseComponentType(std::string_view value, std::string_view path) 
 
 std::set<std::string_view> SpecificKeys(ComponentType type) {
     switch (type) {
-        case ComponentType::Window: return {"title", "initialWidth", "initialHeight", "minWidth", "minHeight", "resizable", "children"};
+        case ComponentType::Window: return {"title", "initialRoute", "initialWidth", "initialHeight", "minWidth", "minHeight", "resizable", "children"};
         case ComponentType::Screen: return {"routeId", "children"};
         case ComponentType::Container: return {"direction", "gap", "padding", "align", "justify", "wrap", "overflow", "children"};
         case ComponentType::Text: return {"text", "textBinding", "variant", "wrap", "selectable", "align"};
@@ -838,6 +838,11 @@ private:
             case ComponentType::Window: {
                 WindowProperties properties;
                 properties.title = ParseTextValue(Required(value, "title", path), ChildPath(path, "title"));
+                properties.initial_route = ReadString(value, "initialRoute", path);
+                if (!route_ids_.contains(properties.initial_route)) {
+                    Fail("invalid-route", ChildPath(path, "initialRoute"),
+                         "initialRoute does not reference a configured screen.");
+                }
                 properties.initial_width = ReadIntegerOr(value, "initialWidth", 760, 1, 8192, path);
                 properties.initial_height = ReadIntegerOr(value, "initialHeight", 520, 1, 8192, path);
                 properties.minimum_width = ReadIntegerOr(value, "minWidth", 620, 0, 8192, path);
@@ -848,7 +853,8 @@ private:
             case ComponentType::Screen: {
                 ScreenProperties properties{ReadString(value, "routeId", path)};
                 if (!route_ids_.contains(properties.route_id)) {
-                    Fail("invalid-route", ChildPath(path, "routeId"), "routeId is not in the V1 route inventory.");
+                    Fail("invalid-route", ChildPath(path, "routeId"),
+                         "routeId does not reference a configured screen.");
                 }
                 return properties;
             }
@@ -1080,16 +1086,20 @@ ResolvedUiDocument ResolveMergedDocument(const Json& merged, UiConfigMetadata me
     document.themes[2] = ThemeResolver(ThemeKind::HighContrast, tokens.at("highContrast"), styles, "/highContrast").Resolve();
     RequireStyleSetsEquivalent(document.themes);
 
-    static const std::set<std::string, std::less<>> route_ids = {
-        "terminal", "json-inject", "json-editor", "chrome-launcher",
-        "chrome-profile-manager", "settings", "ui-editor",
-    };
-
     const Json& windows = merged.at("windows");
     const Json& screens = merged.at("screens");
     RequireObject(windows, "/windows");
     RequireObject(screens, "/screens");
     if (windows.empty()) Fail("empty-windows", "/windows", "At least one Window is required.");
+    if (screens.empty()) Fail("empty-screens", "/screens", "At least one Screen is required.");
+    std::set<std::string, std::less<>> route_ids;
+    for (const auto& item : screens.items()) {
+        if (!IsLowerKebab(item.key())) {
+            Fail("invalid-route", ChildPath("/screens", item.key()),
+                 "Screen route ID must be lower-kebab-case.");
+        }
+        route_ids.insert(item.key());
+    }
     for (const auto& item : windows.items()) {
         if (!IsLowerKebab(item.key())) Fail("invalid-window-id", ChildPath("/windows", item.key()), "Window ID must be lower-kebab-case.");
         ComponentResolver resolver(document.themes[0].styles, route_ids);
@@ -1099,16 +1109,12 @@ ResolvedUiDocument ResolveMergedDocument(const Json& merged, UiConfigMetadata me
         document.windows.emplace(item.key(), std::move(component));
     }
     for (const auto& item : screens.items()) {
-        if (!route_ids.contains(item.key())) Fail("invalid-route", ChildPath("/screens", item.key()), "Screen key is not in the V1 route inventory.");
         ComponentResolver resolver(document.themes[0].styles, route_ids);
         ResolvedComponent component = resolver.Resolve(item.value(), ChildPath("/screens", item.key()));
         if (component.type != ComponentType::Screen) Fail("root-component-type", ChildPath("/screens", item.key()), "screens entries must be Screen components.");
         if (std::get<ScreenProperties>(component.properties).route_id != item.key()) Fail("route-mismatch", ChildPath("/screens", item.key()), "Screen routeId must match its map key.");
         ValidateNativeSurfaceAlpha(component, document.themes);
         document.screens.emplace(item.key(), std::move(component));
-    }
-    for (const std::string& route : route_ids) {
-        if (!document.screens.contains(route)) Fail("missing-route", ChildPath("/screens", route), "Required V1 screen is missing.");
     }
     return document;
 }
