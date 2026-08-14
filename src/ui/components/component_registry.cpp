@@ -5,6 +5,7 @@
 #include "ui/components/button/button_component.h"
 #include "ui/components/card/card_component.h"
 #include "ui/components/checkbox/checkbox_component.h"
+#include "ui/components/combo/combo_component.h"
 #include "ui/components/container/container_component.h"
 #include "ui/components/input/input_component.h"
 #include "ui/components/screen/screen_component.h"
@@ -35,6 +36,10 @@ ComponentRegistry::ComponentRegistry() {
     Register(config::ComponentType::Input,
              [](const config::ResolvedComponent& definition, ComponentHost& host) {
                  return std::make_unique<InputComponent>(definition, host);
+             });
+    Register(config::ComponentType::Combo,
+             [](const config::ResolvedComponent& definition, ComponentHost& host) {
+                 return std::make_unique<ComboComponent>(definition, host);
              });
     Register(config::ComponentType::Screen,
              [](const config::ResolvedComponent& definition, ComponentHost& host) {

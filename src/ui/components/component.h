@@ -17,8 +17,8 @@ namespace ui::components {
 
 class Component;
 
-enum class AutomationRole { None, Button, Checkbox, ToggleButton, Edit, Scrollbar, Group };
-enum class AutomationAction { Focus, Invoke, Toggle, SetRangeValue };
+enum class AutomationRole { None, Button, Checkbox, ToggleButton, Edit, Combo, Scrollbar, Group };
+enum class AutomationAction { Focus, Invoke, Toggle, Expand, Collapse, SetRangeValue };
 
 struct AutomationRangeValue {
     double value = 0.0;
@@ -43,6 +43,9 @@ struct ComponentHost {
     std::function<void(const RECT&)> invalidate;
     std::function<void(const config::EventDefinition&)> dispatch_event;
     std::function<void(Component*, bool)> native_focus_changed;
+    std::function<void(Component*, bool)> popup_state_changed;
+    std::function<std::vector<std::wstring>(std::string_view)> resolve_string_items;
+    std::function<std::optional<std::wstring>(std::string_view)> resolve_string_value;
     std::function<bool(AutomationAction, Component*, double)> request_automation_action;
     std::function<void(bool)> request_focus_traversal;
 };
@@ -71,6 +74,10 @@ public:
     virtual bool FocusNativePeer();
     virtual void SetLogicalFocus(bool focused, bool window_active);
     virtual bool HandleKeyDown(UINT virtual_key);
+    virtual bool HasOpenPopup() const noexcept;
+    virtual HWND OwnedPopupHwnd() const noexcept;
+    virtual bool OwnsPopupScopePoint(POINT screen_point) const noexcept;
+    virtual void DismissOwnedPopup();
     virtual void CollectFocusable(std::vector<Component*>& focusable);
     virtual bool SuspendNativePeers(std::wstring& diagnostic);
     virtual void ResumeNativePeers();
@@ -82,11 +89,16 @@ public:
     virtual bool AutomationInvoke();
     virtual std::optional<bool> automation_toggle_state() const noexcept;
     virtual bool AutomationToggle();
+    virtual std::optional<bool> automation_expanded() const noexcept;
+    virtual bool AutomationExpand();
+    virtual bool AutomationCollapse();
     virtual std::optional<AutomationRangeValue> automation_range_value() const noexcept;
     virtual bool AutomationSetRangeValue(double value);
     bool RequestAutomationFocus();
     bool RequestAutomationInvoke();
     bool RequestAutomationToggle();
+    bool RequestAutomationExpand();
+    bool RequestAutomationCollapse();
     bool RequestAutomationSetRangeValue(double value);
     virtual HWND automation_native_peer() const noexcept;
     virtual bool automation_is_password() const noexcept;

@@ -104,6 +104,7 @@
     <ClCompile Include="platform\updater.cpp" />
     <ClCompile Include="platform\windows_runtime.cpp" />
     <ClCompile Include="rendering\corner_tile_cache.cpp" />
+    <ClCompile Include="rendering\layered_popup_render_context.cpp" />
     <ClCompile Include="rendering\native_peer_gdi_resource_cache.cpp" />
     <ClCompile Include="rendering\render_runtime.cpp" />
     <ClCompile Include="rendering\software_compositor.cpp" />
@@ -115,6 +116,7 @@
     <ClCompile Include="ui\components\button\button_component.cpp" />
     <ClCompile Include="ui\components\card\card_component.cpp" />
     <ClCompile Include="ui\components\checkbox\checkbox_component.cpp" />
+    <ClCompile Include="ui\components\combo\combo_component.cpp" />
     <ClCompile Include="ui\components\container\container_component.cpp" />
     <ClCompile Include="ui\components\input\input_component.cpp" />
     <ClCompile Include="ui\components\input\native_peer_geometry.cpp" />
@@ -139,6 +141,7 @@
     <ClInclude Include="platform\updater.h" />
     <ClInclude Include="platform\windows_runtime.h" />
     <ClInclude Include="rendering\corner_tile_cache.h" />
+    <ClInclude Include="rendering\layered_popup_render_context.h" />
     <ClInclude Include="rendering\native_peer_gdi_resource_cache.h" />
     <ClInclude Include="rendering\render_runtime.h" />
     <ClInclude Include="rendering\software_compositor.h" />
@@ -151,6 +154,7 @@
     <ClInclude Include="ui\components\button\button_component.h" />
     <ClInclude Include="ui\components\card\card_component.h" />
     <ClInclude Include="ui\components\checkbox\checkbox_component.h" />
+    <ClInclude Include="ui\components\combo\combo_component.h" />
     <ClInclude Include="ui\components\container\container_component.h" />
     <ClInclude Include="ui\components\input\input_component.h" />
     <ClInclude Include="ui\components\input\native_peer_geometry.h" />

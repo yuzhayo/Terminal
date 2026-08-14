@@ -6,6 +6,7 @@
 #include <tuple>
 
 #include "rendering/window_render_context.h"
+#include "rendering/layered_popup_render_context.h"
 #include "ui/theme/theme_platform_adapter.h"
 
 namespace rendering {
@@ -222,6 +223,10 @@ void RenderRuntime::AdvanceResourceEpoch() {
     for (WindowRenderContext* context : contexts) {
         if (context) context->OnResourceEpochChanged(resource_epoch_);
     }
+    const auto popup_contexts = layered_popup_contexts_;
+    for (LayeredPopupRenderContext* context : popup_contexts) {
+        if (context) context->OnResourceEpochChanged(resource_epoch_);
+    }
 }
 
 std::uint64_t RenderRuntime::resource_epoch() const noexcept {
@@ -231,6 +236,7 @@ std::uint64_t RenderRuntime::resource_epoch() const noexcept {
 RenderRuntimeDiagnostics RenderRuntime::diagnostics() const noexcept {
     return {resource_epoch_,
             window_contexts_.size(),
+            layered_popup_contexts_.size(),
             fonts_.size(),
             brushes_.size(),
             pens_.size(),
@@ -247,6 +253,14 @@ void RenderRuntime::RegisterWindowContext(WindowRenderContext* context) {
 
 void RenderRuntime::UnregisterWindowContext(WindowRenderContext* context) noexcept {
     window_contexts_.erase(context);
+}
+
+void RenderRuntime::RegisterLayeredPopupContext(LayeredPopupRenderContext* context) {
+    if (context) layered_popup_contexts_.insert(context);
+}
+
+void RenderRuntime::UnregisterLayeredPopupContext(LayeredPopupRenderContext* context) noexcept {
+    layered_popup_contexts_.erase(context);
 }
 
 void RenderRuntime::Reset() {

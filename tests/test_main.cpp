@@ -22,11 +22,13 @@
 #include "platform/single_instance.h"
 #include "platform/windows_runtime.h"
 #include "rendering/render_runtime.h"
+#include "rendering/layered_popup_render_context.h"
 #include "rendering/native_peer_gdi_resource_cache.h"
 #include "rendering/software_compositor.h"
 #include "rendering/window_render_context.h"
 #include "resource.h"
 #include "ui/components/component_registry.h"
+#include "ui/components/combo/combo_component.h"
 #include "ui/components/editable_draft_state.h"
 #include "ui/components/input/native_peer_geometry.h"
 #include "ui/components/scrollbar/scrollbar_component.h"
@@ -431,14 +433,15 @@ void TestUiConfigGateEmbeddedDefault() {
     REQUIRE_TRUE(main_window.children.size() == 1);
     const auto& shell = main_window.children.front();
     REQUIRE_TRUE(shell.type == ui::config::ComponentType::Container);
-    REQUIRE_TRUE(shell.children.size() == 5);
+    REQUIRE_TRUE(shell.children.size() == 6);
     REQUIRE_TRUE(shell.children[0].type == ui::config::ComponentType::Text);
     REQUIRE_TRUE(shell.children[2].type == ui::config::ComponentType::Input);
-    REQUIRE_TRUE(shell.children[3].type == ui::config::ComponentType::Card);
-    REQUIRE_TRUE(shell.children[3].children.size() == 2);
-    REQUIRE_TRUE(shell.children[3].children[0].type == ui::config::ComponentType::Checkbox);
-    REQUIRE_TRUE(shell.children[3].children[1].type == ui::config::ComponentType::Toggle);
-    REQUIRE_TRUE(shell.children[4].type == ui::config::ComponentType::Button);
+    REQUIRE_TRUE(shell.children[3].type == ui::config::ComponentType::Combo);
+    REQUIRE_TRUE(shell.children[4].type == ui::config::ComponentType::Card);
+    REQUIRE_TRUE(shell.children[4].children.size() == 2);
+    REQUIRE_TRUE(shell.children[4].children[0].type == ui::config::ComponentType::Checkbox);
+    REQUIRE_TRUE(shell.children[4].children[1].type == ui::config::ComponentType::Toggle);
+    REQUIRE_TRUE(shell.children[5].type == ui::config::ComponentType::Button);
 }
 
 void TestScrollbarMetrics() {
@@ -470,7 +473,34 @@ void TestComponentRegistryVerticalSlice() {
     REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Toggle));
     REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Card));
     REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Scrollbar));
-    REQUIRE_TRUE(!registry.Supports(ui::config::ComponentType::Combo));
+    REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Combo));
+}
+
+void TestComboPopupPlacement() {
+    const RECT work{0, 0, 800, 600};
+    const auto below = ui::components::CalculateComboPopupPlacement(
+        RECT{100, 100, 300, 132}, work, SIZE{220, 160}, 2);
+    REQUIRE_TRUE(!below.opens_above);
+    REQUIRE_TRUE(below.origin.x == 100 && below.origin.y == 134);
+
+    const auto above = ui::components::CalculateComboPopupPlacement(
+        RECT{700, 550, 780, 582}, work, SIZE{220, 160}, 2);
+    REQUIRE_TRUE(above.opens_above);
+    REQUIRE_TRUE(above.origin.x == 580 && above.origin.y == 388);
+}
+
+void TestLayeredPopupPremultipliedSurface() {
+    rendering::RenderRuntime runtime;
+    rendering::LayeredPopupRenderContext context(runtime);
+    REQUIRE_TRUE(context.EnsureSize(32, 24));
+    context.Clear();
+    context.SourceOver({0, 0, 32, 24}, {200, 100, 50, 128});
+    const std::uint32_t pixel = context.PixelAt(4, 4);
+    REQUIRE_TRUE((pixel >> 24) == 128);
+    REQUIRE_TRUE((pixel & 0xFFu) <= 128u);
+    REQUIRE_TRUE(((pixel >> 8) & 0xFFu) <= 128u);
+    REQUIRE_TRUE(((pixel >> 16) & 0xFFu) <= 128u);
+    REQUIRE_TRUE(runtime.diagnostics().active_layered_popup_contexts == 1);
 }
 
 void TestWindowRenderContextPersistentAllocation() {
@@ -1032,6 +1062,9 @@ void TestSingleInstanceIpcContract() {
 
 void TestStubApplicationBridgePatch() {
     ui::application::StubApplicationBridge bridge;
+    const auto profiles = bridge.ResolveStringItems("terminalProfiles");
+    REQUIRE_TRUE(profiles.size() == 3);
+    REQUIRE_TRUE(profiles.front() == L"PowerShell");
     const auto patch = bridge.Dispatch({"run-terminal-stub", {}});
     REQUIRE_TRUE(patch.has_value());
     REQUIRE_TRUE(patch->generation == 1);
@@ -1053,9 +1086,11 @@ std::vector<TestCase> DiscoverTests() {
         {"AppIdentity.Contract", TestAppIdentityContract, __FILE__, __LINE__},
         {"AppPaths.Contract", TestAppPathsContract, __FILE__, __LINE__},
         {"ComponentRegistry.VerticalSlice", TestComponentRegistryVerticalSlice, __FILE__, __LINE__},
+        {"Combo.PopupPlacement", TestComboPopupPlacement, __FILE__, __LINE__},
         {"EditableDraftState.Transactions", TestEditableDraftStateTransactions, __FILE__, __LINE__},
         {"IconResource.Embedded", TestIconResourceEmbedded, __FILE__, __LINE__},
         {"LogicalFocusCoordinator.Traversal", TestLogicalFocusCoordinatorTraversal, __FILE__, __LINE__},
+        {"LayeredPopupRenderContext.PremultipliedSurface", TestLayeredPopupPremultipliedSurface, __FILE__, __LINE__},
         {"NativePeerGdiResourceCache.LeaseSharing", TestNativePeerGdiResourceLeaseSharing, __FILE__, __LINE__},
         {"NativePeerGeometry.Containment", TestNativePeerGeometryContainment, __FILE__, __LINE__},
         {"OverlayPlane.PaintOrder", TestOverlayPlanePaintOrder, __FILE__, __LINE__},

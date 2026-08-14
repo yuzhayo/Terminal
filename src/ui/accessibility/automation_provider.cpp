@@ -28,6 +28,7 @@ CONTROLTYPEID ControlType(components::AutomationRole role) noexcept {
         case components::AutomationRole::Checkbox: return UIA_CheckBoxControlTypeId;
         case components::AutomationRole::ToggleButton: return UIA_ButtonControlTypeId;
         case components::AutomationRole::Edit: return UIA_EditControlTypeId;
+        case components::AutomationRole::Combo: return UIA_ComboBoxControlTypeId;
         case components::AutomationRole::Scrollbar: return UIA_ScrollBarControlTypeId;
         case components::AutomationRole::Group: return UIA_GroupControlTypeId;
         case components::AutomationRole::None: return UIA_CustomControlTypeId;
@@ -49,6 +50,7 @@ class AutomationRootProvider::ElementProvider final : public IRawElementProvider
                                                        public IRawElementProviderFragment,
                                                        public IInvokeProvider,
                                                        public IToggleProvider,
+                                                       public IExpandCollapseProvider,
                                                        public IRangeValueProvider {
 public:
     ElementProvider(AutomationRootProvider& root, components::Component& component,
@@ -70,6 +72,9 @@ public:
         } else if (iid == IID_IToggleProvider && component_ &&
                    component_->automation_toggle_state().has_value()) {
             *object = static_cast<IToggleProvider*>(this);
+        } else if (iid == IID_IExpandCollapseProvider && component_ &&
+                   component_->automation_expanded().has_value()) {
+            *object = static_cast<IExpandCollapseProvider*>(this);
         } else if (iid == IID_IRangeValueProvider && component_ &&
                    component_->automation_range_value().has_value()) {
             *object = static_cast<IRangeValueProvider*>(this);
@@ -102,6 +107,10 @@ public:
         if (pattern_id == UIA_TogglePatternId &&
             component_->automation_toggle_state().has_value()) {
             return QueryInterface(IID_IToggleProvider, reinterpret_cast<void**>(value));
+        }
+        if (pattern_id == UIA_ExpandCollapsePatternId &&
+            component_->automation_expanded().has_value()) {
+            return QueryInterface(IID_IExpandCollapseProvider, reinterpret_cast<void**>(value));
         }
         if (pattern_id == UIA_RangeValuePatternId &&
             component_->automation_range_value().has_value()) {
@@ -144,6 +153,8 @@ public:
             SetBoolean(value, component_->automation_supports_invoke());
         } else if (property_id == UIA_IsTogglePatternAvailablePropertyId) {
             SetBoolean(value, component_->automation_toggle_state().has_value());
+        } else if (property_id == UIA_IsExpandCollapsePatternAvailablePropertyId) {
+            SetBoolean(value, component_->automation_expanded().has_value());
         } else if (property_id == UIA_IsRangeValuePatternAvailablePropertyId) {
             SetBoolean(value, component_->automation_range_value().has_value());
         } else if (property_id == UIA_NativeWindowHandlePropertyId &&
@@ -240,6 +251,25 @@ public:
         const auto state = component_->automation_toggle_state();
         if (!state) return UIA_E_INVALIDOPERATION;
         *value = *state ? ToggleState_On : ToggleState_Off;
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE Expand() override {
+        if (!component_) return UIA_E_ELEMENTNOTAVAILABLE;
+        return component_->RequestAutomationExpand() ? S_OK : UIA_E_INVALIDOPERATION;
+    }
+
+    HRESULT STDMETHODCALLTYPE Collapse() override {
+        if (!component_) return UIA_E_ELEMENTNOTAVAILABLE;
+        return component_->RequestAutomationCollapse() ? S_OK : UIA_E_INVALIDOPERATION;
+    }
+
+    HRESULT STDMETHODCALLTYPE get_ExpandCollapseState(ExpandCollapseState* value) override {
+        if (!value) return E_POINTER;
+        if (!component_) return UIA_E_ELEMENTNOTAVAILABLE;
+        const auto expanded = component_->automation_expanded();
+        if (!expanded) return UIA_E_INVALIDOPERATION;
+        *value = *expanded ? ExpandCollapseState_Expanded : ExpandCollapseState_Collapsed;
         return S_OK;
     }
 

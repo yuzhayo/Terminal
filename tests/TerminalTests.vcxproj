@@ -93,6 +93,7 @@
   <ItemGroup>
     <ClCompile Include="test_main.cpp" />
     <ClCompile Include="..\src\rendering\corner_tile_cache.cpp" />
+    <ClCompile Include="..\src\rendering\layered_popup_render_context.cpp" />
     <ClCompile Include="..\src\rendering\native_peer_gdi_resource_cache.cpp" />
     <ClCompile Include="..\src\rendering\render_runtime.cpp" />
     <ClCompile Include="..\src\rendering\software_compositor.cpp" />
@@ -104,6 +105,7 @@
     <ClCompile Include="..\src\ui\components\button\button_component.cpp" />
     <ClCompile Include="..\src\ui\components\card\card_component.cpp" />
     <ClCompile Include="..\src\ui\components\checkbox\checkbox_component.cpp" />
+    <ClCompile Include="..\src\ui\components\combo\combo_component.cpp" />
     <ClCompile Include="..\src\ui\components\container\container_component.cpp" />
     <ClCompile Include="..\src\ui\components\input\input_component.cpp" />
     <ClCompile Include="..\src\ui\components\input\native_peer_geometry.cpp" />

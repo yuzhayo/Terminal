@@ -122,6 +122,22 @@ bool WindowContainer::BuildComponentTree(std::wstring& diagnostic) {
         component_host_->native_focus_changed = [this](components::Component* component, bool focused) {
             focus_coordinator_.NotifyNativeFocus(component, focused);
         };
+        component_host_->popup_state_changed = [this](components::Component* component, bool open) {
+            if (open) {
+                if (active_popup_owner_ && active_popup_owner_ != component) {
+                    active_popup_owner_->DismissOwnedPopup();
+                }
+                active_popup_owner_ = component;
+            } else if (active_popup_owner_ == component) {
+                active_popup_owner_ = nullptr;
+            }
+        };
+        component_host_->resolve_string_items = [this](std::string_view binding) {
+            return application_bridge_.ResolveStringItems(binding);
+        };
+        component_host_->resolve_string_value = [this](std::string_view binding) {
+            return application_bridge_.ResolveStringValue(binding);
+        };
         component_host_->request_automation_action =
             [this](components::AutomationAction action, components::Component* component,
                    double value) {
@@ -135,6 +151,10 @@ bool WindowContainer::BuildComponentTree(std::wstring& diagnostic) {
                             return component && component->AutomationInvoke();
                         case components::AutomationAction::Toggle:
                             return component && component->AutomationToggle();
+                        case components::AutomationAction::Expand:
+                            return component && component->AutomationExpand();
+                        case components::AutomationAction::Collapse:
+                            return component && component->AutomationCollapse();
                         case components::AutomationAction::SetRangeValue:
                             return component && component->AutomationSetRangeValue(value);
                     }
@@ -258,6 +278,12 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             case components::AutomationAction::Toggle:
                 request->result = request->component->AutomationToggle();
                 break;
+            case components::AutomationAction::Expand:
+                request->result = request->component->AutomationExpand();
+                break;
+            case components::AutomationAction::Collapse:
+                request->result = request->component->AutomationCollapse();
+                break;
             case components::AutomationAction::SetRangeValue:
                 request->result = request->component->AutomationSetRangeValue(request->value);
                 break;
@@ -349,10 +375,17 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             pointer_target_ = nullptr;
             return 0;
         case WM_ACTIVATE:
+            if (LOWORD(wparam) == WA_INACTIVE && active_popup_owner_) {
+                active_popup_owner_->DismissOwnedPopup();
+            }
             focus_coordinator_.SetWindowActive(LOWORD(wparam) != WA_INACTIVE);
             return 0;
         case WM_KEYDOWN:
             TraceInputStart();
+            if (active_popup_owner_ &&
+                active_popup_owner_->HandleKeyDown(static_cast<UINT>(wparam))) {
+                return 0;
+            }
             if (wparam == VK_TAB) {
                 if (focus_coordinator_.Move((GetKeyState(VK_SHIFT) & 0x8000) != 0)) return 0;
             } else if (focus_coordinator_.HandleKeyDown(static_cast<UINT>(wparam))) {
@@ -362,6 +395,13 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
         case WM_LBUTTONDOWN: {
             TraceInputStart();
             const POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+            if (active_popup_owner_) {
+                POINT screen_point = point;
+                ClientToScreen(window_, &screen_point);
+                if (!active_popup_owner_->OwnsPopupScopePoint(screen_point)) {
+                    active_popup_owner_->DismissOwnedPopup();
+                }
+            }
             components::Component* target = root_ ? root_->HitTest(point) : nullptr;
             if (target && target->CanFocus()) focus_coordinator_.RequestFocus(target);
             if (target && target->PointerDown(point)) pointer_target_ = target;
@@ -409,6 +449,8 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             }
             break;
         case WM_DESTROY:
+            if (active_popup_owner_) active_popup_owner_->DismissOwnedPopup();
+            active_popup_owner_ = nullptr;
             focus_coordinator_.Clear();
             if (automation_provider_) {
                 automation_provider_->Disconnect();

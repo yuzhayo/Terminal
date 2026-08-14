@@ -97,6 +97,11 @@ bool Component::HandleKeyDown(UINT virtual_key) {
     return false;
 }
 
+bool Component::HasOpenPopup() const noexcept { return false; }
+HWND Component::OwnedPopupHwnd() const noexcept { return nullptr; }
+bool Component::OwnsPopupScopePoint(POINT) const noexcept { return false; }
+void Component::DismissOwnedPopup() {}
+
 void Component::CollectFocusable(std::vector<Component*>& focusable) {
     if (CanFocus()) focusable.push_back(this);
     for (const auto& child : children_) child->CollectFocusable(focusable);
@@ -139,6 +144,9 @@ bool Component::automation_supports_invoke() const noexcept { return false; }
 bool Component::AutomationInvoke() { return false; }
 std::optional<bool> Component::automation_toggle_state() const noexcept { return std::nullopt; }
 bool Component::AutomationToggle() { return false; }
+std::optional<bool> Component::automation_expanded() const noexcept { return std::nullopt; }
+bool Component::AutomationExpand() { return false; }
+bool Component::AutomationCollapse() { return false; }
 std::optional<AutomationRangeValue> Component::automation_range_value() const noexcept {
     return std::nullopt;
 }
@@ -157,6 +165,16 @@ bool Component::RequestAutomationToggle() {
     return host_.request_automation_action
                ? host_.request_automation_action(AutomationAction::Toggle, this, 0.0)
                : AutomationToggle();
+}
+bool Component::RequestAutomationExpand() {
+    return host_.request_automation_action
+               ? host_.request_automation_action(AutomationAction::Expand, this, 0.0)
+               : AutomationExpand();
+}
+bool Component::RequestAutomationCollapse() {
+    return host_.request_automation_action
+               ? host_.request_automation_action(AutomationAction::Collapse, this, 0.0)
+               : AutomationCollapse();
 }
 bool Component::RequestAutomationSetRangeValue(double value) {
     return host_.request_automation_action

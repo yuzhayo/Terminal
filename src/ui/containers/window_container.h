@@ -66,6 +66,7 @@ private:
     std::unique_ptr<components::Component> root_;
     accessibility::AutomationRootProvider* automation_provider_ = nullptr;
     components::Component* pointer_target_ = nullptr;
+    components::Component* active_popup_owner_ = nullptr;
     application::StubApplicationBridge application_bridge_;
     std::optional<std::uint64_t> pending_input_correlation_;
     std::optional<std::uint64_t> pending_resize_correlation_;

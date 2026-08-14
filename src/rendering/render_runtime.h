@@ -14,6 +14,7 @@
 namespace rendering {
 
 class WindowRenderContext;
+class LayeredPopupRenderContext;
 
 struct RgbaColor {
     BYTE red = 0;
@@ -25,6 +26,7 @@ struct RgbaColor {
 struct RenderRuntimeDiagnostics {
     std::uint64_t resource_epoch = 1;
     std::size_t active_window_contexts = 0;
+    std::size_t active_layered_popup_contexts = 0;
     std::size_t cached_fonts = 0;
     std::size_t cached_brushes = 0;
     std::size_t cached_pens = 0;
@@ -69,6 +71,8 @@ public:
 
     void RegisterWindowContext(WindowRenderContext* context);
     void UnregisterWindowContext(WindowRenderContext* context) noexcept;
+    void RegisterLayeredPopupContext(LayeredPopupRenderContext* context);
+    void UnregisterLayeredPopupContext(LayeredPopupRenderContext* context) noexcept;
 
 private:
     struct FontKey {
@@ -93,6 +97,7 @@ private:
     CornerTileCache corner_tiles_;
     NativePeerGdiResourceCache native_peer_resources_;
     std::set<WindowRenderContext*> window_contexts_;
+    std::set<LayeredPopupRenderContext*> layered_popup_contexts_;
     HDC measurement_dc_ = nullptr;
     bool in_paint_scope_ = false;
     std::uint64_t resource_epoch_ = 1;

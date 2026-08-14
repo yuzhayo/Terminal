@@ -4,6 +4,8 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include "ui/config/resolved_ui_document.h"
 
@@ -25,6 +27,8 @@ class StubApplicationBridge final {
 public:
     std::optional<UiPatch> Dispatch(const UiEvent& event);
     const std::map<std::string, std::string, std::less<>>& view_state() const noexcept;
+    std::vector<std::wstring> ResolveStringItems(std::string_view binding) const;
+    std::optional<std::wstring> ResolveStringValue(std::string_view binding) const;
 
 private:
     std::map<std::string, std::string, std::less<>> view_state_;

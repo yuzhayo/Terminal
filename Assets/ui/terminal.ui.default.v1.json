@@ -1899,6 +1899,31 @@
               }
             },
             {
+              "id": "terminal-profile",
+              "type": "Combo",
+              "style": {
+                "$ref": "styles.combo"
+              },
+              "layout": {
+                "width": "fill"
+              },
+              "itemsBinding": {
+                "$bind": "viewState.terminalProfiles"
+              },
+              "selectedValueBinding": {
+                "$bind": "viewState.selectedTerminalProfile"
+              },
+              "placeholder": "Pilih profil terminal",
+              "maxVisibleItems": 6,
+              "popupMaxHeight": 320,
+              "events": {
+                "changed": {
+                  "action": "select-terminal-profile",
+                  "payload": {}
+                }
+              }
+            },
+            {
               "id": "terminal-options",
               "type": "Card",
               "style": {
