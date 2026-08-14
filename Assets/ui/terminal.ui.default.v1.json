@@ -1840,7 +1840,82 @@
       "minWidth": 620,
       "minHeight": 420,
       "resizable": true,
-      "children": []
+      "children": [
+        {
+          "id": "terminal-shell",
+          "type": "Container",
+          "style": {
+            "$ref": "styles.surface"
+          },
+          "layout": {
+            "width": "fill",
+            "height": "fill"
+          },
+          "direction": "column",
+          "gap": 12,
+          "padding": {
+            "left": 24,
+            "top": 24,
+            "right": 24,
+            "bottom": 24
+          },
+          "children": [
+            {
+              "id": "terminal-title",
+              "type": "Text",
+              "style": {
+                "$ref": "styles.text-title"
+              },
+              "text": "Terminal",
+              "variant": "title"
+            },
+            {
+              "id": "terminal-description",
+              "type": "Text",
+              "style": {
+                "$ref": "styles.text-body"
+              },
+              "text": "Runtime UI native dari konfigurasi JSON.",
+              "variant": "body"
+            },
+            {
+              "id": "terminal-input",
+              "type": "Input",
+              "style": {
+                "$ref": "styles.input"
+              },
+              "layout": {
+                "width": "fill"
+              },
+              "valueBinding": {
+                "$bind": "viewState.terminalInput"
+              },
+              "placeholder": "Ketik placeholder…",
+              "events": {
+                "changed": {
+                  "action": "update-terminal-draft",
+                  "payload": {}
+                }
+              }
+            },
+            {
+              "id": "terminal-stub-action",
+              "type": "Button",
+              "style": {
+                "$ref": "styles.button-primary"
+              },
+              "label": "Jalankan stub",
+              "variant": "primary",
+              "events": {
+                "click": {
+                  "action": "run-terminal-stub",
+                  "payload": {}
+                }
+              }
+            }
+          ]
+        }
+      ]
     }
   },
   "screens": {

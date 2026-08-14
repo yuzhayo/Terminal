@@ -11,15 +11,12 @@
 #include "platform/single_instance.h"
 #include "platform/updater.h"
 #include "platform/windows_runtime.h"
-#include "rendering/gdi_renderer.h"
-#include "resource.h"
+#include "rendering/render_runtime.h"
 #include "ui/config/ui_config_gate.h"
+#include "ui/containers/window_container.h"
+#include "ui/theme/theme_platform_adapter.h"
 
 namespace {
-
-rendering::GdiRenderer g_renderer;
-bool g_render_buffer_ready_traced = false;
-bool g_first_present_traced = false;
 
 void ShowBootstrapError(const std::wstring& diagnostic) {
     MessageBoxW(nullptr, diagnostic.c_str(), app_identity::kProductName,
@@ -42,64 +39,6 @@ bool HasSwitch(const std::wstring& command_line, const wchar_t* expected) {
     }
     LocalFree(arguments);
     return found;
-}
-
-void PaintWindow(HWND window) {
-    PAINTSTRUCT paint{};
-    HDC window_dc = BeginPaint(window, &paint);
-
-    RECT client{};
-    GetClientRect(window, &client);
-    const int width = client.right - client.left;
-    const int height = client.bottom - client.top;
-
-    const bool presented = g_renderer.Paint(window_dc, width, height, paint.rcPaint);
-    if (!presented) {
-        FillRect(window_dc, &paint.rcPaint, GetSysColorBrush(COLOR_WINDOW));
-    }
-
-    EndPaint(window, &paint);
-
-    if (presented && !g_render_buffer_ready_traced) {
-        g_render_buffer_ready_traced = true;
-        instrumentation::TraceRenderBufferReady();
-    }
-    if (presented && !g_first_present_traced) {
-        g_first_present_traced = true;
-        instrumentation::TraceFirstPresentComplete();
-    }
-}
-
-LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
-    switch (message) {
-        case WM_COPYDATA: {
-            const auto command = platform::ReadForwardedCommand(lparam);
-            if (!command) {
-                return FALSE;
-            }
-            if (HasSwitch(*command, L"--exit")) {
-                DestroyWindow(window);
-            } else {
-                platform::ActivateMainWindow(window);
-            }
-            return TRUE;
-        }
-        case WM_ERASEBKGND:
-            return 1;
-        case WM_PAINT:
-            PaintWindow(window);
-            return 0;
-        case WM_SIZE:
-        case WM_SYSCOLORCHANGE:
-            InvalidateRect(window, nullptr, FALSE);
-            return 0;
-        case WM_DESTROY:
-            g_renderer.Reset();
-            PostQuitMessage(0);
-            return 0;
-        default:
-            return DefWindowProcW(window, message, wparam, lparam);
-    }
 }
 
 }  // namespace
@@ -148,38 +87,26 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
     }
     instrumentation::TraceConfigResolved();
 
-    WNDCLASSEXW window_class{};
-    window_class.cbSize = sizeof(window_class);
-    window_class.style = CS_HREDRAW | CS_VREDRAW;
-    window_class.lpfnWndProc = WindowProcedure;
-    window_class.hInstance = instance;
-    window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    window_class.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(IDI_APP_ICON));
-    window_class.hIconSm = static_cast<HICON>(
-        LoadImageW(instance, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 16, 16, LR_SHARED));
-    window_class.lpszClassName = platform::MainWindowClassName();
-
-    if (!window_class.hIcon || !window_class.hIconSm) {
-        ShowBootstrapError(L"Icon aplikasi tidak dapat dimuat dari executable.");
-        return 14;
-    }
-
-    if (!RegisterClassExW(&window_class)) {
-        return 1;
-    }
-
-    HWND window = CreateWindowExW(WS_EX_APPWINDOW, platform::MainWindowClassName(),
-                                  app_identity::kProductName,
-                                  WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 760,
-                                  520, nullptr, nullptr, instance, nullptr);
-    if (!window) {
+    ui::theme::ThemePlatformAdapter theme_adapter(
+        ui::theme::ThemePlatformAdapter::ReadInitialSnapshot());
+    rendering::RenderRuntime render_runtime;
+    ui::containers::WindowContainer window_container(
+        instance, render_runtime, config_gate.document(),
+        theme_adapter.Select(ui::config::ThemePreference::System));
+    if (!window_container.Create("main", diagnostic)) {
+        ShowBootstrapError(diagnostic);
         return 2;
     }
     instrumentation::TraceFirstLayoutComplete();
 
-    ShowWindow(window, show_command == 0 ? SW_SHOWNORMAL : show_command);
-    UpdateWindow(window);
-    if (g_first_present_traced && SUCCEEDED(DwmFlush())) {
+    if (!window_container.PrepareFirstFrame(diagnostic)) {
+        ShowBootstrapError(diagnostic);
+        return 15;
+    }
+    instrumentation::TraceRenderBufferReady();
+    window_container.Show(show_command);
+    instrumentation::TraceFirstPresentComplete();
+    if (SUCCEEDED(DwmFlush())) {
         instrumentation::TraceFirstFrameVisible();
         instrumentation::TraceResourceSnapshot();
     }

@@ -20,7 +20,9 @@
 #include "app/app_identity.h"
 #include "platform/app_paths.h"
 #include "platform/windows_runtime.h"
+#include "rendering/window_render_context.h"
 #include "resource.h"
+#include "ui/components/component_registry.h"
 #include "ui/config/ui_config_gate.h"
 #include "ui/theme/theme_platform_adapter.h"
 
@@ -380,6 +382,41 @@ void TestUiConfigGateEmbeddedDefault() {
     REQUIRE_TRUE(mono_style->font.fallback_family == "Consolas");
     REQUIRE_TRUE(std::holds_alternative<ui::config::SystemColorSlot>(
         gate.document()->theme(ui::config::ThemeKind::HighContrast).tokens.at("window")));
+    const auto& main_window = gate.document()->windows.at("main");
+    REQUIRE_TRUE(main_window.type == ui::config::ComponentType::Window);
+    REQUIRE_TRUE(main_window.children.size() == 1);
+    const auto& shell = main_window.children.front();
+    REQUIRE_TRUE(shell.type == ui::config::ComponentType::Container);
+    REQUIRE_TRUE(shell.children.size() == 4);
+    REQUIRE_TRUE(shell.children[0].type == ui::config::ComponentType::Text);
+    REQUIRE_TRUE(shell.children[2].type == ui::config::ComponentType::Input);
+    REQUIRE_TRUE(shell.children[3].type == ui::config::ComponentType::Button);
+}
+
+void TestComponentRegistryVerticalSlice() {
+    ui::components::ComponentRegistry registry;
+    REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Window));
+    REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Container));
+    REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Text));
+    REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Button));
+    REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Input));
+    REQUIRE_TRUE(!registry.Supports(ui::config::ComponentType::Combo));
+}
+
+void TestWindowRenderContextPersistentAllocation() {
+    rendering::WindowRenderContext context;
+    HDC screen = GetDC(nullptr);
+    REQUIRE_TRUE(screen != nullptr);
+    REQUIRE_TRUE(context.EnsureSize(screen, 64, 48));
+    const std::uint64_t first_generation = context.allocation_generation();
+    REQUIRE_TRUE(first_generation == 1);
+    REQUIRE_TRUE(context.EnsureSize(screen, 64, 48));
+    REQUIRE_TRUE(context.allocation_generation() == first_generation);
+    REQUIRE_TRUE(context.EnsureSize(screen, 80, 48));
+    REQUIRE_TRUE(context.allocation_generation() == first_generation + 1);
+    REQUIRE_TRUE(context.width() == 80);
+    REQUIRE_TRUE(context.height() == 48);
+    ReleaseDC(nullptr, screen);
 }
 
 void TestUiConfigDuplicateKeyRejected() {
@@ -627,6 +664,7 @@ std::vector<TestCase> DiscoverTests() {
     std::vector<TestCase> tests = {
         {"AppIdentity.Contract", TestAppIdentityContract, __FILE__, __LINE__},
         {"AppPaths.Contract", TestAppPathsContract, __FILE__, __LINE__},
+        {"ComponentRegistry.VerticalSlice", TestComponentRegistryVerticalSlice, __FILE__, __LINE__},
         {"IconResource.Embedded", TestIconResourceEmbedded, __FILE__, __LINE__},
         {"ThemePlatformAdapter.Contract", TestThemePlatformAdapterContract, __FILE__, __LINE__},
         {"UiConfigGate.AllComponentSchemas", TestUiConfigAllComponentSchemasResolve, __FILE__, __LINE__},
@@ -644,6 +682,7 @@ std::vector<TestCase> DiscoverTests() {
         {"UiConfigGate.RollbackIncompatible", TestUiConfigRollbackIncompatibleOverridePreserved, __FILE__, __LINE__},
         {"UiConfigGate.UnknownFieldRejected", TestUiConfigUnknownFieldRejected, __FILE__, __LINE__},
         {"UiConfigGate.VersionRejected", TestUiConfigVersionRejected, __FILE__, __LINE__},
+        {"WindowRenderContext.PersistentAllocation", TestWindowRenderContextPersistentAllocation, __FILE__, __LINE__},
         {"WindowsRuntime.MinimumBuild", TestWindowsRuntimeMinimumBuild, __FILE__, __LINE__},
     };
     std::sort(tests.begin(), tests.end(),
