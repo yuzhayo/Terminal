@@ -157,12 +157,26 @@ try {
 
     Set-Phase -Name 'testing-single-instance'
     Stop-Terminal
-    $first = Start-Process -FilePath $launcherExecutable -PassThru
-    for ($attempt = 0; $attempt -lt 40 -and $first.MainWindowHandle -eq 0; $attempt++) {
+    $startedAfter = [DateTime]::Now.AddSeconds(-2)
+    $launcherProcess = Start-Process -FilePath $launcherExecutable -PassThru
+    $first = $launcherProcess
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    do {
         Start-Sleep -Milliseconds 100
-        $first.Refresh()
-    }
-    if ($first.HasExited -or $first.MainWindowHandle -eq 0) {
+        $candidate = Get-Process -Name Terminal -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Path -and
+                $_.Path.StartsWith($installRoot, [StringComparison]::OrdinalIgnoreCase) -and
+                $_.MainWindowHandle -ne 0 -and
+                $_.StartTime -ge $startedAfter
+            } |
+            Sort-Object StartTime -Descending |
+            Select-Object -First 1
+        if ($candidate) {
+            $first = $candidate
+        }
+    } while ($first.MainWindowHandle -eq 0 -and [DateTime]::UtcNow -lt $deadline)
+    if ($first.MainWindowHandle -eq 0) {
         throw 'Installed application tidak membuat main window.'
     }
 
