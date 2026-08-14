@@ -29,6 +29,7 @@
 #include "ui/components/component_registry.h"
 #include "ui/components/editable_draft_state.h"
 #include "ui/components/input/native_peer_geometry.h"
+#include "ui/components/scrollbar/scrollbar_component.h"
 #include "ui/components/text/text_component.h"
 #include "ui/application/stub_application_bridge.h"
 #include "ui/config/ui_config_gate.h"
@@ -430,10 +431,31 @@ void TestUiConfigGateEmbeddedDefault() {
     REQUIRE_TRUE(main_window.children.size() == 1);
     const auto& shell = main_window.children.front();
     REQUIRE_TRUE(shell.type == ui::config::ComponentType::Container);
-    REQUIRE_TRUE(shell.children.size() == 4);
+    REQUIRE_TRUE(shell.children.size() == 5);
     REQUIRE_TRUE(shell.children[0].type == ui::config::ComponentType::Text);
     REQUIRE_TRUE(shell.children[2].type == ui::config::ComponentType::Input);
-    REQUIRE_TRUE(shell.children[3].type == ui::config::ComponentType::Button);
+    REQUIRE_TRUE(shell.children[3].type == ui::config::ComponentType::Card);
+    REQUIRE_TRUE(shell.children[3].children.size() == 2);
+    REQUIRE_TRUE(shell.children[3].children[0].type == ui::config::ComponentType::Checkbox);
+    REQUIRE_TRUE(shell.children[3].children[1].type == ui::config::ComponentType::Toggle);
+    REQUIRE_TRUE(shell.children[4].type == ui::config::ComponentType::Button);
+}
+
+void TestScrollbarMetrics() {
+    const ui::components::ScrollbarMetrics idle =
+        ui::components::CalculateScrollbarMetrics(100, 24, 0, 0, 100, 0);
+    REQUIRE_TRUE(idle.track_length == 100);
+    REQUIRE_TRUE(idle.thumb_start == 0);
+    REQUIRE_TRUE(idle.thumb_length == 100);
+
+    const ui::components::ScrollbarMetrics start =
+        ui::components::CalculateScrollbarMetrics(100, 24, 0, 300, 100, 0);
+    const ui::components::ScrollbarMetrics end =
+        ui::components::CalculateScrollbarMetrics(100, 24, 0, 300, 100, 300);
+    REQUIRE_TRUE(start.thumb_length == 25);
+    REQUIRE_TRUE(start.thumb_start == 0);
+    REQUIRE_TRUE(end.thumb_length == 25);
+    REQUIRE_TRUE(end.thumb_start == 75);
 }
 
 void TestComponentRegistryVerticalSlice() {
@@ -443,6 +465,11 @@ void TestComponentRegistryVerticalSlice() {
     REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Text));
     REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Button));
     REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Input));
+    REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Screen));
+    REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Checkbox));
+    REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Toggle));
+    REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Card));
+    REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Scrollbar));
     REQUIRE_TRUE(!registry.Supports(ui::config::ComponentType::Combo));
 }
 
@@ -1036,6 +1063,7 @@ std::vector<TestCase> DiscoverTests() {
         {"RenderRuntime.PaintHotPathAndHeadlessMeasure", TestRenderRuntimePaintHotPathAndHeadlessMeasure, __FILE__, __LINE__},
         {"SoftwareCompositor.SourceOver", TestSoftwareSourceOver, __FILE__, __LINE__},
         {"SingleInstance.IpcContract", TestSingleInstanceIpcContract, __FILE__, __LINE__},
+        {"Scrollbar.Metrics", TestScrollbarMetrics, __FILE__, __LINE__},
         {"StubApplicationBridge.Patch", TestStubApplicationBridgePatch, __FILE__, __LINE__},
         {"ThemePlatformAdapter.Contract", TestThemePlatformAdapterContract, __FILE__, __LINE__},
         {"UiConfigGate.AllComponentSchemas", TestUiConfigAllComponentSchemasResolve, __FILE__, __LINE__},

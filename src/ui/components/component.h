@@ -4,7 +4,9 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "rendering/render_runtime.h"
@@ -14,6 +16,17 @@
 namespace ui::components {
 
 class Component;
+
+enum class AutomationRole { None, Button, Checkbox, ToggleButton, Edit, Scrollbar, Group };
+enum class AutomationAction { Focus, Invoke, Toggle, SetRangeValue };
+
+struct AutomationRangeValue {
+    double value = 0.0;
+    double minimum = 0.0;
+    double maximum = 0.0;
+    double large_change = 0.0;
+    double small_change = 0.0;
+};
 
 struct MeasuredSize {
     int width = 0;
@@ -30,6 +43,7 @@ struct ComponentHost {
     std::function<void(const RECT&)> invalidate;
     std::function<void(const config::EventDefinition&)> dispatch_event;
     std::function<void(Component*, bool)> native_focus_changed;
+    std::function<bool(AutomationAction, Component*, double)> request_automation_action;
     std::function<void(bool)> request_focus_traversal;
 };
 
@@ -49,6 +63,7 @@ public:
     virtual bool PointerMove(POINT point);
     virtual bool PointerDown(POINT point);
     virtual bool PointerUp(POINT point);
+    virtual bool PointerWheel(int delta);
     virtual bool HandleCommand(HWND source, WORD notification);
     virtual HBRUSH HandleControlColor(HDC dc, HWND source);
     virtual bool OwnsNativePeer(HWND source) const noexcept;
@@ -60,6 +75,21 @@ public:
     virtual bool SuspendNativePeers(std::wstring& diagnostic);
     virtual void ResumeNativePeers();
     virtual void CollectEditableParticipants(std::vector<EditableParticipant*>& participants);
+    virtual void CollectAutomationElements(std::vector<Component*>& elements);
+    virtual AutomationRole automation_role() const noexcept;
+    virtual std::wstring automation_name() const;
+    virtual bool automation_supports_invoke() const noexcept;
+    virtual bool AutomationInvoke();
+    virtual std::optional<bool> automation_toggle_state() const noexcept;
+    virtual bool AutomationToggle();
+    virtual std::optional<AutomationRangeValue> automation_range_value() const noexcept;
+    virtual bool AutomationSetRangeValue(double value);
+    bool RequestAutomationFocus();
+    bool RequestAutomationInvoke();
+    bool RequestAutomationToggle();
+    bool RequestAutomationSetRangeValue(double value);
+    virtual HWND automation_native_peer() const noexcept;
+    virtual bool automation_is_password() const noexcept;
     virtual void OnDpiChanged();
     virtual bool PrepareResources(COLORREF parent_background);
     virtual void AddChild(std::unique_ptr<Component> child);
@@ -69,6 +99,7 @@ public:
     const config::ResolvedStyle& style() const;
     bool visible() const noexcept;
     bool enabled() const noexcept;
+    Component* parent() const noexcept;
 
 protected:
     void PaintStyleBox(HDC dc, config::VisualState state, const RECT& bounds) const;
@@ -80,11 +111,15 @@ protected:
     const config::ResolvedComponent& definition_;
     ComponentHost& host_;
     RECT bounds_{};
+    Component* parent_ = nullptr;
     std::vector<std::unique_ptr<Component>> children_;
 };
 
 int ScaleDip(int value, UINT dpi) noexcept;
 std::wstring ResolveText(const config::TextValue& value);
+std::wstring ResolveAutomationName(const config::ResolvedComponent& definition,
+                                   std::wstring fallback);
+std::wstring Utf8ToWide(std::string_view value);
 bool PointInRectInclusive(const RECT& bounds, POINT point) noexcept;
 
 }  // namespace ui::components

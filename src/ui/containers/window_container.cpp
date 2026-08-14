@@ -15,6 +15,15 @@
 namespace ui::containers {
 namespace {
 
+constexpr UINT kAutomationActionMessage = WM_APP + 0x31;
+
+struct AutomationActionRequest {
+    components::AutomationAction action = components::AutomationAction::Focus;
+    components::Component* component = nullptr;
+    double value = 0.0;
+    bool result = false;
+};
+
 std::wstring ResolveWindowTitle(const config::ResolvedComponent& definition) {
     const auto& properties = std::get<config::WindowProperties>(definition.properties);
     return components::ResolveText(properties.title);
@@ -34,6 +43,11 @@ WindowContainer::WindowContainer(HINSTANCE instance, rendering::RenderRuntime& r
       theme_kind_(theme_kind), render_context_(&render_runtime_) {}
 
 WindowContainer::~WindowContainer() {
+    if (automation_provider_) {
+        automation_provider_->Disconnect();
+        automation_provider_->Release();
+        automation_provider_ = nullptr;
+    }
     root_.reset();
     if (window_ && IsWindow(window_)) DestroyWindow(window_);
 }
@@ -108,10 +122,34 @@ bool WindowContainer::BuildComponentTree(std::wstring& diagnostic) {
         component_host_->native_focus_changed = [this](components::Component* component, bool focused) {
             focus_coordinator_.NotifyNativeFocus(component, focused);
         };
+        component_host_->request_automation_action =
+            [this](components::AutomationAction action, components::Component* component,
+                   double value) {
+                AutomationActionRequest request{action, component, value, false};
+                const DWORD window_thread = GetWindowThreadProcessId(window_, nullptr);
+                if (GetCurrentThreadId() == window_thread) {
+                    switch (action) {
+                        case components::AutomationAction::Focus:
+                            return focus_coordinator_.RequestFocus(component);
+                        case components::AutomationAction::Invoke:
+                            return component && component->AutomationInvoke();
+                        case components::AutomationAction::Toggle:
+                            return component && component->AutomationToggle();
+                        case components::AutomationAction::SetRangeValue:
+                            return component && component->AutomationSetRangeValue(value);
+                    }
+                    return false;
+                }
+                SendMessageW(window_, kAutomationActionMessage, 0,
+                             reinterpret_cast<LPARAM>(&request));
+                return request.result;
+            };
         component_host_->request_focus_traversal =
             [this](bool reverse) { focus_coordinator_.Move(reverse); };
         root_ = registry_.CreateTree(*window_definition_, *component_host_);
         focus_coordinator_.Rebuild(*root_);
+        automation_provider_ = new accessibility::AutomationRootProvider(
+            window_, *root_, [this] { return focus_coordinator_.focused(); });
         diagnostic.clear();
         return true;
     } catch (const std::exception&) {
@@ -207,6 +245,25 @@ LRESULT CALLBACK WindowContainer::WindowProcedure(HWND window, UINT message, WPA
 }
 
 LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == kAutomationActionMessage) {
+        auto* request = reinterpret_cast<AutomationActionRequest*>(lparam);
+        if (!request || !request->component) return 0;
+        switch (request->action) {
+            case components::AutomationAction::Focus:
+                request->result = focus_coordinator_.RequestFocus(request->component);
+                break;
+            case components::AutomationAction::Invoke:
+                request->result = request->component->AutomationInvoke();
+                break;
+            case components::AutomationAction::Toggle:
+                request->result = request->component->AutomationToggle();
+                break;
+            case components::AutomationAction::SetRangeValue:
+                request->result = request->component->AutomationSetRangeValue(request->value);
+                break;
+        }
+        return request->result ? 1 : 0;
+    }
     switch (message) {
         case WM_GETMINMAXINFO: {
             auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
@@ -216,6 +273,13 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
         }
         case WM_ERASEBKGND:
             return render_context_.valid() ? 1 : DefWindowProcW(window_, message, wparam, lparam);
+        case WM_GETOBJECT:
+            if (automation_provider_ && static_cast<LONG>(lparam) == UiaRootObjectId) {
+                return UiaReturnRawElementProvider(
+                    window_, wparam, lparam,
+                    static_cast<IRawElementProviderSimple*>(automation_provider_));
+            }
+            break;
         case WM_SIZE:
             pending_resize_correlation_ = NextCorrelationId();
             last_scenario_correlation_ = *pending_resize_correlation_;
@@ -275,7 +339,9 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             TraceInputStart();
             TRACKMOUSEEVENT tracking{sizeof(tracking), TME_LEAVE, window_, 0};
             TrackMouseEvent(&tracking);
-            TrackPointer({GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+            const POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+            if (GetCapture() == window_ && pointer_target_) pointer_target_->PointerMove(point);
+            else TrackPointer(point);
             return 0;
         }
         case WM_MOUSELEAVE:
@@ -309,6 +375,16 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             TrackPointer(point);
             return 0;
         }
+        case WM_MOUSEWHEEL: {
+            TraceInputStart();
+            POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+            ScreenToClient(window_, &point);
+            components::Component* target = root_ ? root_->HitTest(point) : nullptr;
+            while (target && !target->PointerWheel(GET_WHEEL_DELTA_WPARAM(wparam))) {
+                target = target->parent();
+            }
+            return target ? 0 : DefWindowProcW(window_, message, wparam, lparam);
+        }
         case WM_COMMAND:
             TraceInputStart();
             if (root_ && root_->HandleCommand(reinterpret_cast<HWND>(lparam), HIWORD(wparam))) return 0;
@@ -334,6 +410,11 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             break;
         case WM_DESTROY:
             focus_coordinator_.Clear();
+            if (automation_provider_) {
+                automation_provider_->Disconnect();
+                automation_provider_->Release();
+                automation_provider_ = nullptr;
+            }
             root_.reset();
             render_context_.Reset();
             RemovePropW(window_, L"Terminal.MinimumWidth");

@@ -54,6 +54,10 @@ bool Component::PointerUp(POINT) {
     return false;
 }
 
+bool Component::PointerWheel(int) {
+    return false;
+}
+
 bool Component::HandleCommand(HWND source, WORD notification) {
     for (const auto& child : children_) {
         if (child->HandleCommand(source, notification)) return true;
@@ -120,6 +124,48 @@ void Component::CollectEditableParticipants(std::vector<EditableParticipant*>& p
     for (const auto& child : children_) child->CollectEditableParticipants(participants);
 }
 
+void Component::CollectAutomationElements(std::vector<Component*>& elements) {
+    if (automation_role() != AutomationRole::None) elements.push_back(this);
+    for (const auto& child : children_) child->CollectAutomationElements(elements);
+}
+
+AutomationRole Component::automation_role() const noexcept { return AutomationRole::None; }
+
+std::wstring Component::automation_name() const {
+    return ResolveAutomationName(definition_, Utf8ToWide(definition_.id));
+}
+
+bool Component::automation_supports_invoke() const noexcept { return false; }
+bool Component::AutomationInvoke() { return false; }
+std::optional<bool> Component::automation_toggle_state() const noexcept { return std::nullopt; }
+bool Component::AutomationToggle() { return false; }
+std::optional<AutomationRangeValue> Component::automation_range_value() const noexcept {
+    return std::nullopt;
+}
+bool Component::AutomationSetRangeValue(double) { return false; }
+bool Component::RequestAutomationFocus() {
+    return host_.request_automation_action
+               ? host_.request_automation_action(AutomationAction::Focus, this, 0.0)
+               : FocusNativePeer();
+}
+bool Component::RequestAutomationInvoke() {
+    return host_.request_automation_action
+               ? host_.request_automation_action(AutomationAction::Invoke, this, 0.0)
+               : AutomationInvoke();
+}
+bool Component::RequestAutomationToggle() {
+    return host_.request_automation_action
+               ? host_.request_automation_action(AutomationAction::Toggle, this, 0.0)
+               : AutomationToggle();
+}
+bool Component::RequestAutomationSetRangeValue(double value) {
+    return host_.request_automation_action
+               ? host_.request_automation_action(AutomationAction::SetRangeValue, this, value)
+               : AutomationSetRangeValue(value);
+}
+HWND Component::automation_native_peer() const noexcept { return nullptr; }
+bool Component::automation_is_password() const noexcept { return false; }
+
 void Component::OnDpiChanged() {
     for (const auto& child : children_) child->OnDpiChanged();
 }
@@ -139,7 +185,10 @@ bool Component::PrepareResources(COLORREF parent_background) {
 }
 
 void Component::AddChild(std::unique_ptr<Component> child) {
-    if (child) children_.push_back(std::move(child));
+    if (child) {
+        child->parent_ = this;
+        children_.push_back(std::move(child));
+    }
 }
 
 const RECT& Component::bounds() const noexcept {
@@ -163,6 +212,10 @@ bool Component::visible() const noexcept {
 
 bool Component::enabled() const noexcept {
     return definition_.enabled;
+}
+
+Component* Component::parent() const noexcept {
+    return parent_;
 }
 
 void Component::PaintStyleBox(HDC dc, config::VisualState state, const RECT& bounds) const {
@@ -220,6 +273,26 @@ std::wstring ResolveText(const config::TextValue& value) {
     MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, literal->data(),
                         static_cast<int>(literal->size()), result.data(), count);
     return result;
+}
+
+std::wstring Utf8ToWide(std::string_view value) {
+    if (value.empty()) return {};
+    const int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                                          static_cast<int>(value.size()), nullptr, 0);
+    if (count <= 0) return {};
+    std::wstring result(static_cast<std::size_t>(count), L'\0');
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                        static_cast<int>(value.size()), result.data(), count);
+    return result;
+}
+
+std::wstring ResolveAutomationName(const config::ResolvedComponent& definition,
+                                   std::wstring fallback) {
+    if (const auto* literal = std::get_if<std::string>(&definition.automation.name)) {
+        const std::wstring resolved = Utf8ToWide(*literal);
+        if (!resolved.empty()) return resolved;
+    }
+    return definition.automation.automatic_name ? std::move(fallback) : std::wstring{};
 }
 
 bool PointInRectInclusive(const RECT& bounds, POINT point) noexcept {

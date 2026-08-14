@@ -5,6 +5,7 @@
 #include <uxtheme.h>
 
 #include <algorithm>
+#include <array>
 #include <utility>
 
 #include "ui/components/input/native_peer_geometry.h"
@@ -39,6 +40,10 @@ InputComponent::InputComponent(const config::ResolvedComponent& definition, Comp
     edit_ = CreateWindowExW(0, L"EDIT", L"", style, 0, 0, 0, 0, host.window, nullptr,
                             reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(host.window, GWLP_HINSTANCE)),
                             nullptr);
+    if (properties.mode == config::InputMode::Multiline &&
+        properties.scrollbar == config::ScrollbarMode::Auto) {
+        EnsureScrollbar();
+    }
     if (edit_) ApplyNativeStyle();
 }
 
@@ -100,20 +105,46 @@ void InputComponent::Arrange(const RECT& bounds) {
                                 host_.dpi);
     const int left = bounds.left + border + ScaleDip(style().content_padding.left, host_.dpi);
     const int top = bounds.top + border + ScaleDip(style().content_padding.top, host_.dpi);
-    const int right = bounds.right - border - ScaleDip(style().content_padding.right, host_.dpi);
+    int right = bounds.right - border - ScaleDip(style().content_padding.right, host_.dpi);
     const int bottom = bounds.bottom - border - ScaleDip(style().content_padding.bottom, host_.dpi);
+    RECT reserved{};
+    if (scrollbar_) {
+        const int thickness = ScaleDip(
+            std::get<config::ScrollbarProperties>(scrollbar_definition_.properties).thickness,
+            host_.dpi);
+        reserved = {std::max(left, right - thickness), top, right, bottom};
+        right = reserved.left;
+        scrollbar_->Arrange(reserved);
+    }
     native_peer_content_rect_ = {left, top, right, bottom};
-    geometry_valid_ = ValidateNativePeerGeometry(bounds_, native_peer_content_rect_, {});
+    const std::array<RECT, 1> reserved_regions{reserved};
+    geometry_valid_ = ValidateNativePeerGeometry(
+        bounds_, native_peer_content_rect_, scrollbar_ ? std::span<const RECT>(reserved_regions)
+                                                       : std::span<const RECT>{});
     if (!geometry_valid_) {
         ShowWindow(edit_, SW_HIDE);
         return;
     }
     MoveWindow(edit_, left, top, right - left, bottom - top, TRUE);
+    SyncScrollbarFromPeer();
+    if (!scrollbar_visible_ && scrollbar_) {
+        const int full_right = bounds.right - border -
+                               ScaleDip(style().content_padding.right, host_.dpi);
+        native_peer_content_rect_.right = full_right;
+        MoveWindow(edit_, left, top, full_right - left, bottom - top, TRUE);
+    }
 }
 
 void InputComponent::Paint(HDC dc) {
     PaintStyleBox(dc, geometry_valid_ ? State() : config::VisualState::Disabled, bounds_);
     if (suspended_) PaintSuspendedSnapshot(dc);
+    if (scrollbar_visible_) scrollbar_->Paint(dc);
+}
+
+Component* InputComponent::HitTest(POINT point) {
+    if (!visible() || !PointInRectInclusive(bounds_, point)) return nullptr;
+    if (scrollbar_visible_ && scrollbar_->HitTest(point)) return scrollbar_.get();
+    return this;
 }
 
 bool InputComponent::PointerDown(POINT point) {
@@ -136,6 +167,7 @@ bool InputComponent::HandleCommand(HWND source, WORD notification) {
         Invalidate();
     } else if (notification == EN_CHANGE) {
         draft_.Update(ReadPeerText());
+        Arrange(bounds_);
         const auto event = definition_.events.find("changed");
         if (event != definition_.events.end() && host_.dispatch_event) host_.dispatch_event(event->second);
     }
@@ -176,6 +208,11 @@ void InputComponent::OnDpiChanged() {
     ApplyNativeStyle();
     Arrange(bounds_);
     Invalidate();
+}
+
+bool InputComponent::PrepareResources(COLORREF parent_background) {
+    if (!Component::PrepareResources(parent_background)) return false;
+    return !scrollbar_ || scrollbar_->PrepareResources(parent_background);
 }
 
 bool InputComponent::SuspendNativePeers(std::wstring& diagnostic) {
@@ -222,6 +259,22 @@ void InputComponent::CollectEditableParticipants(std::vector<EditableParticipant
     participants.push_back(this);
 }
 
+void InputComponent::CollectAutomationElements(std::vector<Component*>& elements) {
+    Component::CollectAutomationElements(elements);
+    if (scrollbar_) scrollbar_->CollectAutomationElements(elements);
+}
+
+AutomationRole InputComponent::automation_role() const noexcept { return AutomationRole::Edit; }
+
+std::wstring InputComponent::automation_name() const {
+    std::wstring fallback = Utf8ToWide(Properties().placeholder);
+    if (fallback.empty()) fallback = Utf8ToWide(definition_.id);
+    return ResolveAutomationName(definition_, std::move(fallback));
+}
+
+HWND InputComponent::automation_native_peer() const noexcept { return edit_; }
+bool InputComponent::automation_is_password() const noexcept { return Properties().password; }
+
 bool InputComponent::IsDirty() const noexcept {
     return draft_.is_dirty();
 }
@@ -261,6 +314,10 @@ LRESULT CALLBACK InputComponent::EditSubclassProcedure(HWND window, UINT message
     }
     const LRESULT result = DefSubclassProc(window, message, wparam, lparam);
     if (owner && message == WM_PAINT) owner->PaintPlaceholder();
+    if (owner && (message == WM_MOUSEWHEEL || message == WM_VSCROLL || message == WM_KEYUP ||
+                  message == WM_CHAR)) {
+        owner->SyncScrollbarFromPeer();
+    }
     if (message == WM_SETFOCUS || message == WM_KILLFOCUS) InvalidateRect(window, nullptr, FALSE);
     return result;
 }
@@ -348,6 +405,66 @@ config::VisualState InputComponent::State() const noexcept {
     if (!enabled()) return config::VisualState::Disabled;
     if (logically_focused_ && window_active_) return config::VisualState::Focus;
     return config::VisualState::Normal;
+}
+
+void InputComponent::EnsureScrollbar() {
+    if (scrollbar_) return;
+    scrollbar_definition_.id = definition_.id + "-scrollbar";
+    scrollbar_definition_.type = config::ComponentType::Scrollbar;
+    scrollbar_definition_.visible = true;
+    scrollbar_definition_.enabled = definition_.enabled;
+    scrollbar_definition_.style_id = "scrollbar";
+    scrollbar_definition_.style_index = definition_.style_index;
+    for (std::size_t index = 0; index < host_.theme->styles.size(); ++index) {
+        if (host_.theme->styles[index].id == "scrollbar") {
+            scrollbar_definition_.style_index = index;
+            break;
+        }
+    }
+    config::ScrollbarProperties properties;
+    properties.orientation = config::Orientation::Vertical;
+    scrollbar_definition_.properties = properties;
+    scrollbar_ = std::make_unique<ScrollbarComponent>(scrollbar_definition_, host_);
+    scrollbar_->Bind(this);
+}
+
+void InputComponent::SyncScrollbarFromPeer() {
+    if (!scrollbar_ || !edit_ || !IsWindow(edit_)) return;
+    scroll_line_count_ = std::max(1, static_cast<int>(SendMessageW(edit_, EM_GETLINECOUNT, 0, 0)));
+    const int content_width = std::max(
+        1, static_cast<int>(native_peer_content_rect_.right - native_peer_content_rect_.left));
+    const SIZE metrics = host_.render_runtime->MeasureText(
+        L"Mg", style().font, host_.dpi, content_width,
+        DT_SINGLELINE | DT_NOPREFIX);
+    const int line_height = std::max(1, static_cast<int>(metrics.cy));
+    scroll_visible_lines_ = std::max(
+        1, static_cast<int>(native_peer_content_rect_.bottom - native_peer_content_rect_.top) /
+               line_height);
+    scroll_value_ = std::clamp(
+        static_cast<int>(SendMessageW(edit_, EM_GETFIRSTVISIBLELINE, 0, 0)), 0, ScrollMaximum());
+    const bool visible = ScrollMaximum() > 0;
+    if (visible != scrollbar_visible_) {
+        scrollbar_visible_ = visible;
+        Invalidate();
+    } else if (visible) {
+        scrollbar_->Refresh();
+    }
+}
+
+int InputComponent::ScrollMinimum() const noexcept { return 0; }
+int InputComponent::ScrollMaximum() const noexcept {
+    return std::max(0, scroll_line_count_ - scroll_visible_lines_);
+}
+int InputComponent::ScrollPageSize() const noexcept { return scroll_visible_lines_; }
+int InputComponent::ScrollValue() const noexcept { return scroll_value_; }
+
+void InputComponent::SetScrollValue(int value) {
+    if (!edit_ || !IsWindow(edit_)) return;
+    const int clamped = std::clamp(value, ScrollMinimum(), ScrollMaximum());
+    const int current = static_cast<int>(SendMessageW(edit_, EM_GETFIRSTVISIBLELINE, 0, 0));
+    if (clamped != current) SendMessageW(edit_, EM_LINESCROLL, 0, clamped - current);
+    scroll_value_ = clamped;
+    if (scrollbar_) scrollbar_->Refresh();
 }
 
 }  // namespace ui::components

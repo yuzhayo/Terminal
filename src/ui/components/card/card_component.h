@@ -4,11 +4,12 @@
 
 namespace ui::components {
 
-class ButtonComponent final : public Component {
+class CardComponent final : public Component {
 public:
-    using Component::Component;
+    CardComponent(const config::ResolvedComponent& definition, ComponentHost& host);
 
     MeasuredSize Measure(HDC dc, int available_width, int available_height) override;
+    void Arrange(const RECT& bounds) override;
     void Paint(HDC dc) override;
     bool PointerMove(POINT point) override;
     bool PointerDown(POINT point) override;
@@ -18,7 +19,6 @@ public:
     void SetLogicalFocus(bool focused, bool window_active) override;
     bool HandleKeyDown(UINT virtual_key) override;
     AutomationRole automation_role() const noexcept override;
-    std::wstring automation_name() const override;
     bool automation_supports_invoke() const noexcept override;
     bool AutomationInvoke() override;
 
@@ -26,6 +26,7 @@ private:
     config::VisualState State() const noexcept;
     void Activate();
 
+    bool selected_ = false;
     bool hovered_ = false;
     bool pressed_ = false;
     bool focused_ = false;

@@ -1899,6 +1899,63 @@
               }
             },
             {
+              "id": "terminal-options",
+              "type": "Card",
+              "style": {
+                "$ref": "styles.card"
+              },
+              "layout": {
+                "width": "fill"
+              },
+              "interactive": true,
+              "tabStop": true,
+              "automation": {
+                "name": "Opsi Terminal"
+              },
+              "children": [
+                {
+                  "id": "terminal-confirm",
+                  "type": "Checkbox",
+                  "style": {
+                    "$ref": "styles.checkbox"
+                  },
+                  "label": "Konfirmasi sebelum menjalankan",
+                  "checkedBinding": {
+                    "$bind": "viewState.confirmBeforeRun"
+                  },
+                  "events": {
+                    "changed": {
+                      "action": "toggle-confirm-before-run",
+                      "payload": {}
+                    }
+                  }
+                },
+                {
+                  "id": "terminal-active",
+                  "type": "Toggle",
+                  "style": {
+                    "$ref": "styles.toggle"
+                  },
+                  "label": "Terminal aktif",
+                  "checkedBinding": {
+                    "$bind": "viewState.terminalActive"
+                  },
+                  "events": {
+                    "changed": {
+                      "action": "toggle-terminal-active",
+                      "payload": {}
+                    }
+                  }
+                }
+              ],
+              "events": {
+                "activate": {
+                  "action": "activate-terminal-options",
+                  "payload": {}
+                }
+              }
+            },
+            {
               "id": "terminal-stub-action",
               "type": "Button",
               "style": {

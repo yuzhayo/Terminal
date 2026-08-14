@@ -10,6 +10,7 @@
 #include "rendering/window_render_context.h"
 #include "platform/single_instance.h"
 #include "ui/application/stub_application_bridge.h"
+#include "ui/accessibility/automation_provider.h"
 #include "ui/components/component.h"
 #include "ui/components/component_registry.h"
 #include "ui/config/resolved_ui_document.h"
@@ -63,6 +64,7 @@ private:
     OverlayPlane overlay_plane_;
     std::unique_ptr<components::ComponentHost> component_host_;
     std::unique_ptr<components::Component> root_;
+    accessibility::AutomationRootProvider* automation_provider_ = nullptr;
     components::Component* pointer_target_ = nullptr;
     application::StubApplicationBridge application_bridge_;
     std::optional<std::uint64_t> pending_input_correlation_;

@@ -4,9 +4,9 @@
 
 namespace ui::components {
 
-class ButtonComponent final : public Component {
+class ToggleComponent final : public Component {
 public:
-    using Component::Component;
+    ToggleComponent(const config::ResolvedComponent& definition, ComponentHost& host);
 
     MeasuredSize Measure(HDC dc, int available_width, int available_height) override;
     void Paint(HDC dc) override;
@@ -19,13 +19,14 @@ public:
     bool HandleKeyDown(UINT virtual_key) override;
     AutomationRole automation_role() const noexcept override;
     std::wstring automation_name() const override;
-    bool automation_supports_invoke() const noexcept override;
-    bool AutomationInvoke() override;
+    std::optional<bool> automation_toggle_state() const noexcept override;
+    bool AutomationToggle() override;
 
 private:
     config::VisualState State() const noexcept;
-    void Activate();
+    void Toggle();
 
+    bool checked_ = false;
     bool hovered_ = false;
     bool pressed_ = false;
     bool focused_ = false;

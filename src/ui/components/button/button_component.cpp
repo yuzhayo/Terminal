@@ -84,6 +84,20 @@ bool ButtonComponent::HandleKeyDown(UINT virtual_key) {
     return true;
 }
 
+AutomationRole ButtonComponent::automation_role() const noexcept { return AutomationRole::Button; }
+
+std::wstring ButtonComponent::automation_name() const {
+    return ResolveAutomationName(definition_, ResolveText(Properties(definition_).label));
+}
+
+bool ButtonComponent::automation_supports_invoke() const noexcept { return true; }
+
+bool ButtonComponent::AutomationInvoke() {
+    if (!enabled()) return false;
+    Activate();
+    return true;
+}
+
 config::VisualState ButtonComponent::State() const noexcept {
     if (!enabled()) return config::VisualState::Disabled;
     if (pressed_) return config::VisualState::Pressed;

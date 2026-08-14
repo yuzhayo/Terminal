@@ -62,7 +62,7 @@
       <HighEntropyVA>true</HighEntropyVA>
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <AdditionalOptions>/CETCOMPAT %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalDependencies>user32.lib;gdi32.lib;comctl32.lib;imm32.lib;shell32.lib;uxtheme.lib;ole32.lib;uuid.lib;windowsapp.lib;advapi32.lib;usp10.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>user32.lib;gdi32.lib;comctl32.lib;imm32.lib;shell32.lib;uxtheme.lib;ole32.lib;oleaut32.lib;uuid.lib;windowsapp.lib;advapi32.lib;usp10.lib;uiautomationcore.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <AdditionalManifestFiles>$(ProjectDir)..\src\app.manifest</AdditionalManifestFiles>
@@ -98,13 +98,19 @@
     <ClCompile Include="..\src\rendering\software_compositor.cpp" />
     <ClCompile Include="..\src\rendering\window_render_context.cpp" />
     <ClCompile Include="..\src\ui\components\component.cpp" />
+    <ClCompile Include="..\src\ui\accessibility\automation_provider.cpp" />
     <ClCompile Include="..\src\ui\components\component_registry.cpp" />
     <ClCompile Include="..\src\ui\components\editable_draft_state.cpp" />
     <ClCompile Include="..\src\ui\components\button\button_component.cpp" />
+    <ClCompile Include="..\src\ui\components\card\card_component.cpp" />
+    <ClCompile Include="..\src\ui\components\checkbox\checkbox_component.cpp" />
     <ClCompile Include="..\src\ui\components\container\container_component.cpp" />
     <ClCompile Include="..\src\ui\components\input\input_component.cpp" />
     <ClCompile Include="..\src\ui\components\input\native_peer_geometry.cpp" />
+    <ClCompile Include="..\src\ui\components\screen\screen_component.cpp" />
+    <ClCompile Include="..\src\ui\components\scrollbar\scrollbar_component.cpp" />
     <ClCompile Include="..\src\ui\components\text\text_component.cpp" />
+    <ClCompile Include="..\src\ui\components\toggle\toggle_component.cpp" />
     <ClCompile Include="..\src\ui\components\window\window_component.cpp" />
     <ClCompile Include="..\src\ui\application\stub_application_bridge.cpp" />
     <ClCompile Include="..\src\ui\containers\logical_focus_coordinator.cpp" />
