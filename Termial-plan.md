@@ -1,14 +1,17 @@
 # Open Terminal Greenfield Native — Locked Architecture and Delivery Plan
 
-Status: **keputusan arsitektur dikunci; implementasi belum dimulai**
+Status: **arsitektur, product behavior, serta contract Phase 0A/0B dikunci; implementasi belum dimulai**
 
 Repository canonical: `C:\VSCODE\Teminal`
 
 Tanggal konsolidasi: 2026-08-14
 
-Dokumen ini menggabungkan seluruh keputusan yang sudah dikunci dalam pembahasan. Jika detail belum
-pernah diputuskan, dokumen ini menandainya sebagai open decision agar agent tidak mengarang atau
-memperluas scope secara diam-diam.
+Dokumen ini menggabungkan seluruh keputusan yang sudah dikunci dalam pembahasan. Toolchain,
+dependency pin, renderer object graph, config identity/path, measurement contract, IPC, feed/channel,
+preview integrity, packaging, production-release contract, dan uninstall-data UX tidak boleh dipilih
+ulang saat implementasi; exact contract-nya berada di §25. Actual presentation tier serta budget final
+tetap measurement-gated, dan field contract per-component ditutup tepat sebelum vertical slice
+component tersebut tanpa membuka kembali arsitektur atau product behavior.
 
 ## 1. Tujuan
 
@@ -173,8 +176,8 @@ Rumus atau algoritma boleh berada di C++; input visual dan hasil desainnya beras
 - Dokumen default lengkap di-embed ke executable.
 - Optional user override baru diterapkan di atas default baru hanya setelah seluruh override lolos
   parse, schema validation, dan reference validation. Override tidak pernah diterapkan sebagian.
-- Override membawa metadata minimum binary/config-contract version memakai version convention yang
-  dibekukan pada Phase 0A. Metadata ini dipakai untuk mendeteksi override yang dibuat oleh build lebih
+- Override membawa metadata minimum binary/config-contract version memakai version convention §25.4.
+  Metadata ini dipakai untuk mendeteksi override yang dibuat oleh build lebih
   baru ketika aplikasi di-rollback.
 - Gate menghasilkan typed resolved document; tidak ada string token lookup atau JSON parsing di paint.
 - Invalid schema/reference menghasilkan diagnostic jelas dan tidak diam-diam memakai fallback visual
@@ -185,8 +188,14 @@ Bentuk tingkat atas yang dimaksud:
 
 ```json
 {
-  "schema": "open-terminal-greenfield-ui",
+  "schema": "yuzha.open-terminal-native.ui",
   "version": 1,
+  "documentKind": "default",
+  "minimumReaderContract": 1,
+  "writtenBy": {
+    "appVersion": "0.1.0",
+    "configContract": 1
+  },
   "tokens": {},
   "styles": {},
   "windows": {},
@@ -503,8 +512,8 @@ Resource ownership yang dikunci:
   gagal, runtime mencoba WARP/software fallback. Jika keduanya gagal, tampilkan bootstrap native
   diagnostic, pertahankan user data, lalu lakukan orderly non-zero exit; tidak ada recreate loop tanpa
   batas;
-- exact Direct2D interface/device object graph mengikuti supported Windows baseline yang dibekukan pada
-  Phase 0A; component tidak boleh mengetahui detail backend tersebut.
+- exact Direct2D interface/device object graph mengikuti §25.3; component tidak boleh mengetahui detail
+  backend tersebut.
 
 ### 9.5 Visual contract V1 yang sudah diminta
 
@@ -1149,8 +1158,9 @@ Kontrak yang dikunci:
   `OpenTerminalNative.sln`; publisher: `Yuzha`; application/package ID: `Yuzha.OpenTerminalNative`.
   Package version memakai SemVer `MAJOR.MINOR.PATCH`, Win32 file version memetakan ke
   `MAJOR.MINOR.PATCH.0`, dan release tag memakai `vMAJOR.MINOR.PATCH`.
-- V1 memakai Velopack C++ SDK/CLI 1.2.0 yang dipin pada dependency lock. `vpk`/required .NET SDK hanya
-  dependency mesin build/package dan tidak menjadi managed runtime dependency aplikasi.
+- V1 memakai dynamic Velopack C++ SDK dan CLI 1.2.0 yang dipin serta hash-verified menurut §25.2 dan
+  §25.7. `vpk`/required .NET SDK hanya dependency mesin build/package dan tidak menjadi managed runtime
+  dependency aplikasi.
 - `Setup.exe` memakai per-user install ke `%LOCALAPPDATA%\Yuzha.OpenTerminalNative`; persistent data
   root terpisah di `%LOCALAPPDATA%\Yuzha\OpenTerminalNative`. Program files/current version tidak pernah
   menjadi tempat config, log, updater state, cache, draft, atau credential.
@@ -1177,7 +1187,7 @@ Kontrak yang dikunci:
 - File runtime milik versi berbeda tidak boleh bercampur. Update gagal atau dibatalkan harus
   meninggalkan versi lama tetap dapat dijalankan.
 - Package/update metadata harus diverifikasi sebelum binary diganti. Exact Velopack signing/integrity
-  policy untuk preview/public artifact dibekukan pada Phase 0B.
+  policy preview/public mengikuti locked contract §25.7.
 - Update check, download, dan staging tidak boleh menahan first frame atau berjalan di UI thread.
 - Updater coordination berada di application/deployment service dan hanya mengirim status/action
   semantic melalui `UiApplicationBridge`; component dan container tidak mengelola file update.
@@ -1205,10 +1215,10 @@ Kontrak yang dikunci:
 - Membangun serta menguji artifact berada dalam scope plan. Mempublikasikan release/update ke user
   tetap memerlukan permintaan eksplisit user pada turn pelaksanaan.
 
-Yang belum dikunci hanya exact local/production feed transport dan host, channel naming, preview/public
-signing material, artifact command, serta explicit uninstall-user-data UX. Contract production untuk
-item tersebut wajib dibekukan pada Phase 0B; certificate production aktual baru wajib sebelum public
-signed release.
+Exact local/production feed, channel, preview/public integrity, artifact command, signing requirement,
+dan uninstall-user-data UX dikunci di §25.7-§25.9. Nilai secret/certificate production aktual bukan
+pilihan stack dan baru wajib tersedia sebelum public signed release; build public wajib gagal tertutup
+bila material tersebut belum tersedia.
 
 ## 20. Target source ownership dan nama final
 
@@ -1297,22 +1307,15 @@ memerlukannya, dan jangan membuat framework abstraksi spekulatif.
 4. Sinkronkan `AGENTS.md` dengan keputusan Direct2D/DirectWrite, primary-surface/`HWND` ownership,
    in-surface Dialog, layered Combo popup, infrastructure window, accessibility, High Contrast, lazy
    route, dan private-commit performance contract di plan ini.
-5. Terapkan identity/version/data-root yang sudah dikunci §19 dan tetapkan nama/resource path config
-   baru yang belum ditentukan.
-6. Tetapkan build system/toolchain serta exact MSVC/SDK untuk locked Windows 10 build 19045 minimum dan
-   Windows 11 release-primary gate, exact Direct2D
-   backend/object/resource-domain model, JSON parser, dan test framework tanpa mengimpor project lama;
-   manifest wajib membuktikan `PerMonitorV2`.
-7. Tetapkan embedded default resource identity, override metadata/version comparison, config diagnostic
-   location, dan data paths.
-8. Tetapkan measurement harness: trace source/counter, deterministic scenarios, installed Release test
-   procedure, baseline machine/Windows/DPI, serta cara mengambil first-complete-frame, input-to-paint,
-   navigation, resize, private commit, diagnostic working set, `HWND`, USER/GDI handle, render context,
-   dan cache-entry counter per resource domain.
-9. Tetapkan single-instance/second-launch IPC contract untuk normal unelevated same-user/session runtime
-   dan dependency-nya terhadap install/privilege model Phase 0B. Phase 0A tidak selesai bila contract IPC
-   masih mengasumsikan privilege yang belum konsisten dengan packaging.
-10. Buat acceptance checklist serta exact validation command phase sebelum menulis source.
+5. Terapkan identity/version/data-root dan exact config resource/path §19/§25.4.
+6. Scaffold exact MSBuild/MSVC/SDK/dependency/test contract §25.2 dan renderer graph §25.3 tanpa
+   mengimpor project lama; manifest wajib membuktikan `PerMonitorV2`.
+7. Terapkan measurement instrumentation/harness §25.5 dan IPC contract §25.6 tanpa mengganti tool,
+   envelope, security boundary, atau retry policy saat coding.
+8. Sinkronkan project scripts dengan canonical command §23 dan pastikan mismatch toolchain/dependency
+   gagal dengan diagnostic, bukan memilih versi lain secara otomatis.
+9. Jalankan Phase 0A checklist §25.1 dan catat hasil; actual flip/bitblt tier serta budget numerik final
+   tetap ditutup oleh measurement gate Phase 2, bukan opini implementation agent.
 
 Exit criteria Phase 0A: semua blocker source sudah diputuskan; scope, files, dependencies, renderer,
 measurement route, dan validation command diketahui; nested repositories tidak berubah. Production
@@ -1320,13 +1323,14 @@ certificate/release host bukan blocker untuk mulai menulis schema atau `UiConfig
 
 #### Phase 0B — Blocker sebelum installer preview pertama
 
-1. Integrasikan locked Velopack 1.2.0 per-user install, package/installed identity, offline `Setup.exe`,
-   privilege/manual-elevation policy, startup hook, serta build-only dependency pin §19.
-2. Tetapkan local test feed/channel, version comparison, integrity/signing policy untuk preview,
-   update staging/apply/rollback contract, serta artifact commands.
-3. Tetapkan production feed/release-host/signing requirement secara kontrak; certificate production
-   yang sebenarnya baru wajib tersedia sebelum public signed release, bukan sebelum source pertama.
-4. Implement dan buktikan locked manual-elevation behavior §19 serta second-launch routing tanpa
+1. Integrasikan exact Velopack C++ 1.2.0 per-user contract §19/§25.7, termasuk startup hook sebelum
+   mutex/config/renderer dan `SetAutoApplyOnStartup(false)`.
+2. Implement exact local preview feed/channel, version flags, integrity gate, artifact command, dan
+   installed-update automation §25.7-§25.8.
+3. Implement production GitHub Release/signing fail-closed contract §25.7-§25.8; certificate production
+   aktual baru wajib sebelum public signed release, bukan sebelum source pertama.
+4. Implement uninstall-data UX §25.9 serta locked manual-elevation behavior §19; buktikan second-launch
+   routing tanpa
    pelonggaran UIPI yang tidak aman.
 
 Exit criteria Phase 0B: packaging route dan `N → N+1` local installed-update test dapat dijalankan
@@ -1766,7 +1770,23 @@ measurement evidence; implementation agent tidak boleh melonggarkannya diam-diam
 
 ## 23. Validation minimum
 
-Command final ditemukan dari project file baru setelah scaffold. Minimum setiap implementation phase:
+Project scaffold wajib menyediakan command canonical berikut; implementation agent tidak memilih
+generator, runner, konfigurasi, atau package command baru:
+
+```powershell
+.\tools\Test-Toolchain.ps1
+.\tools\Restore-Dependencies.ps1
+.\tools\Build.ps1 -Configuration Debug -Platform x64
+.\tools\Build.ps1 -Configuration Release -Platform x64
+.\tools\Test.ps1 -Configuration Debug -Platform x64
+.\tools\Test.ps1 -Configuration Release -Platform x64
+.\tools\Measure-Performance.ps1 -Configuration Release -Samples 30
+.\tools\Build-Package.ps1 -Version 0.1.0 -Channel win-preview
+.\tools\Test-InstalledUpdate.ps1 -FromVersion 0.1.0 -ToVersion 0.1.1 -Channel win-preview
+```
+
+Script tersebut memakai exact MSBuild/vpk invocation §25.2/§25.8 dan gagal bila pin tidak cocok.
+Minimum setiap implementation phase:
 
 - `git diff --check`;
 - build Debug x64;
@@ -1817,7 +1837,7 @@ Command final ditemukan dari project file baru setelah scaffold. Minimum setiap 
 - preservation check untuk config/settings/cache/user data yang relevan;
 - failed/invalid update dan uninstall smoke;
 - package version, manifest/checksum/signature, shortcut, taskbar, tray, dan installed-path checks sesuai
-  stack yang disetujui;
+  locked contract §25.7-§25.9;
 - second-launch routing same-user/session pada locked per-user privilege/install scope, termasuk explicit
   behavior ketika executable diluncurkan manual dengan elevated token;
 - pemeriksaan bahwa nested repositories tidak berubah;
@@ -1845,72 +1865,422 @@ yang benar-benar terlihat pada state dan viewport/DPI yang relevan.
 Packaging, installer, installed-update validation, dan release-artifact generation adalah pengecualian
 yang sengaja masuk scope V1. Public publication tetap membutuhkan instruksi user tersendiri.
 
-## 25. Contract yang belum dibekukan dan provisional verification
+## 25. Phase 0 contract freeze dan measurement-gated closure
 
-Bagian ini bukan daftar pertanyaan untuk dilempar kembali kepada user. Untuk detail teknis yang tetap
-berada dalam scope terkunci, implementation agent wajib membuat rekomendasi konkret, meminta review
-agent, mencatat evidence, lalu membekukan contract sebelum source terkait ditulis. Plan boleh direvisi
-bila measurement/runtime evidence membuktikan baseline awal salah. User baru diminta keputusan bila
-perubahan mengubah product scope, business semantics, dependency class, privilege, persistence user,
-atau tindakan external seperti publication/signing.
+Bagian ini adalah keputusan implementasi, bukan menu pilihan untuk agent berikutnya. Implementasi boleh
+memverifikasi availability dan harus gagal jelas bila pin tidak tersedia, tetapi tidak boleh mengganti
+build system, dependency, renderer graph, config identity, measurement route, IPC, feed, package
+identity, atau release transport secara diam-diam. Perubahan hanya melalui amendment plan berbasis
+evidence; user diminta keputusan bila perubahan menyentuh product scope, business semantics, dependency
+class, privilege, persistence user, atau publication/signing external.
 
-### 25.1 Contract Phase 0A yang masih harus dibekukan sebelum source pertama
+### 25.1 Status freeze
 
-- build system/generator, exact Visual Studio/MSVC/Windows SDK version, dependency policy, dan project
-  layout final di luar ownership tree konseptual;
-- exact Direct2D interface/device object graph, hardware/WARP creation parameters, bitblt tier details,
-  resource-domain implementation, serta layered-popup DIB/HDC path yang memenuhi §9.4;
-- JSON parser/library beserta exact pin/distribution, test framework/runner, dan canonical Debug/Release/
-  test commands;
-- embedded default resource ID, override filename/subdirectory di locked data root, exact config-contract
-  version comparison, dan bentuk indicator diagnostic persistent pada Settings/UI Editor;
-- measurement tooling, deterministic maximum Combo/List data, exact baseline machine/Windows/DPI,
-  cold-process/warm-file-cache procedure, counters, dan canonical performance-report format;
-- named-pipe name/security descriptor/message envelope serta exact bounded retry timing di dalam startup
-  contract same-user/session yang sudah dikunci;
-- sinkronisasi root `AGENTS.md` dan `.gitignore` terhadap seluruh keputusan canonical plan.
+| Area | Status sebelum source | Closure berikutnya |
+| --- | --- | --- |
+| arsitektur dan product behavior | locked | hanya berubah melalui keputusan user |
+| Phase 0A technical contract | locked di §25.2-§25.6 | implementation verification, bukan stack selection |
+| Phase 0B production contract | locked di §25.7-§25.9 | secret/certificate aktual baru wajib sebelum public release |
+| actual primary presentation tier | provisional flip baseline | renderer probe Phase 2 memilih flip atau locked bitblt fallback |
+| numeric performance/resource budget final | provisional §22 | measurement Phase 2; perubahan harus membawa report |
+| exact field/flags per component | staged | dibekukan dan diuji sebelum vertical slice pemiliknya |
+| business integration order | staged | dipetakan dari dependency live sebelum Phase 6 |
 
-Identity, minimum OS, presentation tier, theme adapter, diagnostic log path, dan ownership tidak lagi
-open decision. Phase 0A memilih detail implementasi di atas tanpa membuka kembali contract tersebut.
+Phase 0A dianggap selesai secara dokumentasi ketika §25.2-§25.6 konsisten dengan project scaffold,
+`AGENTS.md`, dependency lock, dan command §23. Phase 0B dianggap selesai secara dokumentasi; executable
+evidence-nya tetap wajib sebelum installer preview dinyatakan PASS.
 
-### 25.2 Contract Phase 0B yang masih harus dibekukan sebelum installer preview pertama
+### 25.2 Exact toolchain, project, dependency, dan test contract
 
-- exact local test feed transport/path, channel names, version comparison flags, integrity/signing policy
-  preview, artifact commands, dan installed-test automation;
-- production feed/release host dan production signing requirement sebagai contract. Certificate/secret
-  aktual hanya wajib sebelum public signed release dan tidak boleh disimpan di repository;
-- explicit uninstall-user-data UX. Default aman tetap mempertahankan data; penghapusan membutuhkan
-  pilihan sadar dan scope path yang tervalidasi.
+Build system V1 adalah native Visual Studio/MSBuild solution, bukan CMake, Meson, Bazel, atau generator
+yang dipilih kemudian:
 
-Velopack 1.2.0, per-user scope, identity/path, offline Setup, updater UX/schedule, retention, rollback,
-manual-elevation policy, dan startup hook tidak lagi open decision.
+- solution `OpenTerminalNative.sln`; application project `src\OpenTerminalNative.vcxproj`; contract test
+  project `tests\OpenTerminalNativeTests.vcxproj`; performance harness project
+  `tests\performance\OpenTerminalNativePerformance.vcxproj`;
+- Visual Studio Build Tools 2022 `17.14.36` (`17.14.37502.11`), MSBuild `17.14.51.32402`, platform
+  toolset `v143`, `VCToolsVersion=14.44.35207`, dan `cl.exe 19.44.35228` x64;
+- Windows SDK `10.0.26100.0`; `_WIN32_WINNT=0x0A00`, target x64 only, dan runtime gate tetap Windows 10
+  build 19045. Pemakaian SDK baru tidak mengizinkan unguarded API yang absen pada 19045;
+- C++20, `/std:c++20 /permissive- /Zc:__cplusplus /utf-8 /EHsc /W4 /WX`; Release memakai `/O2 /MT`,
+  Debug `/Od /RTC1 /MTd`; linker memakai `/DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA /guard:cf` dan
+  `CETCOMPAT` bila linker exact tersebut menerimanya;
+- COM ownership memakai `Microsoft::WRL::ComPtr`; C++/WinRT projection yang dibutuhkan `UISettings`
+  berasal dari Windows SDK 10.0.26100.0, bukan NuGet runtime tambahan;
+- `global.json` mengunci .NET SDK `9.0.304` dengan roll-forward disabled hanya untuk local `vpk`; file
+  `.config\dotnet-tools.json` mengunci `vpk` `1.2.0` dan `rollForward: false`;
+- tracked `dependencies.lock.json` menyimpan URL, version, SHA-256, selected files, dan license. Script
+  `tools\Restore-Dependencies.ps1` mengunduh ke ignored `build\deps`, memverifikasi hash sebelum extract,
+  dan tidak pernah commit header hasil download, import library, DLL, package, atau cache;
+- JSON parser adalah single-header `nlohmann/json` `v3.12.0`, tag object
+  `65ee68451d8eb2b5f3a30b410476ab83deb3289b`. `json.hpp` berasal dari official tag URL dengan SHA-256
+  `AAF127C04CB31C406E5B04A63F1AE89369FCCDE6D8FA7CDDA1ED4F32DFC5DE63`; license MIT ikut dipulihkan;
+- parser memakai `parser_callback_t` dengan per-object key set pada `object_start/key/object_end` untuk
+  menolak duplicate key sebelum DOM dipublikasikan; `allow_exceptions=true`, comments disabled, dan
+  seluruh size/depth/numeric limit §7.2 tetap diterapkan sebelum typed resolution;
+- Velopack memakai official `velopack_libc_1.2.0.zip`, SHA-256
+  `547262ED7A1AB1FF62F580AA53851EDE2F1A451AC61B8974EB7BC01117488835`. Build x64 memakai
+  `include\Velopack.hpp`, `lib\velopack_libc_win_x64_msvc.dll.lib`, dan meng-copy
+  `lib\velopack_libc_win_x64_msvc.dll` ke publish output. Binary dependency hanya masuk build/package
+  output, tidak source Git;
+- tidak ada Catch2, GoogleTest, atau framework test lain. `OpenTerminalNativeTests.exe` adalah runner
+  kecil repository-owned dengan deterministic registration, filter, JSON/JUnit-style report, exit `0`
+  hanya bila seluruh selected test PASS, dan non-zero untuk failure/crash/empty selection;
+- `tools\Test-Toolchain.ps1` memeriksa seluruh exact version di atas. Version mismatch adalah blocker
+  dengan install/repair guidance; script tidak memilih toolset/SDK terbaru secara otomatis.
 
-### 25.3 Provisional defaults dengan closure gate, bukan pertanyaan user
+Canonical MSBuild di balik `tools\Build.ps1` adalah:
 
-- Primary Button memakai ramp Light/Dark §9.5. Seluruh variant lain dipilih agent per vertical slice,
-  lalu ditutup oleh contrast automation dan screenshot matrix Phase 2/3A; hasil gagal direvisi, bukan
-  diteruskan sebagai pilihan selera tanpa rekomendasi.
+```powershell
+& $msbuild .\OpenTerminalNative.sln /m /t:Build `
+  /p:Configuration=$Configuration /p:Platform=x64 `
+  /p:PlatformToolset=v143 /p:VCToolsVersion=14.44.35207 `
+  /p:WindowsTargetPlatformVersion=10.0.26100.0 /p:PreferredToolArchitecture=x64
+```
+
+No source file boleh ditulis sebelum dependency lock dan toolchain check tersebut ada. Availability
+check boleh dilakukan ulang saat eksekusi; hasilnya bukan izin untuk mengganti pin.
+
+### 25.3 Exact renderer object graph dan fallback contract
+
+`RenderRuntime` process-level membuat object berikut pada UI thread:
+
+1. `ID2D1Factory1` melalui `D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED)` dan shared
+   `IDWriteFactory3` melalui `DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)`;
+2. `ID3D11Device` + immediate context dengan `D3D11_CREATE_DEVICE_BGRA_SUPPORT`. Debug build mencoba
+   tambahan `D3D11_CREATE_DEVICE_DEBUG` sekali lalu retry tanpa flag bila debug layer tidak terpasang;
+3. feature-level list exact `11_1, 11_0, 10_1, 10_0`; hardware memakai `D3D_DRIVER_TYPE_HARDWARE` lebih
+   dahulu, lalu satu fallback `D3D_DRIVER_TYPE_WARP` dengan flag/feature list yang sama;
+4. D3D device di-query menjadi `IDXGIDevice`; `ID2D1Factory1::CreateDevice` menghasilkan satu
+   process-level `ID2D1Device`. Setiap surface membuat `ID2D1DeviceContext`, bukan device baru;
+5. DXGI adapter/factory berasal dari device yang sama dan di-query minimal sebagai `IDXGIFactory2`;
+   `MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER)` diterapkan per top-level window.
+
+Default `WindowRenderContext` memakai `CreateSwapChainForHwnd` dengan format
+`DXGI_FORMAT_B8G8R8A8_UNORM`, alpha `IGNORE`, sample `1/0`, usage `RENDER_TARGET_OUTPUT`, buffer count `2`,
+scaling `STRETCH`, dan `DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL`. Runtime meng-query `IDXGISwapChain3`, membuat
+satu `ID2D1Bitmap1` target per backing buffer melalui `CreateBitmapFromDxgiSurface` dengan
+`D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW`, lalu memilih target dari
+`GetCurrentBackBufferIndex`. Present memakai `IDXGISwapChain1::Present1`; dirty state dilacak per buffer
+dan full repaint gate tetap mengikuti §9.4.
+
+Locked fallback memakai graph D3D/DXGI/D2D yang sama, tetapi swapchain bitblt
+`DXGI_SWAP_EFFECT_SEQUENTIAL`, buffer count `1`, format/sample/alpha sama, dan satu target bitmap buffer
+0. Fallback hanya aktif bila Phase 2 probe mereproduksi native-Edit clipping/z-order/flicker artifact
+pada flip path. `ID2D1HwndRenderTarget` bukan pilihan implementasi; kebutuhannya menghentikan phase dan
+memerlukan amendment §9.4.
+
+Combo `LayeredPopupRenderContext` tidak memakai swapchain. Ia membuat top-down 32-bit BGRA
+`CreateDIBSection`, memory DC dari `CreateCompatibleDC(nullptr)`, lalu satu `ID2D1DCRenderTarget` dengan
+alpha `PREMULTIPLIED`. Setiap size change membuat DIB baru secara transactional; `BindDC` → draw →
+`EndDraw` → `UpdateLayeredWindow(ULW_ALPHA, AC_SRC_ALPHA)` adalah present path. Selected bitmap selalu
+dikembalikan sebelum HBITMAP/DC dihancurkan. Cache path ini adalah popup-surface domain sendiri.
+
+Device-lost trigger adalah `D2DERR_RECREATE_TARGET`, `DXGI_ERROR_DEVICE_REMOVED`,
+`DXGI_ERROR_DEVICE_RESET`, `DXGI_ERROR_DEVICE_HUNG`, atau `DXGI_ERROR_DRIVER_INTERNAL_ERROR`. Runtime
+menghentikan present, melepas target/context/device-dependent cache, mencoba recreate current hardware
+sekali lalu WARP sekali, melakukan full repaint, dan tidak menjalankan loop tanpa batas. Failure kedua
+memakai bootstrap diagnostic dan orderly non-zero exit. Measure/layout dan factory-domain DWrite/cache
+tetap device-independent seperti §9.4.
+
+Ini menutup object graph; yang provisional hanya tier aktual flip versus bitblt sampai probe Phase 2,
+bukan pemilihan API/backend baru saat implementasi.
+
+### 25.4 Exact config identity, metadata, resource, path, dan diagnostic
+
+- schema identity exact: `yuzha.open-terminal-native.ui`; schema `version: 1`;
+- embedded source: `Assets\ui\open-terminal-native.ui.default.v1.json`; resource type `RT_RCDATA`,
+  symbolic ID `IDR_UI_DEFAULT_JSON`, numeric ID `201`;
+- optional override exact:
+  `%LOCALAPPDATA%\Yuzha\OpenTerminalNative\ui\override.v1.json`;
+- legacy filename/path tidak dicoba. Runtime tidak mencari `ui.json`, sibling executable config, nested
+  repo assets, atau `%LOCALAPPDATA%\OpenTerminal`;
+- default memakai `documentKind: default`; override memakai `documentKind: override`. Keduanya membawa
+  `schema`, `version`, `minimumReaderContract`, dan `writtenBy { appVersion, configContract }` sebelum
+  `tokens/styles/windows/screens`;
+- binary V1 mengompilasi `readerContract=1` dan `writerContract=1`. `minimumReaderContract` adalah integer
+  positif; override diterapkan hanya bila nilainya `<= readerContract`. `writtenBy.appVersion` hanya
+  diagnostic SemVer dan tidak menentukan compatibility. UI Editor mengisi minimum contract tertinggi
+  dari field yang ditulis;
+- binary lama yang melihat minimum reader lebih tinggi menolak seluruh override, mempertahankan bytes,
+  memakai embedded default, dan menampilkan rollback-incompatible diagnostic;
+- persistent config banner berada di bagian atas Settings/UI Editor dengan severity, error code,
+  source/path, JSON pointer/line-column bila ada, dan pesan `Override UI tidak diterapkan`. Banner tidak
+  hilang oleh navigation/close Settings dan baru clear setelah load/reload sukses; action yang tersedia
+  hanya `Buka UI Editor` dan `Coba reload`, bukan silent reset/delete;
+- root data tetap `%LOCALAPPDATA%\Yuzha\OpenTerminalNative`; config log
+  `logs\ui-config.log`; updater state `updater\state.json`; measurement artifact tidak pernah ditulis ke
+  data root normal dan berada di ignored repository `artifacts\measurements` atau test temp directory.
+
+### 25.5 Exact measurement contract
+
+Instrumentation memakai `QueryPerformanceCounter` dan TraceLogging provider
+`Yuzha.OpenTerminalNative.Performance`, GUID `{926b237e-f049-4ec4-8026-5db2e27a8239}`. Event minimal:
+`ProcessEntry`, `VelopackHooksComplete`, `ConfigResolved`, `RenderDeviceReady`, `FirstLayoutComplete`,
+`FirstPresentComplete`, `FirstFrameVisible`, `InputReceived`, `InputVisualPresented`,
+`NavigationRequested`, `NavigationPresented`, `ResizeFramePresented`, `ScenarioSettled`, dan
+`ResourceSnapshot`. Correlation ID wajib menghubungkan input/navigation/resize start ke present yang
+benar; timestamp dari message receipt sampai event setelah successful present.
+
+`FirstFrameVisible` dicatat setelah complete buffer dipresentasikan, top-level window di-show, dan satu
+`DwmFlush` selesai. Startup end-to-end dimulai dari timestamp harness tepat sebelum `CreateProcessW`,
+bukan dari sesudah `wWinMain`; report tetap menyimpan internal breakdown event. Harness adalah
+`OpenTerminalNativePerformance.exe`, memakai system-wide QPC yang sama, dan tidak mengukur dengan PowerShell
+`Measure-Command`.
+
+`tools\Measure-Performance.ps1` mengorkestrasi installed Release x64, `wpr.exe` file-mode profile, dan
+`tracerpt.exe` export; tool tersebut sudah tersedia pada Windows baseline. Report canonical adalah
+`artifacts\measurements\<UTC>-<git-sha>\report.json` plus raw `.etl`/CSV, berisi toolchain, Git SHA,
+package version, installed path, renderer tier, hardware/WARP, OS build/UBR, DPI/display, CPU/GPU/
+driver/RAM/storage, scenario parameters, seluruh 30 sample, min/median/p95/max, budget, serta PASS/FAIL.
+
+Baseline awal exact untuk numeric budget adalah mesin yang diaudit 2026-08-14:
+
+- Windows 10 Pro 22H2 x64 `19045.7663`, primary display `2560×1440` pada 96 DPI/100%;
+- Intel Core i5-14400F, 10 core/16 logical processor, RAM 32 GiB;
+- NVIDIA GeForce RTX 3050 driver `32.0.15.6094`; source/install pada WD Blue SN5000 1 TB NVMe.
+
+Windows 11 release-primary matrix memakai GA Windows 11 25H2 build family `26200` dengan exact UBR
+dicatat pada run; compatibility matrix tetap Windows 10 build 19045. Functional DPI matrix adalah
+100/125/150/200%; numeric budget canonical diambil pada primary 100% baseline di atas.
+
+Canonical startup `cold-process/warm-file-cache` berarti tidak ada app process/tray tersisa, settle dua
+detik, harness membaca seluruh installed binary/package input sekali untuk menghangatkan file cache
+tanpa meluncurkan app, lalu mencatat timestamp sebelum process creation. Tidak ada app/device warm-up.
+Warm startup menjalankan accepted build sekali, keluar orderly, menunggu dua detik, lalu sample berikutnya.
+True cold-file-cache/reboot run hanya diagnostic dan tidak mengganti canonical PASS/FAIL.
+
+Deterministic data adalah Combo 200 item dengan maksimum popup 480×480 DIP dan List 10,000 row dengan
+32 DIP row height serta viewport 40 row. Selain startup, satu warm-up scenario tidak dihitung lalu
+minimum 30 sample dicatat. Resource snapshot memakai `GetProcessMemoryInfo` `PrivateUsage` sebagai
+private commit dan `WorkingSetSize` diagnostic, `GetGuiResources` untuk USER/GDI, enumeration HWND by
+PID, serta diagnostic API `RenderRuntime` untuk render context/cache/lease. Settle adalah 10 detik idle
+setelah pending UI work, popup, animation, worker, dan deferred zero-lease eviction selesai.
+
+Budget §22 tetap provisional sampai Phase 2 report nyata. Implementation agent tidak boleh menandai
+angka final, menghapus sample outlier, atau melonggarkan target tanpa report dan amendment plan.
+
+### 25.6 Exact single-instance dan second-launch IPC contract
+
+Primary normal process membuat secure mutex
+`Local\Yuzha.OpenTerminalNative.Instance.v1.<userSidSha256-32hex>`; `Local` membatasi session dan suffix
+adalah 16 byte pertama SHA-256 textual TokenUser SID. Mutex dan pipe DACL dibuat dari current
+`TokenLogonSid`, bukan default security descriptor.
+
+Pipe exact adalah
+`\\.\pipe\Yuzha.OpenTerminalNative.v1.<sessionId>.<userSidSha256-32hex>`, byte-mode duplex,
+`PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE`,
+`PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS`, dan maximum instances
+`1`. Security descriptor pipe exact setelah substitusi SID adalah
+`D:P(A;;GRGW;;;<TokenLogonSid>)S:(ML;;NW;;;ME)`; mutex memakai
+`D:P(A;;GA;;;<TokenLogonSid>)S:(ML;;NW;;;ME)`. Protected DACL tidak memberi Anonymous/Everyone dan
+mandatory label menolak write-up dari Low Integrity. Server meng-impersonate client sebelum dispatch,
+membandingkan `TokenUser`, `TokenLogonSid`, `TokenSessionId`, client PID dari
+`GetNamedPipeClientProcessId`, serta mengharuskan integrity level yang sama dengan normal server.
+Remote/different-user/different-session/cross-integrity client ditolak. Elevated manual
+launch mengikuti §19 lebih dahulu; server normal tidak membuka UIPI filter atau menerima window message
+sebagai IPC substitute.
+
+Wire format adalah little-endian `uint32 payloadBytes` diikuti strict UTF-8 JSON maksimum 64 KiB,
+nesting maksimum 16. Request V1 mempunyai exact top-level field:
+
+```json
+{
+  "protocol": "yuzha.open-terminal-native.ipc",
+  "version": 1,
+  "requestId": "lowercase-uuid",
+  "clientPid": 1234,
+  "command": "open-route",
+  "routeId": "terminal",
+  "arguments": {}
+}
+```
+
+Unknown/missing field, invalid UTF-8, duplicate key, wrong PID, unsupported command/version, payload di
+atas limit, atau invalid route/payload ditolak sebelum post ke UI. V1 command allowlist adalah
+`activate-default`, `open-route`, dan `request-exit`; setiap command mempunyai typed arguments contract.
+Response memakai protocol/version/requestId yang sama dan status `accepted`, `rejected`, atau `busy`
+plus stable `errorCode`; ACK `accepted` berarti event sudah masuk bounded `ApplicationContainer` queue,
+bukan berarti window sudah selesai paint. Pipe worker hanya mem-post semantic event dan tidak menyentuh
+HWND/component.
+
+Secondary connect schedule exact adalah attempt pada `0, 25, 75, 175, 375, 750 ms` dari deteksi mutex.
+Setelah connect, write+ACK deadline `1000 ms`. Broken pipe/no ACK boleh satu reconnect setelah `250 ms`
+dengan `requestId` sama; total wall-clock maksimum `2 s`, lalu diagnostic dan non-zero exit. Primary
+menyimpan 128 requestId terakhir selama dua menit dan mengembalikan cached response agar retry
+idempotent. Queue maksimum 64 request; overflow menghasilkan `busy`, bukan unbounded allocation.
+
+### 25.7 Feed, channel, update API, integrity, dan signing contract
+
+Evidence reference adalah read-only `Open-terminal`: pinned Velopack 1.2.0, local file source,
+anonymous GitHub Release source, successful `v0.3.0 → v0.3.1`, full/delta packages, `RELEASES`, dan
+`releases.win.json`. Greenfield tidak mengimpor source lama, tetapi mempertahankan deployment pattern
+yang sudah terbukti.
+
+- preview channel exact `win-preview`; local feed exact ignored directory
+  `artifacts\releases\win-preview`; metadata `releases.win-preview.json`;
+- production stable channel exact `win`; source/host
+  `Velopack::GithubSource("https://github.com/yuzhayo/Terminal", "", false)`; metadata
+  `releases.win.json`; public app tidak membawa PAT/token;
+- preview GitHub Release, bila kelak diminta, memakai repo yang sama, channel `win-preview`, dan
+  `GithubSource(..., prerelease=true)`. Local preview tidak dipublikasikan;
+- package channel di-embed oleh `vpk pack --channel`; runtime normal memakai
+  `UpdateOptions { AllowVersionDowngrade=false, ExplicitChannel=nullopt,
+  MaximumDeltasBeforeFallback=1 }`. Channel tidak diganti lewat settings biasa;
+- explicit downgrade hanya memakai retained previous full asset yang version/hash/path-nya tersimpan
+  updater state dan dipilih sadar user; deployment service membuat one-operation manager dengan
+  `AllowVersionDowngrade=true`. Tidak ada automatic downgrade;
+- test local source hanya diterima oleh installed `win-preview` package ketika absolute directory dari
+  `OPEN_TERMINAL_NATIVE_UPDATE_SOURCE` disertai matching random token pada environment dan
+  `--update-test-token`; stable package mengabaikan override tersebut;
+- `VelopackApp::Build().SetAutoApplyOnStartup(false)` serta install/update/uninstall hooks dipanggil paling
+  awal di `wWinMain`, sebelum mutex, config, renderer, atau window. Download hanya setelah consent;
+  apply lebih dahulu menjalankan `PrepareCloseAll`; setelah seluruh participant mengizinkan, deployment
+  service memanggil `WaitExitThenApplyUpdates` lalu melakukan orderly process exit;
+- preview local package boleh unsigned tetapi wajib lulus Velopack SHA-256 verification, generated
+  `SHA256SUMS`, corruption test, failed-apply survival, dan tidak boleh dipublikasikan sebagai public;
+- semua public preview/stable artifact wajib Authenticode-signed oleh publisher certificate yang sama,
+  SHA-256 file digest, RFC 3161 timestamp SHA-256, dan lulus `signtool verify /pa /all /v`. Velopack
+  menerima exact signing parameters melalui `--signParams`; signing dilakukan oleh Velopack agar app,
+  DLL, Update, dan Setup ditandatangani pada tahap yang benar;
+- GitHub Actions secret contract adalah `WINDOWS_SIGNING_PFX_BASE64`,
+  `WINDOWS_SIGNING_PFX_PASSWORD`, dan `WINDOWS_SIGNING_CERT_SHA1`; RFC 3161 endpoint V1 dikunci
+  `http://timestamp.digicert.com` dan parameter exact `/fd SHA256 /tr
+  http://timestamp.digicert.com /td SHA256`. Secret di-decode ke runner temp,
+  di-import sementara ke CurrentUser My store, dipakai via `/sha1`, lalu file/store entry dibersihkan.
+  Stable/public job gagal tertutup bila input hilang atau verify gagal;
+- certificate/secret aktual tidak berada di repository, log, package notes, atau app. Ketiadaannya tidak
+  menahan Phase 1 source, tetapi mutlak menahan public release.
+
+### 25.8 Exact packaging, installed-update, dan production-release command
+
+`tools\Build-Package.ps1` lebih dahulu menjalankan toolchain/dependency check, Release build, contract
+tests, dan publish assembly ke `artifacts\publish\Release\x64`; folder tersebut hanya berisi runtime
+yang diperlukan. Exact pack invocation baseline:
+
+```powershell
+dotnet tool restore
+dotnet vpk pack `
+  --packId Yuzha.OpenTerminalNative `
+  --packVersion $Version `
+  --packDir .\artifacts\publish\Release\x64 `
+  --mainExe OpenTerminalNative.exe `
+  --packTitle "Open Terminal Native" `
+  --packAuthors "Yuzha" `
+  --icon .\Assets\open-terminal-native.ico `
+  --outputDir ".\artifacts\releases\$Channel" `
+  --runtime win-x64 `
+  --channel $Channel `
+  --shortcuts Desktop,StartMenuRoot `
+  --delta BestSpeed
+```
+
+Tidak ada `--framework` karena application CRT static dan Velopack native runtime ikut package. Public
+mode menambahkan only locked `--signParams`; preview local tidak menyisipkan dummy/self-signed public
+certificate. Script memverifikasi Setup, portable ZIP, full package, channel feed, version, SHA256SUMS,
+dan—bila previous release tersedia—delta package. Output Git-ignored.
+
+`tools\Test-InstalledUpdate.ps1` membuat dua preview package berurutan, clean-install version N melalui
+offline Setup, meluncurkan installed path, mengarahkan source ke local `win-preview` feed dengan test
+token, menjalankan check/download/consent/apply, menunggu restart, lalu membuktikan file/product version
+N+1, preserved data, no mixed version files, single-instance routing, tray/shortcut, failed/corrupt
+package survival, explicit downgrade test, uninstall-preserve, dan uninstall-delete UX.
+
+Production release host adalah GitHub Releases repository `yuzhayo/Terminal`. Workflow hanya manual
+`workflow_dispatch`, branch `main`, concurrency `open-terminal-native-release`, current-commit CI harus
+PASS, version source `version.props`, tag `vMAJOR.MINOR.PATCH`, dan tag/asset tidak pernah dioverwrite.
+Workflow mengunduh previous channel release untuk delta, menjalankan exact build/test/package/sign/
+verify, lalu:
+
+```powershell
+dotnet vpk upload github `
+  --repoUrl "https://github.com/yuzhayo/Terminal" `
+  --outputDir ".\artifacts\releases\win" `
+  --channel win `
+  --token $env:GITHUB_TOKEN `
+  --publish `
+  --releaseName "Open Terminal Native $Version" `
+  --tag "v$Version" `
+  --targetCommitish $CommitSha
+```
+
+`GITHUB_TOKEN` hanya repository-scoped `contents: write`. Release dispatch/publication selalu memerlukan
+instruksi eksplisit user; plan ini tidak mengotorisasi push, tag, workflow dispatch, atau publish.
+
+### 25.9 Exact uninstall-user-data UX dan deletion safety
+
+Default uninstall dari Windows Settings/Velopack selalu mempertahankan
+`%LOCALAPPDATA%\Yuzha\OpenTerminalNative`. Ia menghapus versioned program files, shortcuts, taskbar/Jump
+List/Explorer integration milik aplikasi, serta installer registration; tidak menghapus config,
+settings, cache, history/bookmark, drafts, logs, updater diagnostic, atau credential tanpa pilihan user.
+
+Settings menyediakan action `Uninstall Open Terminal Native…`. In-surface confirmation menampilkan dua
+radio option:
+
+1. `Pertahankan data saya (direkomendasikan)` — default/focused;
+2. `Hapus seluruh data Open Terminal Native dari PC ini` — menampilkan exact root path dan memerlukan
+   checkbox kedua `Saya memahami data ini tidak dapat dipulihkan` sebelum tombol Uninstall enabled.
+
+Flow pilihan kedua lebih dahulu harus lulus `PrepareCloseAll`; Cancel tidak menulis marker atau
+meluncurkan updater. Setelah prepare lulus, app menulis atomic one-time marker ke
+`updater\uninstall-intent.json` berisi random 128-bit nonce, package ID, installed version, exact
+canonical data root, dan UTC expiry 10 menit, lalu menjalankan `Update.exe uninstall --silent` dengan
+nonce yang sama hanya pada inherited environment
+`OPEN_TERMINAL_NATIVE_UNINSTALL_NONCE`. `OnBeforeUninstall` menghapus data hanya bila environment nonce
+dan marker cocok, marker valid/unexpired, serta package identity/version/root cocok. Marker invalid,
+stale, system-initiated uninstall, atau hook error kembali ke preserve-data default dan menghasilkan
+diagnostic, bukan aggressive cleanup.
+
+Sebelum delete, path dibentuk ulang dari `FOLDERID_LocalAppData` dan harus sama ordinal-ignore-case
+dengan exact canonical root, bukan hanya prefix. Root yang merupakan unexpected reparse point ditolak;
+enumeration tidak mengikuti reparse point dan hanya menghapus link entry. Deletion scope tidak pernah
+naik ke `%LOCALAPPDATA%`, `%LOCALAPPDATA%\Yuzha`, repository, nested repo, atau arbitrary user path.
+Windows Credential Manager entry hanya dihapus untuk exact target prefix
+`Yuzha.OpenTerminalNative/`; credential provider lain tidak disentuh. Failure menampilkan path yang
+tersisa dan tidak mengklaim full deletion.
+
+Setelah normal preserve-data uninstall, Apps entry tidak menawarkan cleanup kedua. Dokumentasi final
+menunjukkan exact retained root untuk manual cleanup atau meminta reinstall lalu memakai in-app flow;
+uninstaller tidak menghapus data diam-diam agar UI tampak sederhana.
+
+### 25.10 Per-component closure dan provisional verification
+
+- Primary Button memakai ramp Light/Dark §9.5. Seluruh variant lain ditutup per vertical slice oleh
+  contrast automation dan screenshot matrix; hasil gagal direvisi agent, bukan dilempar sebagai pilihan
+  selera tanpa rekomendasi.
 - Primary DirectWrite surface memakai GDI-compatible layout/`GDI_CLASSIC`; Phase 2 memverifikasi pasangan
-  native Edit pada 100/125/150/200%. Perubahan mode memerlukan evidence dan plan amendment.
-- Flip-model adalah baseline dan bitblt `SEQUENTIAL` adalah fallback kompatibel resource-domain. Renderer
-  probe pertama Phase 2 menutup pilihan aktual; kebutuhan `ID2D1HwndRenderTarget` memerlukan revisi §9.4.
+  native Edit pada 100/125/150/200%. Perubahan mode memerlukan evidence dan amendment.
+- Flip-model baseline dan bitblt fallback sudah mempunyai exact graph §25.3. Probe Phase 2 memilih tier
+  aktual; ia tidak memilih library/backend baru.
 - Exact nama/type/range/default schema, native Edit flags/safe geometry, Scrollbar field, ancillary Combo
-  flags/backing format, dan semantic system-color mapping adalah deliverable contract sebelum masing-
-  masing vertical slice, bukan keputusan arsitektur global yang menahan component lain.
-- Urutan feature business integration dibekukan dari dependency live sebelum Phase 6. `allowMultiple`,
-  RTL layout mirroring, custom JSON text editor, dan automatic crash-loop rollback tetap post-V1.
+  flags, dan semantic system-color mapping dibekukan sebelum vertical slice pemiliknya dan diuji di
+  phase yang sama. Detail satu component tidak menahan component independen yang contract-nya lengkap.
+- `allowMultiple`, RTL layout mirroring, custom JSON text editor, dan automatic crash-loop rollback tetap
+  post-V1. Same-window/retained navigation, update UX, staged retention, offline installer, JSON Editor
+  V1, non-client DWM policy, dan multi-monitor popup clamping tetap canonical.
 
-Same-window/retained navigation, update UX, staged retention, offline installer, JSON Editor V1,
-non-client DWM policy, dan multi-monitor popup clamping sudah canonical dan dihapus dari daftar terbuka.
+### 25.11 Evidence, dokumentasi, dan Git
 
-### 25.4 Note dokumentasi dan Git
-
-- `Termial-plan.md` adalah sumber keputusan arsitektur/delivery paling lengkap. Root `AGENTS.md` saat
-  ini masih menyebut GDI/hybrid child-window lama dan wajib disinkronkan pada Phase 0A sebelum source
-  implementation dimulai. Sinkronisasi wajib mencakup Dialog overlay, layered Combo exception,
-  infrastructure window, Scrollbar, `PerMonitorV2`, modal stack/component scope, UIA HWND/popup hosting,
-  native-peer GDI lease/cache, newest retained/dirty close transaction, tray-failure Exit, dan
-  private-commit metric.
-- Root `.gitignore` masih membawa pola era .NET dan belum lengkap untuk output MSVC/native/packaging;
-  sinkronisasi pola ignore wajib dilakukan sebelum build atau artifact generation pertama.
-- Perubahan plan ini belum otomatis menjadi Git history. Commit hanya dilakukan atas instruksi user.
+- Auto-update evidence dibaca dari `Open-terminal\TerminalChooser.csproj`, `.config\dotnet-tools.json`,
+  `Features\Updates\AppUpdateService.cs`, `Program.cs`, `tools\Build-Release.ps1`, dan
+  `.github\workflows\release.yml`; GitHub release `v0.3.0` dan `v0.3.1` serta successful release run
+  membuktikan pattern local/GitHub feed dan N→N+1. Nested repo tetap tidak berubah.
+- Evidence snapshot 2026-08-14: release workflow run `30764401190` berstatus success; `v0.3.1`
+  mempublikasikan Setup, portable ZIP, full/delta package, `RELEASES`, serta `releases.win.json`.
+  Setup SHA-256 adalah `3FBA5EB2A944C0CA33E362DA1816465F34627730B9EAB30B1B7541C3721C486E`, dan install lokal
+  mempunyai `current`, `packages`, launcher, serta `Update.exe`. Snapshot ini membuktikan reference
+  deployment, bukan acceptance greenfield.
+- `Open-terminal-native` hanya memberi machine-local raw-Win32/toolchain/measurement context dan tidak
+  menjadi dependency atau bukti bahwa greenfield renderer baru sudah lulus.
+- Measurement lama di `Open-terminal-native\implementation.md` menolak Direct2D setelah mengukur satu
+  `DCRenderTarget` per owner-draw control dan sekitar 97-107 ms first hardware initialization. Dokumen
+  lama itu sendiri menyatakan cost tersebut adalah konsekuensi per-control graph. Greenfield memakai
+  one-primary-surface/device graph §25.3; angka lama adalah regression warning, bukan alasan memilih GDI
+  atau menyatakan Direct2D PASS/FAIL tanpa probe baru.
+- Root `AGENTS.md` sudah disinkronkan dengan Direct2D/DirectWrite primary surface dan exact Phase 0
+  freeze; detail ownership/lifecycle plan ini tetap authoritative dan tidak boleh dipersempit saat
+  scaffold.
+- Root `.gitignore` sudah mencakup native MSVC intermediate, dependency/build/artifact cache, package,
+  installer/feed, binary, log, ETL/CSV, dan test temp. Tracked scripts/manifests/lock files tetap tidak
+  di-ignore.
+- Perubahan plan belum otomatis menjadi Git history. Commit/push/release hanya atas instruksi user.

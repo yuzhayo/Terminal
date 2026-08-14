@@ -2,6 +2,24 @@
 **/bin/
 **/obj/
 
+# Native Visual Studio/MSBuild outputs and restored dependency cache
+.vs/
+build/
+artifacts/
+x64/
+Debug/
+Release/
+**/*.obj
+**/*.tlog
+**/*.lastbuildstate
+**/*.idb
+**/*.ilk
+**/*.ipdb
+**/*.iobj
+**/*.pch
+**/*.exp
+**/*.lib
+
 # Published/runtime output and WebView2 user data
 **/publish/
 **/publish-installer/
@@ -15,9 +33,14 @@
 *.msi
 *.tmp
 *.log
+*.etl
+*.csv
+*.nupkg
+RELEASES
+releases.*.json
+SHA256SUMS
 
 # Local IDE/user files
-.vs/
 *.user
 *.suo
 
@@ -25,4 +48,3 @@
 Open-terminal
 Open-terminal-native
 docs
-

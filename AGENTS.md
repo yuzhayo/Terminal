@@ -36,8 +36,20 @@ menjadi prioritas utama.
 ## Target teknologi dan runtime
 
 - Aplikasi baru adalah C++20 raw Win32, ringan, dan standalone.
+- `Termial-plan.md` §25 sudah mengunci Phase 0A/0B. Implementasi tidak boleh memilih ulang generator,
+  MSVC/SDK, dependency, renderer graph, config identity/path, measurement route, IPC, feed/channel,
+  package/release transport, atau uninstall-data UX. Availability/version check boleh diulang; mismatch
+  harus gagal jelas, bukan memakai version terbaru yang kebetulan tersedia.
+- Build adalah native Visual Studio/MSBuild `OpenTerminalNative.sln`, VS Build Tools 2022 17.14.36,
+  MSVC 14.44.35207 (`cl` 19.44.35228), Windows SDK 10.0.26100.0, x64, dan C++20. Pin lengkap,
+  dependency hash, serta command canonical berada di plan §23/§25.2.
+- App-owned visual memakai Direct2D + DirectWrite pada satu primary surface per top-level window.
+  Flip-model adalah baseline measurement-gated; bitblt `SEQUENTIAL` adalah exact fallback §25.3.
+  Dialog tetap in-surface. Hanya Combo popup yang memakai owned layered popup/DIB/DC render path.
 - Jangan menambahkan .NET, WinForms, WebView2, Electron, Node.js, browser engine, HTML/CSS, Tailwind,
   atau framework UI pihak ketiga tanpa keputusan baru dari user.
+- .NET SDK 9.0.304 hanya build-machine dependency untuk pinned `vpk` 1.2.0; aplikasi tidak membawa
+  managed runtime. Velopack native DLL ikut package output dan tidak boleh di-commit.
 - First frame harus cepat. Parsing konfigurasi kecil yang diperlukan untuk menggambar boleh terjadi
   sebelum window tampil; scan, network, plugin discovery, dan pekerjaan file berat tidak boleh
   menahan first frame.
@@ -51,6 +63,9 @@ menjadi prioritas utama.
 - Jangan membuat migration adapter, compatibility layer, atau auto-import untuk schema UI lama.
 - Schema UI baru harus mempunyai identity dan version sendiri serta resource/storage path yang tidak
   dapat membaca file UI lama secara tidak sengaja.
+- Identity exact adalah `yuzha.open-terminal-native.ui`; embedded default memakai
+  `Assets\ui\open-terminal-native.ui.default.v1.json`/`IDR_UI_DEFAULT_JSON` 201 dan override hanya
+  `%LOCALAPPDATA%\Yuzha\OpenTerminalNative\ui\override.v1.json`.
 - Jangan menghapus atau mengganti implementasi lama sebagai bagian scaffold. Cutover hanya dilakukan
   setelah UI baru dan integrasi business sudah dibuktikan, dan penghapusan legacy memerlukan scope
   eksplisit.
@@ -98,8 +113,9 @@ Larangan:
   background, border, padding, gap, child layout, scroll, clipping, dan invalidation.
 - Jangan membuat pengganti baru untuk `widgets.cpp` yang mengumpulkan logic Button, Input, Combo,
   Checkbox, dan component lain di satu file.
-- Shared primitives hanya berisi operasi teknis generik: GDI resource ownership, buffered paint,
-  rounded drawing, DPI scaling, text measurement, rectangle math, clipping, dan invalidation union.
+- Shared primitives hanya berisi operasi teknis generik: Direct2D/DirectWrite/DXGI resource ownership,
+  layered-popup DIB/DC presentation, native-peer GDI lease/cache, rounded drawing, DPI scaling, text
+  measurement, rectangle math, clipping, dan invalidation union.
   Shared primitive tidak boleh bercabang berdasarkan jenis component.
 
 ## Container dan multi-window
@@ -171,7 +187,9 @@ route membuka Chrome Launcher dalam window terpisah.
 
 ## Validation
 
-- Temukan command dari project file live setelah scaffold; jangan mengarang toolchain yang belum ada.
+- Gunakan command canonical plan §23 setelah script tersedia; jangan mengganti generator/runner.
+  Urutannya adalah toolchain check, dependency restore, Debug/Release x64 build dan test, lalu command
+  measure/package/installed-update yang relevan.
 - Minimum setiap phase setelah project tersedia:
   - `git diff --check`;
   - build Debug x64;
