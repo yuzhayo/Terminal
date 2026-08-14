@@ -38,6 +38,7 @@
     <OutDir>$(SolutionDir)build\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)build\obj\$(Platform)\$(Configuration)\</IntDir>
     <TargetName>OpenTerminalNative</TargetName>
+    <VelopackDir>$(SolutionDir)build\deps\velopack-1.2.0\</VelopackDir>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
@@ -47,12 +48,14 @@
       <ConformanceMode>true</ConformanceMode>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX;WINVER=0x0A00;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(VelopackDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>user32.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(VelopackDir)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>user32.lib;gdi32.lib;shell32.lib;velopack_libc_win_x64_msvc.dll.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <AdditionalManifestFiles>$(ProjectDir)app.manifest</AdditionalManifestFiles>
@@ -81,7 +84,17 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="platform\single_instance.cpp" />
+    <ClCompile Include="platform\updater.cpp" />
+    <ClCompile Include="rendering\gdi_renderer.cpp" />
+    <ClInclude Include="platform\single_instance.h" />
+    <ClInclude Include="platform\updater.h" />
+    <ClInclude Include="rendering\gdi_renderer.h" />
     <None Include="app.manifest" />
   </ItemGroup>
+  <Target Name="CopyVelopackRuntime" AfterTargets="Build">
+    <Copy SourceFiles="$(VelopackDir)lib\velopack_libc_win_x64_msvc.dll"
+          DestinationFiles="$(OutDir)velopack_libc.dll" />
+  </Target>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

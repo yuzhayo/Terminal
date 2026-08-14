@@ -1,0 +1,11 @@
+{
+  "velopack": {
+    "version": "1.2.0",
+    "asset": "velopack_libc_1.2.0.zip",
+    "url": "https://github.com/velopack/velopack/releases/download/1.2.0/velopack_libc_1.2.0.zip",
+    "sha256": "547262ED7A1AB1FF62F580AA53851EDE2F1A451AC61B8974EB7BC01117488835",
+    "header": "include/Velopack.hpp",
+    "importLibrary": "lib/velopack_libc_win_x64_msvc.dll.lib",
+    "runtime": "lib/velopack_libc_win_x64_msvc.dll"
+  }
+}

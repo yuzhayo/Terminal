@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.304
+
+      - name: Restore native dependencies
+        shell: pwsh
+        run: ./tools/Restore-Dependencies.ps1
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - name: Build Debug
+        shell: pwsh
+        run: msbuild OpenTerminalNative.sln /m /nologo /v:minimal /p:Configuration=Debug /p:Platform=x64
+
+      - name: Build Release
+        shell: pwsh
+        run: msbuild OpenTerminalNative.sln /m /nologo /v:minimal /p:Configuration=Release /p:Platform=x64

@@ -1,6 +1,9 @@
 @echo off
 setlocal
 
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\Restore-Dependencies.ps1"
+if errorlevel 1 exit /b %errorlevel%
+
 set "VCVARS=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 if not exist "%VCVARS%" (
   echo vcvars64.bat not found. Install Visual Studio 2022 C++ Build Tools.
