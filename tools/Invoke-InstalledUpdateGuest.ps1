@@ -98,6 +98,7 @@ function Stop-Terminal {
         Invoke-CheckedProcess -FilePath $launcherExecutable -ArgumentList '--exit' -TimeoutSeconds 15
     }
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    $emptySince = $null
     do {
         $remaining = @(Get-Process -Name Terminal -ErrorAction SilentlyContinue |
             Where-Object {
@@ -105,7 +106,19 @@ function Stop-Terminal {
                 $_.Path.StartsWith($installRoot, [StringComparison]::OrdinalIgnoreCase)
             })
         if ($remaining.Count -eq 0) {
-            return
+            if ($null -eq $emptySince) {
+                $emptySince = [DateTime]::UtcNow
+            }
+            elseif (([DateTime]::UtcNow - $emptySince).TotalMilliseconds -ge 1500) {
+                return
+            }
+            Start-Sleep -Milliseconds 100
+            continue
+        }
+        $emptySince = $null
+        if (Test-Path -LiteralPath $launcherExecutable -PathType Leaf) {
+            Invoke-CheckedProcess -FilePath $launcherExecutable -ArgumentList '--exit' `
+                -TimeoutSeconds 5
         }
         foreach ($process in $remaining) {
             $process.WaitForExit(250) | Out-Null
@@ -170,13 +183,15 @@ try {
     Set-Phase -Name 'testing-single-instance'
     Stop-Terminal
     $startedAfter = [DateTime]::Now.AddSeconds(-2)
-    $first = Start-Process -FilePath $currentExecutable -PassThru
+    $launch = Start-Process -FilePath $currentExecutable -PassThru
+    $first = $null
+    $launchExitCode = $null
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
     do {
         Start-Sleep -Milliseconds 100
-        $first.Refresh()
-        if ($first.HasExited) {
-            throw "Installed application keluar sebelum membuat main window. Exit code: $($first.ExitCode)."
+        $launch.Refresh()
+        if ($launch.HasExited) {
+            $launchExitCode = $launch.ExitCode
         }
         $candidate = Get-Process -Name Terminal -ErrorAction SilentlyContinue |
             Where-Object {
@@ -189,9 +204,13 @@ try {
             Select-Object -First 1
         if ($candidate) {
             $first = $candidate
+            break
         }
-    } while ($first.MainWindowHandle -eq 0 -and [DateTime]::UtcNow -lt $deadline)
-    if ($first.MainWindowHandle -eq 0) {
+    } while ([DateTime]::UtcNow -lt $deadline)
+    if (-not $first) {
+        if ($null -ne $launchExitCode) {
+            throw "Installed application keluar sebelum membuat main window. Exit code: $launchExitCode."
+        }
         throw 'Installed application tidak membuat main window dalam 30 detik.'
     }
 
