@@ -23,11 +23,20 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup><OutDir>$(SolutionDir)build\$(Platform)\$(Configuration)\</OutDir><IntDir>$(SolutionDir)build\obj\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir><TargetName>TerminalPerformance</TargetName></PropertyGroup>
   <ItemDefinitionGroup>
-    <ClCompile><LanguageStandard>stdcpp20</LanguageStandard><WarningLevel>Level4</WarningLevel><TreatWarningAsError>true</TreatWarningAsError><ConformanceMode>true</ConformanceMode><ExceptionHandling>Sync</ExceptionHandling><ControlFlowGuard>Guard</ControlFlowGuard><MultiProcessorCompilation>true</MultiProcessorCompilation><PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX;WINVER=0x0A00;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions><AdditionalOptions>/utf-8 /Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions></ClCompile>
-    <Link><SubSystem>Console</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><RandomizedBaseAddress>true</RandomizedBaseAddress><DataExecutionPrevention>true</DataExecutionPrevention><HighEntropyVA>true</HighEntropyVA><ControlFlowGuard>Guard</ControlFlowGuard><AdditionalOptions>/CETCOMPAT %(AdditionalOptions)</AdditionalOptions><AdditionalDependencies>user32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <ClCompile><LanguageStandard>stdcpp20</LanguageStandard><WarningLevel>Level4</WarningLevel><TreatWarningAsError>true</TreatWarningAsError><ConformanceMode>true</ConformanceMode><ExceptionHandling>Sync</ExceptionHandling><ControlFlowGuard>Guard</ControlFlowGuard><MultiProcessorCompilation>true</MultiProcessorCompilation><PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX;WINVER=0x0A00;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions><AdditionalIncludeDirectories>$(ProjectDir)..\..\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><AdditionalOptions>/utf-8 /Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions></ClCompile>
+    <Link><SubSystem>Console</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><RandomizedBaseAddress>true</RandomizedBaseAddress><DataExecutionPrevention>true</DataExecutionPrevention><HighEntropyVA>true</HighEntropyVA><ControlFlowGuard>Guard</ControlFlowGuard><AdditionalOptions>/CETCOMPAT %(AdditionalOptions)</AdditionalOptions><AdditionalDependencies>user32.lib;gdi32.lib;uxtheme.lib;windowsapp.lib;advapi32.lib;usp10.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><Optimization>Disabled</Optimization><DebugInformationFormat>ProgramDatabase</DebugInformationFormat><RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary><BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><Optimization>MaxSpeed</Optimization><RuntimeLibrary>MultiThreaded</RuntimeLibrary><FunctionLevelLinking>true</FunctionLevelLinking><IntrinsicFunctions>true</IntrinsicFunctions><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile><Link><EnableCOMDATFolding>true</EnableCOMDATFolding><OptimizeReferences>true</OptimizeReferences></Link></ItemDefinitionGroup>
-  <ItemGroup><ClCompile Include="TerminalPerformance.cpp" /></ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="TerminalPerformance.cpp" />
+    <ClCompile Include="..\..\src\rendering\corner_tile_cache.cpp" />
+    <ClCompile Include="..\..\src\rendering\layered_popup_render_context.cpp" />
+    <ClCompile Include="..\..\src\rendering\native_peer_gdi_resource_cache.cpp" />
+    <ClCompile Include="..\..\src\rendering\render_runtime.cpp" />
+    <ClCompile Include="..\..\src\rendering\software_compositor.cpp" />
+    <ClCompile Include="..\..\src\rendering\window_render_context.cpp" />
+    <ClCompile Include="..\..\src\ui\theme\theme_platform_adapter.cpp" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
