@@ -39,6 +39,7 @@
     <IntDir>$(SolutionDir)build\obj\$(Platform)\$(Configuration)\</IntDir>
     <TargetName>OpenTerminalNative</TargetName>
     <VelopackDir>$(SolutionDir)build\deps\velopack-1.2.0\</VelopackDir>
+    <NlohmannJsonDir>$(SolutionDir)build\deps\nlohmann-json-3.12.0\</NlohmannJsonDir>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
@@ -48,14 +49,14 @@
       <ConformanceMode>true</ConformanceMode>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX;WINVER=0x0A00;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(VelopackDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(VelopackDir)include;$(NlohmannJsonDir)single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(VelopackDir)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>user32.lib;gdi32.lib;shell32.lib;velopack_libc_win_x64_msvc.dll.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>user32.lib;gdi32.lib;shell32.lib;ole32.lib;uuid.lib;velopack_libc_win_x64_msvc.dll.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <AdditionalManifestFiles>$(ProjectDir)app.manifest</AdditionalManifestFiles>
@@ -84,13 +85,24 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="config\ui_config_gate.cpp" />
+    <ClCompile Include="platform\app_paths.cpp" />
     <ClCompile Include="platform\single_instance.cpp" />
     <ClCompile Include="platform\updater.cpp" />
+    <ClCompile Include="platform\windows_runtime.cpp" />
     <ClCompile Include="rendering\gdi_renderer.cpp" />
+    <ClInclude Include="app\app_identity.h" />
+    <ClInclude Include="app\app_version.h" />
+    <ClInclude Include="config\ui_config_gate.h" />
+    <ClInclude Include="platform\app_paths.h" />
     <ClInclude Include="platform\single_instance.h" />
     <ClInclude Include="platform\updater.h" />
+    <ClInclude Include="platform\windows_runtime.h" />
     <ClInclude Include="rendering\gdi_renderer.h" />
+    <ClInclude Include="resource.h" />
     <None Include="app.manifest" />
+    <None Include="..\Assets\ui\open-terminal-native.ui.default.v1.json" />
+    <ResourceCompile Include="app.rc" />
   </ItemGroup>
   <Target Name="CopyVelopackRuntime" AfterTargets="Build">
     <Copy SourceFiles="$(VelopackDir)lib\velopack_libc_win_x64_msvc.dll"

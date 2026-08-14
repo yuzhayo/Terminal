@@ -1,0 +1,10 @@
+#pragma once
+
+#define OTN_VERSION_MAJOR 0
+#define OTN_VERSION_MINOR 1
+#define OTN_VERSION_PATCH 0
+#define OTN_VERSION_BUILD 0
+#define OTN_VERSION_COMMA 0, 1, 0, 0
+#define OTN_VERSION_STRING "0.1.0"
+#define OTN_VERSION_STRING_W L"0.1.0"
+#define OTN_FILE_VERSION_STRING "0.1.0.0"

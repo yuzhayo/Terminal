@@ -1,0 +1,14 @@
+{
+  "schema": "yuzha.open-terminal-native.ui",
+  "version": 1,
+  "documentKind": "default",
+  "minimumReaderContract": 1,
+  "writtenBy": {
+    "appVersion": "0.1.0",
+    "configContract": 1
+  },
+  "tokens": {},
+  "styles": {},
+  "windows": {},
+  "screens": {}
+}

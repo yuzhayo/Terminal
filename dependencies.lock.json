@@ -7,5 +7,19 @@
     "header": "include/Velopack.hpp",
     "importLibrary": "lib/velopack_libc_win_x64_msvc.dll.lib",
     "runtime": "lib/velopack_libc_win_x64_msvc.dll"
+  },
+  "nlohmannJson": {
+    "version": "3.12.0",
+    "tag": "65ee68451d8eb2b5f3a30b410476ab83deb3289b",
+    "header": {
+      "path": "single_include/nlohmann/json.hpp",
+      "url": "https://raw.githubusercontent.com/nlohmann/json/v3.12.0/single_include/nlohmann/json.hpp",
+      "sha256": "AAF127C04CB31C406E5B04A63F1AE89369FCCDE6D8FA7CDDA1ED4F32DFC5DE63"
+    },
+    "license": {
+      "path": "LICENSE.MIT",
+      "url": "https://raw.githubusercontent.com/nlohmann/json/v3.12.0/LICENSE.MIT",
+      "sha256": "46A65CFFD1EA955132D95A8DD921640714A8D6B537D2E4E482D31145AE95B603"
+    }
   }
 }

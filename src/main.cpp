@@ -4,15 +4,22 @@
 #include <cwchar>
 #include <string>
 
+#include "app/app_identity.h"
+#include "config/ui_config_gate.h"
+#include "platform/app_paths.h"
 #include "platform/single_instance.h"
 #include "platform/updater.h"
+#include "platform/windows_runtime.h"
 #include "rendering/gdi_renderer.h"
 
 namespace {
 
-constexpr wchar_t kWindowTitle[] = L"Open Terminal Native";
-
 rendering::GdiRenderer g_renderer;
+
+void ShowBootstrapError(const std::wstring& diagnostic) {
+    MessageBoxW(nullptr, diagnostic.c_str(), app_identity::kProductName,
+                MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
+}
 
 bool HasSwitch(const std::wstring& command_line, const wchar_t* expected) {
     int argument_count = 0;
@@ -85,6 +92,12 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
 int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
     updater::RunStartupHooks();
 
+    std::wstring diagnostic;
+    if (platform::CheckWindowsRuntime(diagnostic) != platform::WindowsRuntimeStatus::Supported) {
+        ShowBootstrapError(diagnostic);
+        return 11;
+    }
+
     const std::wstring command_line = GetCommandLineW();
     if (HasSwitch(command_line, L"--update-now")) {
         return updater::CheckDownloadAndApply() == updater::UpdateResult::Failed ? 10 : 0;
@@ -102,6 +115,18 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
         return 0;
     }
 
+    platform::AppPaths paths;
+    if (!platform::ResolveAppPaths(paths, diagnostic)) {
+        ShowBootstrapError(diagnostic);
+        return 12;
+    }
+
+    config::UiConfigGate config_gate(instance, paths);
+    if (!config_gate.ResolveBootstrap(diagnostic)) {
+        ShowBootstrapError(diagnostic);
+        return 13;
+    }
+
     WNDCLASSEXW window_class{};
     window_class.cbSize = sizeof(window_class);
     window_class.style = CS_HREDRAW | CS_VREDRAW;
@@ -114,7 +139,8 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
         return 1;
     }
 
-    HWND window = CreateWindowExW(WS_EX_APPWINDOW, platform::MainWindowClassName(), kWindowTitle,
+    HWND window = CreateWindowExW(WS_EX_APPWINDOW, platform::MainWindowClassName(),
+                                  app_identity::kProductName,
                                   WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 760,
                                   520, nullptr, nullptr, instance, nullptr);
     if (!window) {

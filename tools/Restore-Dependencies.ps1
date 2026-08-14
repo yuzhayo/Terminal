@@ -5,38 +5,75 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$cacheRoot = Join-Path $repositoryRoot 'build\deps'
 $lock = Get-Content -LiteralPath (Join-Path $repositoryRoot 'dependencies.lock.json') -Raw |
     ConvertFrom-Json
-$dependency = $lock.velopack
-$dependencyPath = Join-Path $repositoryRoot "build\deps\velopack-$($dependency.version)"
-$headerPath = Join-Path $dependencyPath $dependency.header
-$libraryPath = Join-Path $dependencyPath $dependency.importLibrary
-$runtimePath = Join-Path $dependencyPath $dependency.runtime
+New-Item -ItemType Directory -Path $cacheRoot -Force | Out-Null
 
-if ((Test-Path -LiteralPath $headerPath -PathType Leaf) -and
-    (Test-Path -LiteralPath $libraryPath -PathType Leaf) -and
-    (Test-Path -LiteralPath $runtimePath -PathType Leaf)) {
-    Write-Host "Velopack $($dependency.version) is ready."
-    return
+function Get-Sha256 {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $stream = [System.IO.File]::OpenRead($Path)
+    $algorithm = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return [System.BitConverter]::ToString($algorithm.ComputeHash($stream)).Replace('-', '')
+    }
+    finally {
+        $algorithm.Dispose()
+        $stream.Dispose()
+    }
 }
 
-$cachePath = Join-Path $repositoryRoot 'build\deps'
-New-Item -ItemType Directory -Path $cachePath -Force | Out-Null
-$archivePath = Join-Path $cachePath $dependency.asset
+function Get-VerifiedFile {
+    param(
+        [Parameter(Mandatory)] [string] $Url,
+        [Parameter(Mandatory)] [string] $Destination,
+        [Parameter(Mandatory)] [string] $Sha256
+    )
 
-Invoke-WebRequest -Uri $dependency.url -OutFile $archivePath
-$actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash
-if ($actualHash -ne $dependency.sha256) {
-    throw "Velopack checksum mismatch. Expected $($dependency.sha256), received $actualHash."
+    $parent = Split-Path -Parent $Destination
+    New-Item -ItemType Directory -Path $parent -Force | Out-Null
+
+    if (Test-Path -LiteralPath $Destination -PathType Leaf) {
+        $existingHash = Get-Sha256 -Path $Destination
+        if ($existingHash -eq $Sha256) {
+            return
+        }
+    }
+
+    Invoke-WebRequest -Uri $Url -OutFile $Destination
+    $actualHash = Get-Sha256 -Path $Destination
+    if ($actualHash -ne $Sha256) {
+        throw "Dependency checksum mismatch for $Destination. Expected $Sha256, received $actualHash."
+    }
 }
 
-New-Item -ItemType Directory -Path $dependencyPath -Force | Out-Null
-Expand-Archive -LiteralPath $archivePath -DestinationPath $dependencyPath -Force
+$velopack = $lock.velopack
+$velopackPath = Join-Path $cacheRoot "velopack-$($velopack.version)"
+$velopackHeader = Join-Path $velopackPath $velopack.header
+$velopackLibrary = Join-Path $velopackPath $velopack.importLibrary
+$velopackRuntime = Join-Path $velopackPath $velopack.runtime
 
-foreach ($requiredFile in @($headerPath, $libraryPath, $runtimePath)) {
+if (-not ((Test-Path -LiteralPath $velopackHeader -PathType Leaf) -and
+          (Test-Path -LiteralPath $velopackLibrary -PathType Leaf) -and
+          (Test-Path -LiteralPath $velopackRuntime -PathType Leaf))) {
+    $archivePath = Join-Path $cacheRoot $velopack.asset
+    Get-VerifiedFile -Url $velopack.url -Destination $archivePath -Sha256 $velopack.sha256
+    New-Item -ItemType Directory -Path $velopackPath -Force | Out-Null
+    Expand-Archive -LiteralPath $archivePath -DestinationPath $velopackPath -Force
+}
+
+foreach ($requiredFile in @($velopackHeader, $velopackLibrary, $velopackRuntime)) {
     if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
         throw "Velopack archive is missing required file: $requiredFile"
     }
 }
+Write-Host "Velopack $($velopack.version) is ready."
 
-Write-Host "Restored Velopack $($dependency.version)."
+$nlohmann = $lock.nlohmannJson
+$nlohmannPath = Join-Path $cacheRoot "nlohmann-json-$($nlohmann.version)"
+$nlohmannHeader = Join-Path $nlohmannPath $nlohmann.header.path
+$nlohmannLicense = Join-Path $nlohmannPath $nlohmann.license.path
+Get-VerifiedFile -Url $nlohmann.header.url -Destination $nlohmannHeader -Sha256 $nlohmann.header.sha256
+Get-VerifiedFile -Url $nlohmann.license.url -Destination $nlohmannLicense -Sha256 $nlohmann.license.sha256
+Write-Host "nlohmann/json $($nlohmann.version) is ready."
