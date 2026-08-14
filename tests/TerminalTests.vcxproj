@@ -84,8 +84,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="test_main.cpp" />
+    <ClCompile Include="..\src\rendering\corner_tile_cache.cpp" />
     <ClCompile Include="..\src\rendering\native_peer_gdi_resource_cache.cpp" />
     <ClCompile Include="..\src\rendering\render_runtime.cpp" />
+    <ClCompile Include="..\src\rendering\software_compositor.cpp" />
     <ClCompile Include="..\src\rendering\window_render_context.cpp" />
     <ClCompile Include="..\src\ui\components\component.cpp" />
     <ClCompile Include="..\src\ui\components\component_registry.cpp" />
@@ -97,6 +99,7 @@
     <ClCompile Include="..\src\ui\components\text\text_component.cpp" />
     <ClCompile Include="..\src\ui\components\window\window_component.cpp" />
     <ClCompile Include="..\src\ui\containers\logical_focus_coordinator.cpp" />
+    <ClCompile Include="..\src\ui\containers\overlay_plane.cpp" />
     <ClCompile Include="..\src\ui\config\resolved_ui_document.cpp" />
     <ClCompile Include="..\src\ui\config\ui_config_gate.cpp" />
     <ClCompile Include="..\src\ui\theme\theme_platform_adapter.cpp" />

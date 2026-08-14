@@ -20,7 +20,9 @@
 #include "app/app_identity.h"
 #include "platform/app_paths.h"
 #include "platform/windows_runtime.h"
+#include "rendering/render_runtime.h"
 #include "rendering/native_peer_gdi_resource_cache.h"
+#include "rendering/software_compositor.h"
 #include "rendering/window_render_context.h"
 #include "resource.h"
 #include "ui/components/component_registry.h"
@@ -28,6 +30,7 @@
 #include "ui/components/input/native_peer_geometry.h"
 #include "ui/config/ui_config_gate.h"
 #include "ui/containers/logical_focus_coordinator.h"
+#include "ui/containers/overlay_plane.h"
 #include "ui/theme/theme_platform_adapter.h"
 
 namespace {
@@ -456,6 +459,117 @@ void TestWindowRenderContextPersistentAllocation() {
     ReleaseDC(nullptr, screen);
 }
 
+void TestWindowRenderContextInvalidationUnion() {
+    rendering::RenderRuntime runtime;
+    rendering::WindowRenderContext context(&runtime);
+    HDC screen = GetDC(nullptr);
+    REQUIRE_TRUE(screen != nullptr);
+    REQUIRE_TRUE(context.EnsureSize(screen, 80, 60));
+    RECT invalid{};
+    REQUIRE_TRUE(context.TakeInvalidation(invalid));
+    REQUIRE_TRUE(invalid.left == 0 && invalid.top == 0 && invalid.right == 80 &&
+                 invalid.bottom == 60);
+
+    context.Invalidate(RECT{10, 12, 20, 22});
+    context.Invalidate(RECT{2, 18, 14, 40});
+    REQUIRE_TRUE(context.TakeInvalidation(invalid));
+    REQUIRE_TRUE(invalid.left == 2 && invalid.top == 12 && invalid.right == 20 &&
+                 invalid.bottom == 40);
+    REQUIRE_TRUE(!context.TakeInvalidation(invalid));
+
+    const std::uint64_t generation = context.allocation_generation();
+    REQUIRE_TRUE(!context.EnsureSize(screen, 0, 60));
+    REQUIRE_TRUE(context.valid());
+    REQUIRE_TRUE(context.width() == 80 && context.height() == 60);
+    REQUIRE_TRUE(context.allocation_generation() == generation);
+    ReleaseDC(nullptr, screen);
+}
+
+void TestSoftwareSourceOver() {
+    const rendering::RgbaColor red{255, 0, 0, 128};
+    const std::uint32_t red_over_black =
+        rendering::SourceOverPremultiplied(0xFF000000u, rendering::Premultiply(red));
+    REQUIRE_TRUE(red_over_black == 0xFF800000u);
+    REQUIRE_TRUE(rendering::SourceOverPremultiplied(0xFF123456u, 0x00000000u) ==
+                 0xFF123456u);
+
+    std::vector<std::uint32_t> pixels(4, 0xFFFFFFFFu);
+    rendering::SourceOverSolid(pixels.data(), 2, 2, 2, RECT{-2, 0, 1, 2},
+                               rendering::RgbaColor{0, 0, 255, 255});
+    REQUIRE_TRUE(pixels[0] == 0xFF0000FFu);
+    REQUIRE_TRUE(pixels[1] == 0xFFFFFFFFu);
+    REQUIRE_TRUE(pixels[2] == 0xFF0000FFu);
+    REQUIRE_TRUE(pixels[3] == 0xFFFFFFFFu);
+}
+
+void TestRenderRuntimeCornerCacheAndEpoch() {
+    rendering::RenderRuntime runtime;
+    rendering::WindowRenderContext context(&runtime);
+    int redraw_requests = 0;
+    context.SetRedrawRequest([&redraw_requests] { ++redraw_requests; });
+    HDC screen = GetDC(nullptr);
+    REQUIRE_TRUE(screen != nullptr);
+    REQUIRE_TRUE(context.EnsureSize(screen, 16, 16));
+    RECT ignored{};
+    REQUIRE_TRUE(context.TakeInvalidation(ignored));
+    REQUIRE_TRUE(runtime.diagnostics().active_window_contexts == 1);
+
+    const RECT bounds{0, 0, 12, 12};
+    for (unsigned int index = 0; index < 96; ++index) {
+        REQUIRE_TRUE(runtime.PaintRoundedStyleBox(
+            context.dc(), bounds, 4, 1,
+            rendering::RgbaColor{static_cast<BYTE>(index), 80, 120, 255},
+            rendering::RgbaColor{20, 30, 40, 255}, RGB(1, 2, 3), 96, index));
+    }
+    REQUIRE_TRUE(runtime.diagnostics().cached_corner_tiles == 96);
+    REQUIRE_TRUE(runtime.PaintRoundedStyleBox(
+        context.dc(), bounds, 4, 1, rendering::RgbaColor{200, 80, 120, 255},
+        rendering::RgbaColor{20, 30, 40, 255}, RGB(1, 2, 3), 96, 96));
+    REQUIRE_TRUE(runtime.diagnostics().cached_corner_tiles == 1);
+
+    const std::uint64_t previous_epoch = runtime.resource_epoch();
+    runtime.AdvanceResourceEpoch();
+    REQUIRE_TRUE(runtime.resource_epoch() == previous_epoch + 1);
+    REQUIRE_TRUE(runtime.diagnostics().cached_corner_tiles == 0);
+    REQUIRE_TRUE(context.resource_epoch() == runtime.resource_epoch());
+    REQUIRE_TRUE(context.has_invalidation());
+    REQUIRE_TRUE(redraw_requests == 1);
+    ReleaseDC(nullptr, screen);
+}
+
+void TestOverlayPlanePaintOrder() {
+    rendering::RenderRuntime runtime;
+    rendering::WindowRenderContext context(&runtime);
+    HDC screen = GetDC(nullptr);
+    REQUIRE_TRUE(screen != nullptr);
+    REQUIRE_TRUE(context.EnsureSize(screen, 2, 2));
+    const RECT pixel{0, 0, 1, 1};
+    context.SourceOver(pixel, rendering::RgbaColor{0, 0, 0, 255});
+
+    ui::containers::OverlayPlane plane;
+    const auto red_layer = plane.Push([](rendering::WindowRenderContext& surface,
+                                         const RECT& invalid) {
+        surface.SourceOver(invalid, rendering::RgbaColor{255, 0, 0, 128});
+    });
+    const auto blue_layer = plane.Push([](rendering::WindowRenderContext& surface,
+                                          const RECT& invalid) {
+        surface.SourceOver(invalid, rendering::RgbaColor{0, 0, 255, 128});
+    });
+    REQUIRE_TRUE(red_layer != 0 && blue_layer != 0 && plane.size() == 2);
+    plane.Paint(context, pixel);
+    std::uint32_t expected = rendering::SourceOverPremultiplied(
+        0xFF000000u, rendering::Premultiply(rendering::RgbaColor{255, 0, 0, 128}));
+    expected = rendering::SourceOverPremultiplied(
+        expected, rendering::Premultiply(rendering::RgbaColor{0, 0, 255, 128}));
+    REQUIRE_TRUE(context.PixelAt(0, 0) == expected);
+    REQUIRE_TRUE(plane.Remove(red_layer));
+    REQUIRE_TRUE(!plane.Remove(red_layer));
+    REQUIRE_TRUE(plane.size() == 1);
+    plane.Clear();
+    REQUIRE_TRUE(plane.size() == 0);
+    ReleaseDC(nullptr, screen);
+}
+
 void TestNativePeerGdiResourceLeaseSharing() {
     rendering::NativePeerGdiResourceCache cache;
     ui::config::ResolvedFont descriptor{"Segoe UI", "", 9, 400};
@@ -820,6 +934,9 @@ std::vector<TestCase> DiscoverTests() {
         {"LogicalFocusCoordinator.Traversal", TestLogicalFocusCoordinatorTraversal, __FILE__, __LINE__},
         {"NativePeerGdiResourceCache.LeaseSharing", TestNativePeerGdiResourceLeaseSharing, __FILE__, __LINE__},
         {"NativePeerGeometry.Containment", TestNativePeerGeometryContainment, __FILE__, __LINE__},
+        {"OverlayPlane.PaintOrder", TestOverlayPlanePaintOrder, __FILE__, __LINE__},
+        {"RenderRuntime.CornerCacheAndEpoch", TestRenderRuntimeCornerCacheAndEpoch, __FILE__, __LINE__},
+        {"SoftwareCompositor.SourceOver", TestSoftwareSourceOver, __FILE__, __LINE__},
         {"ThemePlatformAdapter.Contract", TestThemePlatformAdapterContract, __FILE__, __LINE__},
         {"UiConfigGate.AllComponentSchemas", TestUiConfigAllComponentSchemasResolve, __FILE__, __LINE__},
         {"UiConfigGate.BootstrapInvalidOverrideFallback", TestUiConfigBootstrapRejectsOverrideAndUsesDefault, __FILE__, __LINE__},
@@ -837,6 +954,7 @@ std::vector<TestCase> DiscoverTests() {
         {"UiConfigGate.UnknownFieldRejected", TestUiConfigUnknownFieldRejected, __FILE__, __LINE__},
         {"UiConfigGate.VersionRejected", TestUiConfigVersionRejected, __FILE__, __LINE__},
         {"WindowRenderContext.PersistentAllocation", TestWindowRenderContextPersistentAllocation, __FILE__, __LINE__},
+        {"WindowRenderContext.InvalidationUnion", TestWindowRenderContextInvalidationUnion, __FILE__, __LINE__},
         {"WindowsRuntime.MinimumBuild", TestWindowsRuntimeMinimumBuild, __FILE__, __LINE__},
     };
     std::sort(tests.begin(), tests.end(),

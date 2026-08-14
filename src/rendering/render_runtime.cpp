@@ -2,6 +2,7 @@
 
 #include <tuple>
 
+#include "rendering/window_render_context.h"
 #include "ui/theme/theme_platform_adapter.h"
 
 namespace rendering {
@@ -76,6 +77,25 @@ HPEN RenderRuntime::Pen(COLORREF color, int width) {
     return pen;
 }
 
+bool RenderRuntime::PaintRoundedStyleBox(HDC target, const RECT& bounds, int radius,
+                                         int border_width, const RgbaColor& fill,
+                                         const RgbaColor& border, COLORREF opaque_background,
+                                         UINT dpi, unsigned int visual_state) {
+    if (!target) return false;
+    if (fill.alpha == 0 && (border.alpha == 0 || border_width <= 0)) return true;
+    const COLORREF opaque_fill = CompositeOverOpaque(opaque_background, fill);
+    const COLORREF opaque_border = CompositeOverOpaque(opaque_background, border);
+    HBRUSH fill_brush = Brush(opaque_fill);
+    HBRUSH border_brush = border_width > 0 ? Brush(opaque_border) : nullptr;
+    HPEN fallback_pen = border_width > 0 ? Pen(opaque_border, border_width) : nullptr;
+    if (!fill_brush) return false;
+    return corner_tiles_.Paint(
+        target, bounds,
+        CornerTileKey{radius, border_width, opaque_fill, opaque_border, opaque_background, dpi,
+                      visual_state},
+        fill_brush, border_brush, fallback_pen);
+}
+
 NativePeerGdiResourceCache& RenderRuntime::native_peer_resources() noexcept {
     return native_peer_resources_;
 }
@@ -84,7 +104,42 @@ const NativePeerGdiResourceCache& RenderRuntime::native_peer_resources() const n
     return native_peer_resources_;
 }
 
+void RenderRuntime::AdvanceResourceEpoch() {
+    ++resource_epoch_;
+    corner_tiles_.Clear();
+    const auto contexts = window_contexts_;
+    for (WindowRenderContext* context : contexts) {
+        if (context) context->OnResourceEpochChanged(resource_epoch_);
+    }
+}
+
+std::uint64_t RenderRuntime::resource_epoch() const noexcept {
+    return resource_epoch_;
+}
+
+RenderRuntimeDiagnostics RenderRuntime::diagnostics() const noexcept {
+    return {resource_epoch_,
+            window_contexts_.size(),
+            fonts_.size(),
+            brushes_.size(),
+            pens_.size(),
+            corner_tiles_.entry_count(),
+            native_peer_resources_.physical_font_count(),
+            native_peer_resources_.physical_brush_count(),
+            native_peer_resources_.active_font_lease_count(),
+            native_peer_resources_.active_brush_lease_count()};
+}
+
+void RenderRuntime::RegisterWindowContext(WindowRenderContext* context) {
+    if (context) window_contexts_.insert(context);
+}
+
+void RenderRuntime::UnregisterWindowContext(WindowRenderContext* context) noexcept {
+    window_contexts_.erase(context);
+}
+
 void RenderRuntime::Reset() {
+    corner_tiles_.Clear();
     for (const auto& [key, font] : fonts_) {
         (void)key;
         DeleteObject(font);
@@ -104,6 +159,21 @@ void RenderRuntime::Reset() {
 
 COLORREF ToColorRef(const RgbaColor& color) noexcept {
     return RGB(color.red, color.green, color.blue);
+}
+
+COLORREF CompositeOverOpaque(COLORREF background, const RgbaColor& foreground) noexcept {
+    if (foreground.alpha == 255) return ToColorRef(foreground);
+    if (foreground.alpha == 0) return background;
+    const unsigned int alpha = foreground.alpha;
+    const unsigned int inverse = 255u - alpha;
+    const auto channel = [alpha, inverse](BYTE base, BYTE over) {
+        return static_cast<BYTE>((static_cast<unsigned int>(over) * alpha +
+                                  static_cast<unsigned int>(base) * inverse + 127u) /
+                                 255u);
+    };
+    return RGB(channel(GetRValue(background), foreground.red),
+               channel(GetGValue(background), foreground.green),
+               channel(GetBValue(background), foreground.blue));
 }
 
 }  // namespace rendering

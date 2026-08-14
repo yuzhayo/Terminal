@@ -108,7 +108,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
     instrumentation::TraceFirstPresentComplete();
     if (SUCCEEDED(DwmFlush())) {
         instrumentation::TraceFirstFrameVisible();
-        instrumentation::TraceResourceSnapshot();
+        instrumentation::TraceResourceSnapshot(render_runtime.diagnostics());
     }
 
     MSG message{};

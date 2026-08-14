@@ -157,20 +157,11 @@ void Component::PaintStyleBox(HDC dc, config::VisualState state, const RECT& bou
     const int radius = ScaleDip(resolved_style.radius, host_.dpi);
     const int border_width = ScaleDip(resolved_style.border_width, host_.dpi);
 
-    HGDIOBJ previous_brush = SelectObject(
-        dc, background.alpha == 0 ? GetStockObject(HOLLOW_BRUSH)
-                                  : host_.render_runtime->Brush(rendering::ToColorRef(background)));
-    HGDIOBJ previous_pen = SelectObject(
-        dc, border.alpha == 0 || border_width <= 0
-                ? GetStockObject(NULL_PEN)
-                : host_.render_runtime->Pen(rendering::ToColorRef(border), border_width));
-    if (radius > 0) {
-        RoundRect(dc, bounds.left, bounds.top, bounds.right, bounds.bottom, radius * 2, radius * 2);
-    } else {
-        Rectangle(dc, bounds.left, bounds.top, bounds.right, bounds.bottom);
-    }
-    SelectObject(dc, previous_pen);
-    SelectObject(dc, previous_brush);
+    COLORREF opaque_background = GetPixel(dc, bounds.left, bounds.top);
+    if (opaque_background == CLR_INVALID) opaque_background = GetSysColor(COLOR_WINDOW);
+    host_.render_runtime->PaintRoundedStyleBox(
+        dc, bounds, radius, border_width, background, border, opaque_background, host_.dpi,
+        static_cast<unsigned int>(state));
 }
 
 void Component::PaintChildren(HDC dc) {

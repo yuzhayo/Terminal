@@ -3,10 +3,21 @@
 #include <algorithm>
 #include <cstddef>
 
+#include "rendering/render_runtime.h"
+#include "rendering/software_compositor.h"
+
 namespace rendering {
+
+WindowRenderContext::WindowRenderContext(RenderRuntime* runtime) : runtime_(runtime) {
+    if (runtime_) {
+        resource_epoch_ = runtime_->resource_epoch();
+        runtime_->RegisterWindowContext(this);
+    }
+}
 
 WindowRenderContext::~WindowRenderContext() {
     Reset();
+    if (runtime_) runtime_->UnregisterWindowContext(this);
 }
 
 bool WindowRenderContext::EnsureSize(HDC reference, int width, int height) noexcept {
@@ -48,6 +59,7 @@ bool WindowRenderContext::EnsureSize(HDC reference, int width, int height) noexc
     width_ = width;
     height_ = height;
     ++allocation_generation_;
+    InvalidateAll();
     return true;
 }
 
@@ -71,10 +83,79 @@ std::uint64_t WindowRenderContext::allocation_generation() const noexcept {
     return allocation_generation_;
 }
 
-void WindowRenderContext::ForceOpaqueAlpha() noexcept {
+std::uint64_t WindowRenderContext::resource_epoch() const noexcept {
+    return resource_epoch_;
+}
+
+void WindowRenderContext::Invalidate(const RECT& region) noexcept {
     if (!valid()) return;
-    const std::size_t count = static_cast<std::size_t>(width_) * static_cast<std::size_t>(height_);
-    for (std::size_t index = 0; index < count; ++index) pixels_[index] |= 0xFF000000u;
+    const RECT clipped{std::max(0L, region.left), std::max(0L, region.top),
+                       std::min(static_cast<LONG>(width_), region.right),
+                       std::min(static_cast<LONG>(height_), region.bottom)};
+    if (clipped.right <= clipped.left || clipped.bottom <= clipped.top) return;
+    if (!has_invalidation_) {
+        invalidation_ = clipped;
+        has_invalidation_ = true;
+        return;
+    }
+    invalidation_.left = std::min(invalidation_.left, clipped.left);
+    invalidation_.top = std::min(invalidation_.top, clipped.top);
+    invalidation_.right = std::max(invalidation_.right, clipped.right);
+    invalidation_.bottom = std::max(invalidation_.bottom, clipped.bottom);
+}
+
+void WindowRenderContext::InvalidateAll() noexcept {
+    if (!valid()) return;
+    invalidation_ = {0, 0, width_, height_};
+    has_invalidation_ = true;
+}
+
+bool WindowRenderContext::TakeInvalidation(RECT& region) noexcept {
+    if (!has_invalidation_) return false;
+    region = invalidation_;
+    invalidation_ = {};
+    has_invalidation_ = false;
+    return true;
+}
+
+bool WindowRenderContext::has_invalidation() const noexcept {
+    return has_invalidation_;
+}
+
+void WindowRenderContext::OnResourceEpochChanged(std::uint64_t epoch) {
+    if (epoch <= resource_epoch_) return;
+    resource_epoch_ = epoch;
+    InvalidateAll();
+    if (redraw_request_) redraw_request_();
+}
+
+void WindowRenderContext::SetRedrawRequest(std::function<void()> request) {
+    redraw_request_ = std::move(request);
+}
+
+void WindowRenderContext::SourceOver(const RECT& region, const RgbaColor& color) noexcept {
+    if (!valid()) return;
+    SourceOverSolid(pixels_, width_, height_, width_, region, color);
+}
+
+std::uint32_t WindowRenderContext::PixelAt(int x, int y) const noexcept {
+    if (!valid() || x < 0 || y < 0 || x >= width_ || y >= height_) return 0;
+    return pixels_[static_cast<std::size_t>(y) * width_ + x];
+}
+
+void WindowRenderContext::ForceOpaqueAlpha(const RECT& region) noexcept {
+    if (!valid()) return;
+    const RECT clipped{std::max(0L, region.left), std::max(0L, region.top),
+                       std::min(static_cast<LONG>(width_), region.right),
+                       std::min(static_cast<LONG>(height_), region.bottom)};
+    for (LONG y = clipped.top; y < clipped.bottom; ++y) {
+        std::uint32_t* row = pixels_ + static_cast<std::size_t>(y) * width_;
+        for (LONG x = clipped.left; x < clipped.right; ++x) row[x] |= 0xFF000000u;
+    }
+}
+
+void WindowRenderContext::ForceOpaqueAlpha() noexcept {
+    ForceOpaqueAlpha(RECT{0, 0, width_, height_});
 }
 
 bool WindowRenderContext::Present(HDC target, const RECT& region) const noexcept {
@@ -97,6 +178,8 @@ void WindowRenderContext::Reset() noexcept {
     pixels_ = nullptr;
     width_ = 0;
     height_ = 0;
+    invalidation_ = {};
+    has_invalidation_ = false;
 }
 
 }  // namespace rendering

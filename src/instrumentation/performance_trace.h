@@ -2,6 +2,10 @@
 
 #include <cstdint>
 
+namespace rendering {
+struct RenderRuntimeDiagnostics;
+}
+
 namespace instrumentation {
 
 class PerformanceTraceSession final {
@@ -28,6 +32,6 @@ void TraceNavigationRequested(std::uint64_t correlation_id) noexcept;
 void TraceNavigationPresented(std::uint64_t correlation_id) noexcept;
 void TraceResizeFramePresented(std::uint64_t correlation_id) noexcept;
 void TraceScenarioSettled(std::uint64_t correlation_id) noexcept;
-void TraceResourceSnapshot() noexcept;
+void TraceResourceSnapshot(const rendering::RenderRuntimeDiagnostics& renderer) noexcept;
 
 }  // namespace instrumentation

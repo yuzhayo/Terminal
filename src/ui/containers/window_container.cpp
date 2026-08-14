@@ -39,7 +39,7 @@ WindowContainer::WindowContainer(HINSTANCE instance, rendering::RenderRuntime& r
                                  std::shared_ptr<const config::ResolvedUiDocument> document,
                                  config::ThemeKind theme_kind)
     : instance_(instance), render_runtime_(render_runtime), document_(std::move(document)),
-      theme_kind_(theme_kind) {}
+      theme_kind_(theme_kind), render_context_(&render_runtime_) {}
 
 WindowContainer::~WindowContainer() {
     root_.reset();
@@ -89,6 +89,9 @@ bool WindowContainer::Create(const std::string& window_id, std::wstring& diagnos
         return false;
     }
     dpi_ = GetDpiForWindow(window_);
+    render_context_.SetRedrawRequest([this] {
+        if (window_) InvalidateRect(window_, nullptr, FALSE);
+    });
     const int minimum_width = components::ScaleDip(properties.minimum_width, dpi_);
     const int minimum_height = components::ScaleDip(properties.minimum_height, dpi_);
     SetPropW(window_, L"Terminal.MinimumWidth", reinterpret_cast<HANDLE>(static_cast<INT_PTR>(minimum_width)));
@@ -104,6 +107,7 @@ bool WindowContainer::BuildComponentTree(std::wstring& diagnostic) {
         component_host_->render_runtime = &render_runtime_;
         component_host_->theme = &document_->theme(theme_kind_);
         component_host_->invalidate = [this](const RECT& bounds) {
+            render_context_.Invalidate(bounds);
             if (window_) InvalidateRect(window_, &bounds, FALSE);
         };
         component_host_->dispatch_event =
@@ -199,6 +203,7 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             dpi_ = HIWORD(wparam);
             if (component_host_) component_host_->dpi = dpi_;
             if (root_) root_->OnDpiChanged();
+            render_runtime_.AdvanceResourceEpoch();
             const auto* suggested = reinterpret_cast<const RECT*>(lparam);
             SetWindowPos(window_, nullptr, suggested->left, suggested->top,
                          suggested->right - suggested->left, suggested->bottom - suggested->top,
@@ -209,12 +214,12 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
         }
         case WM_SYSCOLORCHANGE:
         case WM_THEMECHANGED:
-            InvalidateRect(window_, nullptr, FALSE);
+            render_runtime_.AdvanceResourceEpoch();
             return 0;
         case WM_PAINT: {
             PAINTSTRUCT paint{};
             HDC dc = BeginPaint(window_, &paint);
-            const bool rendered = RenderCompleteFrame(dc);
+            const bool rendered = RenderFrame(dc, paint.rcPaint, false);
             const bool presented = rendered && render_context_.Present(dc, paint.rcPaint);
             if (!presented) FillRect(dc, &paint.rcPaint, GetSysColorBrush(COLOR_WINDOW));
             EndPaint(window_, &paint);
@@ -282,15 +287,36 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
 }
 
 bool WindowContainer::RenderCompleteFrame(HDC reference) {
+    RECT client{};
+    GetClientRect(window_, &client);
+    return RenderFrame(reference, client, true);
+}
+
+bool WindowContainer::RenderFrame(HDC reference, const RECT& requested_region, bool force_full) {
     if (!reference || !root_) return false;
     RECT client{};
     GetClientRect(window_, &client);
     const int width = client.right - client.left;
     const int height = client.bottom - client.top;
+    const std::uint64_t previous_generation = render_context_.allocation_generation();
     if (!render_context_.EnsureSize(reference, width, height)) return false;
-    Layout();
+    const bool resized = render_context_.allocation_generation() != previous_generation;
+    if (force_full || resized) {
+        Layout();
+        render_context_.InvalidateAll();
+    } else {
+        render_context_.Invalidate(requested_region);
+    }
+
+    RECT invalid_region{};
+    if (!render_context_.TakeInvalidation(invalid_region)) return true;
+    const int saved = SaveDC(render_context_.dc());
+    IntersectClipRect(render_context_.dc(), invalid_region.left, invalid_region.top,
+                      invalid_region.right, invalid_region.bottom);
     root_->Paint(render_context_.dc());
-    render_context_.ForceOpaqueAlpha();
+    overlay_plane_.Paint(render_context_, invalid_region);
+    if (saved != 0) RestoreDC(render_context_.dc(), saved);
+    render_context_.ForceOpaqueAlpha(invalid_region);
     frame_ready_ = true;
     return true;
 }

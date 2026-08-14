@@ -11,6 +11,7 @@
 #include "ui/components/component_registry.h"
 #include "ui/config/resolved_ui_document.h"
 #include "ui/containers/logical_focus_coordinator.h"
+#include "ui/containers/overlay_plane.h"
 
 namespace ui::containers {
 
@@ -37,6 +38,7 @@ private:
 
     bool BuildComponentTree(std::wstring& diagnostic);
     bool RenderCompleteFrame(HDC reference);
+    bool RenderFrame(HDC reference, const RECT& requested_region, bool force_full);
     void Layout();
     void TrackPointer(POINT point);
     void DispatchStubEvent(const config::EventDefinition& event);
@@ -51,6 +53,7 @@ private:
     rendering::WindowRenderContext render_context_;
     components::ComponentRegistry registry_;
     LogicalFocusCoordinator focus_coordinator_;
+    OverlayPlane overlay_plane_;
     std::unique_ptr<components::ComponentHost> component_host_;
     std::unique_ptr<components::Component> root_;
     components::Component* pointer_target_ = nullptr;
