@@ -53,6 +53,49 @@ function Set-Phase {
     "$(Get-Date -Format o) $Name" | Set-Content -LiteralPath $progressPath -Encoding ascii
 }
 
+function Test-IsSharingViolation {
+    param([Parameter(Mandatory)] [System.Exception] $Exception)
+
+    $candidate = $Exception
+    while ($null -ne $candidate) {
+        if ($candidate -is [System.ComponentModel.Win32Exception] -and
+            $candidate.NativeErrorCode -in @(32, 33)) {
+            return $true
+        }
+        $candidate = $candidate.InnerException
+    }
+    return $false
+}
+
+function Start-ProcessWhenReady {
+    param(
+        [Parameter(Mandatory)] [string] $FilePath,
+        [string] $ArgumentList,
+        [int] $TimeoutSeconds = 30
+    )
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $FilePath
+    $startInfo.UseShellExecute = $false
+    if (-not [string]::IsNullOrWhiteSpace($ArgumentList)) {
+        $startInfo.Arguments = $ArgumentList
+    }
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    do {
+        try {
+            return [System.Diagnostics.Process]::Start($startInfo)
+        }
+        catch {
+            if (-not (Test-IsSharingViolation -Exception $_.Exception) -or
+                [DateTime]::UtcNow -ge $deadline) {
+                throw
+            }
+            Start-Sleep -Milliseconds 250
+        }
+    } while ($true)
+}
+
 function Invoke-CheckedProcess {
     param(
         [Parameter(Mandatory)] [string] $FilePath,
@@ -60,11 +103,7 @@ function Invoke-CheckedProcess {
         [int] $TimeoutSeconds = 60
     )
 
-    $parameters = @{ FilePath = $FilePath; PassThru = $true }
-    if (-not [string]::IsNullOrWhiteSpace($ArgumentList)) {
-        $parameters.ArgumentList = $ArgumentList
-    }
-    $process = Start-Process @parameters
+    $process = Start-ProcessWhenReady -FilePath $FilePath -ArgumentList $ArgumentList
     if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
         $process.Refresh()
         $windowTitle = $process.MainWindowTitle
@@ -183,7 +222,7 @@ try {
     Set-Phase -Name 'testing-single-instance'
     Stop-Terminal
     $startedAfter = [DateTime]::Now.AddSeconds(-2)
-    $launch = Start-Process -FilePath $currentExecutable -PassThru
+    $launch = Start-ProcessWhenReady -FilePath $currentExecutable
     $first = $null
     $launchExitCode = $null
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
@@ -214,7 +253,7 @@ try {
         throw 'Installed application tidak membuat main window dalam 30 detik.'
     }
 
-    $second = Start-Process -FilePath $launcherExecutable -PassThru
+    $second = Start-ProcessWhenReady -FilePath $launcherExecutable
     if (-not $second.WaitForExit(5000) -or $second.ExitCode -ne 0 -or $first.HasExited) {
         throw 'Second-launch routing tidak lulus.'
     }
