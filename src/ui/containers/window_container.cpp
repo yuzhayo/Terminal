@@ -108,7 +108,13 @@ bool WindowContainer::BuildComponentTree(std::wstring& diagnostic) {
         };
         component_host_->dispatch_event =
             [this](const config::EventDefinition& event) { DispatchStubEvent(event); };
+        component_host_->native_focus_changed = [this](components::Component* component, bool focused) {
+            focus_coordinator_.NotifyNativeFocus(component, focused);
+        };
+        component_host_->request_focus_traversal =
+            [this](bool reverse) { focus_coordinator_.Move(reverse); };
         root_ = registry_.CreateTree(*window_definition_, *component_host_);
+        focus_coordinator_.Rebuild(*root_);
         diagnostic.clear();
         return true;
     } catch (const std::exception&) {
@@ -131,6 +137,18 @@ bool WindowContainer::PrepareFirstFrame(std::wstring& diagnostic) {
     }
     diagnostic.clear();
     return true;
+}
+
+bool WindowContainer::SuspendNativePeers(std::wstring& diagnostic) {
+    if (!root_) {
+        diagnostic = L"Component tree tidak tersedia.";
+        return false;
+    }
+    return root_->SuspendNativePeers(diagnostic);
+}
+
+void WindowContainer::ResumeNativePeers() {
+    if (root_) root_->ResumeNativePeers();
 }
 
 void WindowContainer::Show(int show_command) {
@@ -180,6 +198,7 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
         case WM_DPICHANGED: {
             dpi_ = HIWORD(wparam);
             if (component_host_) component_host_->dpi = dpi_;
+            if (root_) root_->OnDpiChanged();
             const auto* suggested = reinterpret_cast<const RECT*>(lparam);
             SetWindowPos(window_, nullptr, suggested->left, suggested->top,
                          suggested->right - suggested->left, suggested->bottom - suggested->top,
@@ -211,9 +230,20 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             if (pointer_target_) pointer_target_->PointerMove({-1, -1});
             pointer_target_ = nullptr;
             return 0;
+        case WM_ACTIVATE:
+            focus_coordinator_.SetWindowActive(LOWORD(wparam) != WA_INACTIVE);
+            return 0;
+        case WM_KEYDOWN:
+            if (wparam == VK_TAB) {
+                if (focus_coordinator_.Move((GetKeyState(VK_SHIFT) & 0x8000) != 0)) return 0;
+            } else if (focus_coordinator_.HandleKeyDown(static_cast<UINT>(wparam))) {
+                return 0;
+            }
+            break;
         case WM_LBUTTONDOWN: {
             const POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
             components::Component* target = root_ ? root_->HitTest(point) : nullptr;
+            if (target && target->CanFocus()) focus_coordinator_.RequestFocus(target);
             if (target && target->PointerDown(point)) pointer_target_ = target;
             return 0;
         }
@@ -237,6 +267,7 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             }
             break;
         case WM_DESTROY:
+            focus_coordinator_.Clear();
             root_.reset();
             render_context_.Reset();
             RemovePropW(window_, L"Terminal.MinimumWidth");

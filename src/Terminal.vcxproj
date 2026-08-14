@@ -57,7 +57,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(VelopackDir)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>user32.lib;gdi32.lib;comctl32.lib;dwmapi.lib;advapi32.lib;shell32.lib;uxtheme.lib;ole32.lib;uuid.lib;windowsapp.lib;velopack_libc_win_x64_msvc.dll.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>user32.lib;gdi32.lib;comctl32.lib;imm32.lib;dwmapi.lib;advapi32.lib;shell32.lib;uxtheme.lib;ole32.lib;uuid.lib;windowsapp.lib;velopack_libc_win_x64_msvc.dll.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <AdditionalManifestFiles>$(ProjectDir)app.manifest</AdditionalManifestFiles>
@@ -94,17 +94,21 @@
     <ClCompile Include="platform\single_instance.cpp" />
     <ClCompile Include="platform\updater.cpp" />
     <ClCompile Include="platform\windows_runtime.cpp" />
+    <ClCompile Include="rendering\native_peer_gdi_resource_cache.cpp" />
     <ClCompile Include="rendering\render_runtime.cpp" />
     <ClCompile Include="rendering\window_render_context.cpp" />
     <ClCompile Include="ui\components\component.cpp" />
     <ClCompile Include="ui\components\component_registry.cpp" />
+    <ClCompile Include="ui\components\editable_draft_state.cpp" />
     <ClCompile Include="ui\components\button\button_component.cpp" />
     <ClCompile Include="ui\components\container\container_component.cpp" />
     <ClCompile Include="ui\components\input\input_component.cpp" />
+    <ClCompile Include="ui\components\input\native_peer_geometry.cpp" />
     <ClCompile Include="ui\components\text\text_component.cpp" />
     <ClCompile Include="ui\components\window\window_component.cpp" />
     <ClCompile Include="ui\config\resolved_ui_document.cpp" />
     <ClCompile Include="ui\config\ui_config_gate.cpp" />
+    <ClCompile Include="ui\containers\logical_focus_coordinator.cpp" />
     <ClCompile Include="ui\containers\window_container.cpp" />
     <ClCompile Include="ui\theme\theme_platform_adapter.cpp" />
     <ClInclude Include="app\app_identity.h" />
@@ -114,18 +118,22 @@
     <ClInclude Include="platform\single_instance.h" />
     <ClInclude Include="platform\updater.h" />
     <ClInclude Include="platform\windows_runtime.h" />
+    <ClInclude Include="rendering\native_peer_gdi_resource_cache.h" />
     <ClInclude Include="rendering\render_runtime.h" />
     <ClInclude Include="rendering\window_render_context.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="ui\components\component.h" />
     <ClInclude Include="ui\components\component_registry.h" />
+    <ClInclude Include="ui\components\editable_draft_state.h" />
     <ClInclude Include="ui\components\button\button_component.h" />
     <ClInclude Include="ui\components\container\container_component.h" />
     <ClInclude Include="ui\components\input\input_component.h" />
+    <ClInclude Include="ui\components\input\native_peer_geometry.h" />
     <ClInclude Include="ui\components\text\text_component.h" />
     <ClInclude Include="ui\components\window\window_component.h" />
     <ClInclude Include="ui\config\resolved_ui_document.h" />
     <ClInclude Include="ui\config\ui_config_gate.h" />
+    <ClInclude Include="ui\containers\logical_focus_coordinator.h" />
     <ClInclude Include="ui\containers\window_container.h" />
     <ClInclude Include="ui\theme\theme_platform_adapter.h" />
     <None Include="app.manifest" />

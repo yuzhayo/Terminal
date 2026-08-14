@@ -5,6 +5,7 @@
 #include <map>
 #include <string>
 
+#include "rendering/native_peer_gdi_resource_cache.h"
 #include "ui/config/resolved_ui_document.h"
 
 namespace rendering {
@@ -28,6 +29,8 @@ public:
     HFONT Font(const ui::config::ResolvedFont& descriptor, UINT dpi);
     HBRUSH Brush(COLORREF color);
     HPEN Pen(COLORREF color, int width);
+    NativePeerGdiResourceCache& native_peer_resources() noexcept;
+    const NativePeerGdiResourceCache& native_peer_resources() const noexcept;
     void Reset();
 
 private:
@@ -50,6 +53,7 @@ private:
     std::map<FontKey, HFONT> fonts_;
     std::map<COLORREF, HBRUSH> brushes_;
     std::map<PenKey, HPEN> pens_;
+    NativePeerGdiResourceCache native_peer_resources_;
 };
 
 COLORREF ToColorRef(const RgbaColor& color) noexcept;

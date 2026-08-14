@@ -10,6 +10,7 @@
 #include "ui/components/component.h"
 #include "ui/components/component_registry.h"
 #include "ui/config/resolved_ui_document.h"
+#include "ui/containers/logical_focus_coordinator.h"
 
 namespace ui::containers {
 
@@ -25,6 +26,8 @@ public:
 
     bool Create(const std::string& window_id, std::wstring& diagnostic);
     bool PrepareFirstFrame(std::wstring& diagnostic);
+    bool SuspendNativePeers(std::wstring& diagnostic);
+    void ResumeNativePeers();
     void Show(int show_command);
     HWND hwnd() const noexcept;
 
@@ -47,6 +50,7 @@ private:
     UINT dpi_ = 96;
     rendering::WindowRenderContext render_context_;
     components::ComponentRegistry registry_;
+    LogicalFocusCoordinator focus_coordinator_;
     std::unique_ptr<components::ComponentHost> component_host_;
     std::unique_ptr<components::Component> root_;
     components::Component* pointer_target_ = nullptr;

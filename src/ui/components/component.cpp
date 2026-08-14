@@ -73,6 +73,55 @@ bool Component::OwnsNativePeer(HWND source) const noexcept {
     return false;
 }
 
+bool Component::CanFocus() const noexcept {
+    return false;
+}
+
+bool Component::FocusNativePeer() {
+    return false;
+}
+
+void Component::SetLogicalFocus(bool focused, bool window_active) {
+    (void)focused;
+    (void)window_active;
+}
+
+bool Component::HandleKeyDown(UINT virtual_key) {
+    (void)virtual_key;
+    return false;
+}
+
+void Component::CollectFocusable(std::vector<Component*>& focusable) {
+    if (CanFocus()) focusable.push_back(this);
+    for (const auto& child : children_) child->CollectFocusable(focusable);
+}
+
+bool Component::SuspendNativePeers(std::wstring& diagnostic) {
+    std::size_t suspended = 0;
+    for (; suspended < children_.size(); ++suspended) {
+        if (!children_[suspended]->SuspendNativePeers(diagnostic)) {
+            while (suspended > 0) children_[--suspended]->ResumeNativePeers();
+            return false;
+        }
+    }
+    diagnostic.clear();
+    return true;
+}
+
+void Component::ResumeNativePeers() {
+    for (auto child = children_.rbegin(); child != children_.rend(); ++child) {
+        (*child)->ResumeNativePeers();
+    }
+}
+
+void Component::CollectEditableParticipants(std::vector<EditableParticipant*>& participants) {
+    for (const auto& child : children_) child->CollectEditableParticipants(participants);
+}
+
+void Component::OnDpiChanged() {
+    for (const auto& child : children_) child->OnDpiChanged();
+}
+
 void Component::AddChild(std::unique_ptr<Component> child) {
     if (child) children_.push_back(std::move(child));
 }

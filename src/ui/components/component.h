@@ -8,9 +8,12 @@
 #include <vector>
 
 #include "rendering/render_runtime.h"
+#include "ui/components/editable_draft_state.h"
 #include "ui/config/resolved_ui_document.h"
 
 namespace ui::components {
+
+class Component;
 
 struct MeasuredSize {
     int width = 0;
@@ -25,6 +28,8 @@ struct ComponentHost {
     const config::ResolvedTheme* theme = nullptr;
     std::function<void(const RECT&)> invalidate;
     std::function<void(const config::EventDefinition&)> dispatch_event;
+    std::function<void(Component*, bool)> native_focus_changed;
+    std::function<void(bool)> request_focus_traversal;
 };
 
 class Component {
@@ -46,6 +51,15 @@ public:
     virtual bool HandleCommand(HWND source, WORD notification);
     virtual HBRUSH HandleControlColor(HDC dc, HWND source);
     virtual bool OwnsNativePeer(HWND source) const noexcept;
+    virtual bool CanFocus() const noexcept;
+    virtual bool FocusNativePeer();
+    virtual void SetLogicalFocus(bool focused, bool window_active);
+    virtual bool HandleKeyDown(UINT virtual_key);
+    virtual void CollectFocusable(std::vector<Component*>& focusable);
+    virtual bool SuspendNativePeers(std::wstring& diagnostic);
+    virtual void ResumeNativePeers();
+    virtual void CollectEditableParticipants(std::vector<EditableParticipant*>& participants);
+    virtual void OnDpiChanged();
     virtual void AddChild(std::unique_ptr<Component> child);
 
     const RECT& bounds() const noexcept;

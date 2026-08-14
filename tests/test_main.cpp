@@ -20,10 +20,14 @@
 #include "app/app_identity.h"
 #include "platform/app_paths.h"
 #include "platform/windows_runtime.h"
+#include "rendering/native_peer_gdi_resource_cache.h"
 #include "rendering/window_render_context.h"
 #include "resource.h"
 #include "ui/components/component_registry.h"
+#include "ui/components/editable_draft_state.h"
+#include "ui/components/input/native_peer_geometry.h"
 #include "ui/config/ui_config_gate.h"
+#include "ui/containers/logical_focus_coordinator.h"
 #include "ui/theme/theme_platform_adapter.h"
 
 namespace {
@@ -122,6 +126,39 @@ public:
 
 private:
     std::filesystem::path root_;
+};
+
+class FocusProbeComponent final : public ui::components::Component {
+public:
+    FocusProbeComponent(const ui::config::ResolvedComponent& definition,
+                        ui::components::ComponentHost& host, bool focusable)
+        : Component(definition, host), focusable_(focusable) {}
+
+    ui::components::MeasuredSize Measure(HDC, int available_width, int available_height) override {
+        return {available_width, available_height};
+    }
+    void Paint(HDC) override {}
+    bool CanFocus() const noexcept override { return focusable_; }
+    bool FocusNativePeer() override {
+        ++native_focus_calls;
+        return true;
+    }
+    void SetLogicalFocus(bool focused, bool window_active) override {
+        logical_focused = focused;
+        active = window_active;
+    }
+    bool HandleKeyDown(UINT virtual_key) override {
+        last_key = virtual_key;
+        return true;
+    }
+
+    int native_focus_calls = 0;
+    bool logical_focused = false;
+    bool active = true;
+    UINT last_key = 0;
+
+private:
+    bool focusable_ = false;
 };
 
 platform::AppPaths MakeTestPaths(const std::filesystem::path& root) {
@@ -419,6 +456,119 @@ void TestWindowRenderContextPersistentAllocation() {
     ReleaseDC(nullptr, screen);
 }
 
+void TestNativePeerGdiResourceLeaseSharing() {
+    rendering::NativePeerGdiResourceCache cache;
+    ui::config::ResolvedFont descriptor{"Segoe UI", "", 9, 400};
+    {
+        auto first = cache.AcquireFont(descriptor, 96);
+        auto second = cache.AcquireFont(descriptor, 96);
+        REQUIRE_TRUE(static_cast<bool>(first));
+        REQUIRE_TRUE(static_cast<bool>(second));
+        REQUIRE_TRUE(first.get() == second.get());
+        REQUIRE_TRUE(cache.physical_font_count() == 1);
+        REQUIRE_TRUE(cache.active_font_lease_count() == 2);
+        first.Reset();
+        REQUIRE_TRUE(cache.physical_font_count() == 1);
+        REQUIRE_TRUE(cache.active_font_lease_count() == 1);
+    }
+    REQUIRE_TRUE(cache.physical_font_count() == 0);
+    REQUIRE_TRUE(cache.active_font_lease_count() == 0);
+
+    {
+        auto first = cache.AcquireBrush(RGB(10, 20, 30));
+        auto second = cache.AcquireBrush(RGB(10, 20, 30));
+        REQUIRE_TRUE(static_cast<bool>(first));
+        REQUIRE_TRUE(static_cast<bool>(second));
+        REQUIRE_TRUE(first.get() == second.get());
+        REQUIRE_TRUE(cache.physical_brush_count() == 1);
+        REQUIRE_TRUE(cache.active_brush_lease_count() == 2);
+    }
+    REQUIRE_TRUE(cache.physical_brush_count() == 0);
+    REQUIRE_TRUE(cache.active_brush_lease_count() == 0);
+}
+
+void TestLogicalFocusCoordinatorTraversal() {
+    rendering::RenderRuntime runtime;
+    ui::config::ResolvedTheme theme;
+    theme.styles.push_back(ui::config::ResolvedStyle{});
+    ui::components::ComponentHost host;
+    host.render_runtime = &runtime;
+    host.theme = &theme;
+    ui::config::ResolvedComponent root_definition;
+    root_definition.style_index = 0;
+    ui::config::ResolvedComponent first_definition;
+    first_definition.style_index = 0;
+    ui::config::ResolvedComponent second_definition;
+    second_definition.style_index = 0;
+
+    FocusProbeComponent root(root_definition, host, false);
+    auto first = std::make_unique<FocusProbeComponent>(first_definition, host, true);
+    auto second = std::make_unique<FocusProbeComponent>(second_definition, host, true);
+    FocusProbeComponent* first_pointer = first.get();
+    FocusProbeComponent* second_pointer = second.get();
+    root.AddChild(std::move(first));
+    root.AddChild(std::move(second));
+
+    ui::containers::LogicalFocusCoordinator coordinator;
+    coordinator.Rebuild(root);
+    REQUIRE_TRUE(coordinator.focusable_count() == 2);
+    REQUIRE_TRUE(coordinator.Move(false));
+    REQUIRE_TRUE(coordinator.focused() == first_pointer);
+    REQUIRE_TRUE(first_pointer->logical_focused);
+    REQUIRE_TRUE(first_pointer->native_focus_calls == 1);
+    REQUIRE_TRUE(coordinator.Move(false));
+    REQUIRE_TRUE(coordinator.focused() == second_pointer);
+    REQUIRE_TRUE(!first_pointer->logical_focused);
+    REQUIRE_TRUE(second_pointer->logical_focused);
+    REQUIRE_TRUE(coordinator.Move(true));
+    REQUIRE_TRUE(coordinator.focused() == first_pointer);
+    coordinator.SetWindowActive(false);
+    REQUIRE_TRUE(first_pointer->logical_focused);
+    REQUIRE_TRUE(!first_pointer->active);
+    coordinator.SetWindowActive(true);
+    REQUIRE_TRUE(first_pointer->active);
+    REQUIRE_TRUE(coordinator.HandleKeyDown(VK_RETURN));
+    REQUIRE_TRUE(first_pointer->last_key == VK_RETURN);
+}
+
+void TestEditableDraftStateTransactions() {
+    ui::components::EditableDraftState state(L"baseline");
+    REQUIRE_TRUE(!state.is_dirty());
+    state.Update(L"draft");
+    REQUIRE_TRUE(state.is_dirty());
+    state.ApplySaveResult(false);
+    REQUIRE_TRUE(state.is_dirty());
+    state.ApplySaveResult(true);
+    REQUIRE_TRUE(!state.is_dirty());
+    REQUIRE_TRUE(state.baseline() == L"draft");
+    state.Update(L"discard-me");
+    REQUIRE_TRUE(state.StageDiscard());
+    REQUIRE_TRUE(state.discard_staged());
+    REQUIRE_TRUE(state.value() == L"draft");
+    state.RollbackDiscard();
+    REQUIRE_TRUE(state.value() == L"discard-me");
+    REQUIRE_TRUE(state.is_dirty());
+    REQUIRE_TRUE(state.StageDiscard());
+    state.CommitDiscard();
+    REQUIRE_TRUE(!state.discard_staged());
+    REQUIRE_TRUE(state.value() == L"draft");
+    REQUIRE_TRUE(!state.is_dirty());
+}
+
+void TestNativePeerGeometryContainment() {
+    const RECT component{0, 0, 100, 40};
+    const RECT peer{8, 6, 92, 34};
+    REQUIRE_TRUE(ui::components::ValidateNativePeerGeometry(component, peer, {}));
+    const RECT outside{-1, 6, 92, 34};
+    REQUIRE_TRUE(!ui::components::ValidateNativePeerGeometry(component, outside, {}));
+    const RECT reserved_overlap{80, 0, 100, 40};
+    REQUIRE_TRUE(!ui::components::ValidateNativePeerGeometry(
+        component, peer, std::span<const RECT>(&reserved_overlap, 1)));
+    const RECT reserved_clear{0, 0, 6, 40};
+    REQUIRE_TRUE(ui::components::ValidateNativePeerGeometry(
+        component, peer, std::span<const RECT>(&reserved_clear, 1)));
+}
+
 void TestUiConfigDuplicateKeyRejected() {
     const std::string embedded = ReadEmbeddedDefaultJson();
     const std::string duplicate = "{\"schema\":\"yuzha.terminal.ui\"," + embedded.substr(1);
@@ -665,7 +815,11 @@ std::vector<TestCase> DiscoverTests() {
         {"AppIdentity.Contract", TestAppIdentityContract, __FILE__, __LINE__},
         {"AppPaths.Contract", TestAppPathsContract, __FILE__, __LINE__},
         {"ComponentRegistry.VerticalSlice", TestComponentRegistryVerticalSlice, __FILE__, __LINE__},
+        {"EditableDraftState.Transactions", TestEditableDraftStateTransactions, __FILE__, __LINE__},
         {"IconResource.Embedded", TestIconResourceEmbedded, __FILE__, __LINE__},
+        {"LogicalFocusCoordinator.Traversal", TestLogicalFocusCoordinatorTraversal, __FILE__, __LINE__},
+        {"NativePeerGdiResourceCache.LeaseSharing", TestNativePeerGdiResourceLeaseSharing, __FILE__, __LINE__},
+        {"NativePeerGeometry.Containment", TestNativePeerGeometryContainment, __FILE__, __LINE__},
         {"ThemePlatformAdapter.Contract", TestThemePlatformAdapterContract, __FILE__, __LINE__},
         {"UiConfigGate.AllComponentSchemas", TestUiConfigAllComponentSchemasResolve, __FILE__, __LINE__},
         {"UiConfigGate.BootstrapInvalidOverrideFallback", TestUiConfigBootstrapRejectsOverrideAndUsesDefault, __FILE__, __LINE__},

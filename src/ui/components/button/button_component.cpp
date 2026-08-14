@@ -63,18 +63,45 @@ bool ButtonComponent::PointerUp(POINT point) {
     pressed_ = false;
     if (GetCapture() == host_.window) ReleaseCapture();
     Invalidate();
-    if (activate) {
-        const auto event = definition_.events.find("click");
-        if (event != definition_.events.end() && host_.dispatch_event) host_.dispatch_event(event->second);
+    if (activate) Activate();
+    return true;
+}
+
+bool ButtonComponent::CanFocus() const noexcept {
+    return visible() && enabled() && Properties(definition_).tab_stop;
+}
+
+bool ButtonComponent::FocusNativePeer() {
+    return SetFocus(host_.window) != nullptr || GetFocus() == host_.window;
+}
+
+void ButtonComponent::SetLogicalFocus(bool focused, bool window_active) {
+    if (focused_ == focused && window_active_ == window_active) return;
+    focused_ = focused;
+    window_active_ = window_active;
+    Invalidate();
+}
+
+bool ButtonComponent::HandleKeyDown(UINT virtual_key) {
+    if (!focused_ || !window_active_ || !enabled() ||
+        (virtual_key != VK_RETURN && virtual_key != VK_SPACE)) {
+        return false;
     }
+    Activate();
     return true;
 }
 
 config::VisualState ButtonComponent::State() const noexcept {
     if (!enabled()) return config::VisualState::Disabled;
     if (pressed_) return config::VisualState::Pressed;
+    if (focused_ && window_active_) return config::VisualState::Focus;
     if (hovered_) return config::VisualState::Hover;
     return config::VisualState::Normal;
+}
+
+void ButtonComponent::Activate() {
+    const auto event = definition_.events.find("click");
+    if (event != definition_.events.end() && host_.dispatch_event) host_.dispatch_event(event->second);
 }
 
 }  // namespace ui::components

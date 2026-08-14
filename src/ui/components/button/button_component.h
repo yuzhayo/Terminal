@@ -13,12 +13,19 @@ public:
     bool PointerMove(POINT point) override;
     bool PointerDown(POINT point) override;
     bool PointerUp(POINT point) override;
+    bool CanFocus() const noexcept override;
+    bool FocusNativePeer() override;
+    void SetLogicalFocus(bool focused, bool window_active) override;
+    bool HandleKeyDown(UINT virtual_key) override;
 
 private:
     config::VisualState State() const noexcept;
+    void Activate();
 
     bool hovered_ = false;
     bool pressed_ = false;
+    bool focused_ = false;
+    bool window_active_ = true;
 };
 
 }  // namespace ui::components

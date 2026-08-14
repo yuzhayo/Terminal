@@ -76,6 +76,14 @@ HPEN RenderRuntime::Pen(COLORREF color, int width) {
     return pen;
 }
 
+NativePeerGdiResourceCache& RenderRuntime::native_peer_resources() noexcept {
+    return native_peer_resources_;
+}
+
+const NativePeerGdiResourceCache& RenderRuntime::native_peer_resources() const noexcept {
+    return native_peer_resources_;
+}
+
 void RenderRuntime::Reset() {
     for (const auto& [key, font] : fonts_) {
         (void)key;
