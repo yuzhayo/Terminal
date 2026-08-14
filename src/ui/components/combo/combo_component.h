@@ -38,6 +38,8 @@ public:
     void DismissOwnedPopup() override;
     bool SuspendNativePeers(std::wstring& diagnostic) override;
     void OnDpiChanged() override;
+    void CaptureRuntimeState(ComponentRuntimeStateMap& states) const override;
+    void RestoreRuntimeState(const ComponentRuntimeStateMap& states) override;
     AutomationRole automation_role() const noexcept override;
     std::wstring automation_name() const override;
     std::optional<bool> automation_expanded() const noexcept override;

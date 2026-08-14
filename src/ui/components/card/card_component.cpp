@@ -134,6 +134,23 @@ bool CardComponent::AutomationInvoke() {
     return true;
 }
 
+void CardComponent::CaptureRuntimeState(ComponentRuntimeStateMap& states) const {
+    ComponentRuntimeState state;
+    state.type = definition_.type;
+    state.selected = selected_;
+    states.insert_or_assign(definition_.id, std::move(state));
+    Component::CaptureRuntimeState(states);
+}
+
+void CardComponent::RestoreRuntimeState(const ComponentRuntimeStateMap& states) {
+    const auto found = states.find(definition_.id);
+    if (found != states.end() && found->second.type == definition_.type &&
+        found->second.selected) {
+        selected_ = *found->second.selected;
+    }
+    Component::RestoreRuntimeState(states);
+}
+
 config::VisualState CardComponent::State() const noexcept {
     if (!enabled()) return config::VisualState::Disabled;
     if (pressed_) return config::VisualState::Pressed;

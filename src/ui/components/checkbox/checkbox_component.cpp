@@ -139,6 +139,23 @@ bool CheckboxComponent::AutomationToggle() {
     return true;
 }
 
+void CheckboxComponent::CaptureRuntimeState(ComponentRuntimeStateMap& states) const {
+    ComponentRuntimeState state;
+    state.type = definition_.type;
+    state.checked = checked_;
+    states.insert_or_assign(definition_.id, std::move(state));
+    Component::CaptureRuntimeState(states);
+}
+
+void CheckboxComponent::RestoreRuntimeState(const ComponentRuntimeStateMap& states) {
+    const auto found = states.find(definition_.id);
+    if (found != states.end() && found->second.type == definition_.type &&
+        found->second.checked) {
+        checked_ = *found->second.checked;
+    }
+    Component::RestoreRuntimeState(states);
+}
+
 config::VisualState CheckboxComponent::State() const noexcept {
     if (!enabled()) return config::VisualState::Disabled;
     if (pressed_) return config::VisualState::Pressed;

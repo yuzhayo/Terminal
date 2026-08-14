@@ -41,6 +41,7 @@
 #include "ui/containers/logical_focus_coordinator.h"
 #include "ui/containers/modal_overlay_stack.h"
 #include "ui/containers/overlay_plane.h"
+#include "ui/containers/window_container.h"
 #include "ui/theme/theme_platform_adapter.h"
 
 namespace {
@@ -1287,6 +1288,78 @@ void TestEditableDraftStateTransactions() {
     REQUIRE_TRUE(!state.is_dirty());
 }
 
+void TestWindowContainerRouteStateDirtyAndReload() {
+    const auto initial = ui::config::detail::ResolveDocuments(
+        ReadEmbeddedDefaultJson(), std::nullopt, 1);
+    rendering::RenderRuntime runtime;
+    auto bridge = std::make_shared<ui::application::StubApplicationBridge>();
+    ui::containers::WindowContainer window(
+        GetModuleHandleW(nullptr), runtime, initial.document,
+        ui::config::ThemeKind::Light, bridge);
+    std::wstring diagnostic;
+    REQUIRE_TRUE(window.Create("main", diagnostic));
+    REQUIRE_TRUE(window.PrepareFirstFrame(diagnostic));
+    REQUIRE_TRUE(window.active_route() == "terminal");
+    REQUIRE_TRUE(window.cached_screen_count() == 1);
+    REQUIRE_TRUE(window.document_generation() == 1);
+    REQUIRE_TRUE(!window.IsDirty());
+
+    HWND input = FindWindowExW(window.hwnd(), nullptr, L"Edit", nullptr);
+    REQUIRE_TRUE(input != nullptr);
+    REQUIRE_TRUE(SetWindowTextW(input, L"draft survives reload"));
+    SetFocus(input);
+    REQUIRE_TRUE(GetFocus() == input);
+    REQUIRE_TRUE(window.IsDirty());
+    REQUIRE_TRUE(window.dirty_participant_count() == 1);
+
+    REQUIRE_TRUE(window.Navigate("settings", diagnostic));
+    REQUIRE_TRUE(window.active_route() == "settings");
+    REQUIRE_TRUE(window.cached_screen_count() == 2);
+    REQUIRE_TRUE(window.IsDirty());
+
+    auto invalid = std::make_shared<ui::config::ResolvedUiDocument>(*initial.document);
+    invalid->generation = 2;
+    invalid->windows.erase("main");
+    REQUIRE_TRUE(!window.ReloadDocument(invalid, diagnostic));
+    REQUIRE_TRUE(window.document_generation() == 1);
+    REQUIRE_TRUE(window.active_route() == "settings");
+    REQUIRE_TRUE(window.IsDirty());
+
+    Json generation_two_json = ReadEmbeddedDefaultDocument();
+    generation_two_json["screens"]["settings"]["children"][0]["text"] =
+        "Settings generation two";
+    const auto generation_two = ui::config::detail::ResolveDocuments(
+        generation_two_json.dump(), std::nullopt, 2);
+    REQUIRE_TRUE(window.ReloadDocument(generation_two.document, diagnostic));
+    REQUIRE_TRUE(window.document_generation() == 2);
+    REQUIRE_TRUE(window.active_route() == "settings");
+    REQUIRE_TRUE(window.cached_screen_count() == 1);
+    REQUIRE_TRUE(window.IsDirty());
+
+    REQUIRE_TRUE(window.Navigate("terminal", diagnostic));
+    REQUIRE_TRUE(window.cached_screen_count() == 2);
+    HWND restored_input = FindWindowExW(window.hwnd(), nullptr, L"Edit", nullptr);
+    REQUIRE_TRUE(restored_input != nullptr);
+    const int text_length = GetWindowTextLengthW(restored_input);
+    std::wstring restored_text(static_cast<std::size_t>(text_length + 1), L'\0');
+    GetWindowTextW(restored_input, restored_text.data(), text_length + 1);
+    restored_text.resize(static_cast<std::size_t>(text_length));
+    REQUIRE_TRUE(restored_text == L"draft survives reload");
+    REQUIRE_TRUE(GetFocus() == restored_input);
+    REQUIRE_TRUE(window.IsDirty());
+
+    Json generation_three_json = generation_two_json;
+    generation_three_json["screens"].erase("terminal");
+    generation_three_json["windows"]["main"]["initialRoute"] = "settings";
+    const auto generation_three = ui::config::detail::ResolveDocuments(
+        generation_three_json.dump(), std::nullopt, 3);
+    REQUIRE_TRUE(window.ReloadDocument(generation_three.document, diagnostic));
+    REQUIRE_TRUE(window.document_generation() == 3);
+    REQUIRE_TRUE(window.active_route() == "settings");
+    REQUIRE_TRUE(window.cached_screen_count() == 1);
+    REQUIRE_TRUE(!window.IsDirty());
+}
+
 void TestNativePeerGeometryContainment() {
     const RECT component{0, 0, 100, 40};
     const RECT peer{8, 6, 92, 34};
@@ -1669,6 +1742,7 @@ std::vector<TestCase> DiscoverTests() {
         {"WindowRenderContext.PersistentAllocation", TestWindowRenderContextPersistentAllocation, __FILE__, __LINE__},
         {"WindowRenderContext.InvalidationUnion", TestWindowRenderContextInvalidationUnion, __FILE__, __LINE__},
         {"WindowRenderContext.RoundedSourceOver", TestWindowRenderContextRoundedSourceOver, __FILE__, __LINE__},
+        {"WindowContainer.RouteStateDirtyAndReload", TestWindowContainerRouteStateDirtyAndReload, __FILE__, __LINE__},
         {"WindowsRuntime.MinimumBuild", TestWindowsRuntimeMinimumBuild, __FILE__, __LINE__},
     };
     std::sort(tests.begin(), tests.end(),

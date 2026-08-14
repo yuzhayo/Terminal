@@ -170,9 +170,11 @@ bool InputComponent::HandleCommand(HWND source, WORD notification) {
     } else if (notification == EN_CHANGE) {
         draft_.Update(ReadPeerText());
         Arrange(bounds_);
-        config::EventPayloadValue value;
-        value.value = WideToUtf8(draft_.value());
-        EmitEvent("changed", {{"value", std::move(value)}});
+        if (!restoring_runtime_state_) {
+            config::EventPayloadValue value;
+            value.value = WideToUtf8(draft_.value());
+            EmitEvent("changed", {{"value", std::move(value)}});
+        }
     }
     return true;
 }
@@ -262,6 +264,49 @@ bool InputComponent::RequiresNativePeerSuppression() const noexcept { return tru
 
 void InputComponent::CollectEditableParticipants(std::vector<EditableParticipant*>& participants) {
     participants.push_back(this);
+}
+
+void InputComponent::CaptureRuntimeState(ComponentRuntimeStateMap& states) const {
+    ComponentRuntimeState state;
+    state.type = definition_.type;
+    state.draft_baseline = draft_.baseline();
+    state.draft_value = draft_.value();
+    state.scroll_value = edit_ && IsWindow(edit_)
+                             ? static_cast<int>(SendMessageW(edit_, EM_GETFIRSTVISIBLELINE, 0, 0))
+                             : scroll_value_;
+    DWORD selection_start = 0;
+    DWORD selection_end = 0;
+    if (edit_ && IsWindow(edit_)) {
+        SendMessageW(edit_, EM_GETSEL, reinterpret_cast<WPARAM>(&selection_start),
+                     reinterpret_cast<LPARAM>(&selection_end));
+    }
+    state.selection_start = selection_start;
+    state.selection_end = selection_end;
+    states.insert_or_assign(definition_.id, std::move(state));
+    Component::CaptureRuntimeState(states);
+}
+
+void InputComponent::RestoreRuntimeState(const ComponentRuntimeStateMap& states) {
+    const auto found = states.find(definition_.id);
+    if (found != states.end() && found->second.type == definition_.type &&
+        found->second.draft_baseline && found->second.draft_value) {
+        restoring_runtime_state_ = true;
+        draft_.Restore(*found->second.draft_baseline, *found->second.draft_value);
+        WriteDraftToPeer();
+        if (edit_ && IsWindow(edit_)) {
+            const DWORD start = found->second.selection_start.value_or(0);
+            const DWORD end = found->second.selection_end.value_or(start);
+            SendMessageW(edit_, EM_SETSEL, start, end);
+            if (found->second.scroll_value) {
+                const int current =
+                    static_cast<int>(SendMessageW(edit_, EM_GETFIRSTVISIBLELINE, 0, 0));
+                SendMessageW(edit_, EM_LINESCROLL, 0, *found->second.scroll_value - current);
+                scroll_value_ = *found->second.scroll_value;
+            }
+        }
+        restoring_runtime_state_ = false;
+    }
+    Component::RestoreRuntimeState(states);
 }
 
 void InputComponent::CollectAutomationElements(std::vector<Component*>& elements) {

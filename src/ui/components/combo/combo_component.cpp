@@ -197,6 +197,25 @@ void ComboComponent::OnDpiChanged() {
     if (popup_open_) PositionAndRenderPopup();
 }
 
+void ComboComponent::CaptureRuntimeState(ComponentRuntimeStateMap& states) const {
+    ComponentRuntimeState state;
+    state.type = definition_.type;
+    state.selected_index = selected_index_;
+    states.insert_or_assign(definition_.id, std::move(state));
+    Component::CaptureRuntimeState(states);
+}
+
+void ComboComponent::RestoreRuntimeState(const ComponentRuntimeStateMap& states) {
+    const auto found = states.find(definition_.id);
+    if (found != states.end() && found->second.type == definition_.type) {
+        selected_index_ = found->second.selected_index;
+        if (selected_index_ && *selected_index_ >= items_.size()) selected_index_.reset();
+        highlighted_index_ = selected_index_ ? static_cast<int>(*selected_index_) : -1;
+        EnsureHighlightVisible();
+    }
+    Component::RestoreRuntimeState(states);
+}
+
 AutomationRole ComboComponent::automation_role() const noexcept { return AutomationRole::Combo; }
 
 std::wstring ComboComponent::automation_name() const {

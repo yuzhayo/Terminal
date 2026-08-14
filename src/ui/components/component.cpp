@@ -150,6 +150,14 @@ void Component::CollectEditableParticipants(std::vector<EditableParticipant*>& p
     for (const auto& child : children_) child->CollectEditableParticipants(participants);
 }
 
+void Component::CaptureRuntimeState(ComponentRuntimeStateMap& states) const {
+    for (const auto& child : children_) child->CaptureRuntimeState(states);
+}
+
+void Component::RestoreRuntimeState(const ComponentRuntimeStateMap& states) {
+    for (const auto& child : children_) child->RestoreRuntimeState(states);
+}
+
 void Component::CollectAutomationElements(std::vector<Component*>& elements) {
     if (automation_role() != AutomationRole::None) elements.push_back(this);
     for (const auto& child : children_) child->CollectAutomationElements(elements);

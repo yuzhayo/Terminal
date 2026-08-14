@@ -403,6 +403,23 @@ Business logic tidak menerima `HWND`, device context, atau pointer component.
 Jika feature menambah binding baru, bridge harus mengeksposnya melalui `ResolveStringItems` atau
 `ResolveStringValue`, dan component terkait harus mempunyai refresh behavior yang sesuai.
 
+### Reload generation dan state reconciliation
+
+Jangan mengganti `ResolvedUiDocument` atau mengosongkan screen cache langsung dari feature. Serahkan
+candidate document yang sudah valid ke `WindowContainer::ReloadDocument`. Generation candidate wajib
+lebih tinggi daripada generation aktif.
+
+Reload menormalkan transient UI lebih dahulu: popup ditutup, modal stack di-drain, native peer/IME
+disuspend, lalu runtime state diambil berdasarkan stable component ID. Reconciliation mempertahankan
+draft dan baseline Input, caret/selection, scroll, selection Combo/List, checkbox/toggle/card state,
+serta focus target untuk identity yang masih ada. Screen inactive tetap lazy dalam bentuk pending
+snapshot sampai route dibuka lagi. State route/component yang hilang dibuang dan active route yang
+hilang fallback ke `windows.<id>.initialRoute`.
+
+Gunakan `WindowContainer::IsDirty` atau `dirty_participant_count` untuk window-level dirty status;
+business layer tidak perlu membaca draft component. Koordinasi candidate dari `UiConfigGate` ke semua
+window akan dimiliki `ApplicationContainer`, bukan screen atau action handler.
+
 ## 6. Dialog dari JSON
 
 Dialog ditempatkan di dalam screen yang memilikinya, kemudian dibuka melalui action handler yang

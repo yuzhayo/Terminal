@@ -36,6 +36,8 @@ public:
     bool HandleKeyDown(UINT virtual_key) override;
     void CollectFocusable(std::vector<Component*>& focusable) override;
     void CollectAutomationElements(std::vector<Component*>& elements) override;
+    void CaptureRuntimeState(ComponentRuntimeStateMap& states) const override;
+    void RestoreRuntimeState(const ComponentRuntimeStateMap& states) override;
     void OnDpiChanged() override;
     bool PrepareResources(COLORREF parent_background) override;
     AutomationRole automation_role() const noexcept override;

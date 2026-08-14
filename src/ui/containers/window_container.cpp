@@ -39,6 +39,26 @@ std::uint64_t NextRuntimeInstanceId() noexcept {
     return next.fetch_add(1, std::memory_order_relaxed);
 }
 
+std::size_t CountDirtyParticipants(components::Component& root) {
+    std::vector<components::EditableParticipant*> participants;
+    root.CollectEditableParticipants(participants);
+    return static_cast<std::size_t>(std::count_if(
+        participants.begin(), participants.end(),
+        [](const components::EditableParticipant* participant) {
+            return participant && participant->IsDirty();
+        }));
+}
+
+std::size_t CountDirtySnapshot(
+    const components::ComponentRuntimeStateMap& states) noexcept {
+    return static_cast<std::size_t>(std::count_if(
+        states.begin(), states.end(), [](const auto& item) {
+            const components::ComponentRuntimeState& state = item.second;
+            return state.type == config::ComponentType::Input && state.draft_baseline &&
+                   state.draft_value && *state.draft_baseline != *state.draft_value;
+        }));
+}
+
 }  // namespace
 
 WindowContainer::WindowContainer(HINSTANCE instance, rendering::RenderRuntime& render_runtime,
@@ -53,6 +73,7 @@ WindowContainer::~WindowContainer() {
     ResetAutomationProvider();
     root_ = nullptr;
     screen_cache_.clear();
+    pending_screen_snapshots_.clear();
     if (window_ && IsWindow(window_)) DestroyWindow(window_);
 }
 
@@ -258,6 +279,10 @@ bool WindowContainer::ActivateRoute(std::string_view route_id, std::wstring& dia
         const auto previous = screen_cache_.find(active_route_);
         if (previous != screen_cache_.end()) previous_entry = &previous->second;
     }
+    if (previous_entry && focus_coordinator_.focused()) {
+        previous_entry->focused_component_id =
+            focus_coordinator_.focused()->definition().id;
+    }
     focus_coordinator_.Clear();
     ResetAutomationProvider();
     if (previous_root && !previous_root->SuspendNativePeers(diagnostic)) {
@@ -268,16 +293,24 @@ bool WindowContainer::ActivateRoute(std::string_view route_id, std::wstring& dia
     }
     if (previous_entry) previous_entry->suspended = true;
 
+    ScreenEntry* activated_entry = nullptr;
     try {
         auto [entry, inserted] = screen_cache_.try_emplace(std::string(route_id));
         if (inserted) {
             entry->second.instance_id = NextRuntimeInstanceId();
             entry->second.root = registry_.CreateTree(definition->second, *component_host_);
         }
+        activated_entry = &entry->second;
         root_ = entry->second.root.get();
         active_route_ = entry->first;
         active_screen_instance_id_ = entry->second.instance_id;
         root_->OnDpiChanged();
+        const auto snapshot = pending_screen_snapshots_.find(entry->first);
+        if (snapshot != pending_screen_snapshots_.end()) {
+            root_->RestoreRuntimeState(snapshot->second.component_states);
+            entry->second.focused_component_id = snapshot->second.focused_component_id;
+            pending_screen_snapshots_.erase(snapshot);
+        }
         if (entry->second.suspended) {
             root_->ResumeNativePeers();
             entry->second.suspended = false;
@@ -294,6 +327,10 @@ bool WindowContainer::ActivateRoute(std::string_view route_id, std::wstring& dia
             focus_coordinator_.Rebuild(*root_);
             automation_provider_ = new accessibility::AutomationRootProvider(
                 window_, *root_, [this] { return focus_coordinator_.focused(); });
+            if (previous_entry && !previous_entry->focused_component_id.empty()) {
+                focus_coordinator_.RequestFocus(
+                    root_->FindById(previous_entry->focused_component_id));
+            }
         }
         diagnostic = L"Screen JSON tidak dapat dibuat oleh component registry.";
         return false;
@@ -302,6 +339,12 @@ bool WindowContainer::ActivateRoute(std::string_view route_id, std::wstring& dia
     focus_coordinator_.Rebuild(*root_);
     automation_provider_ = new accessibility::AutomationRootProvider(
         window_, *root_, [this] { return focus_coordinator_.focused(); });
+    if (activated_entry && !activated_entry->focused_component_id.empty()) {
+        if (!focus_coordinator_.RequestFocus(
+                root_->FindById(activated_entry->focused_component_id))) {
+            activated_entry->focused_component_id.clear();
+        }
+    }
     resources_prepared_ = false;
     frame_ready_ = false;
     if (render_context_.valid()) {
@@ -312,6 +355,143 @@ bool WindowContainer::ActivateRoute(std::string_view route_id, std::wstring& dia
     if (window_) InvalidateRect(window_, nullptr, FALSE);
     diagnostic.clear();
     return true;
+}
+
+bool WindowContainer::NormalizeForReload(std::wstring& diagnostic) {
+    if (!root_) {
+        diagnostic.clear();
+        return true;
+    }
+    if (active_popup_owner_) active_popup_owner_->DismissOwnedPopup();
+    active_popup_owner_ = nullptr;
+    pointer_target_ = nullptr;
+    if (GetCapture() == window_) ReleaseCapture();
+    if (modal_stack_.active() &&
+        !modal_stack_.Drain(*root_, focus_coordinator_, diagnostic)) {
+        return false;
+    }
+    const auto active = screen_cache_.find(active_route_);
+    if (active == screen_cache_.end()) {
+        diagnostic = L"Active route tidak tercatat pada screen cache.";
+        return false;
+    }
+    if (focus_coordinator_.focused()) {
+        active->second.focused_component_id =
+            focus_coordinator_.focused()->definition().id;
+    }
+    if (!active->second.suspended) {
+        if (!root_->SuspendNativePeers(diagnostic)) return false;
+        active->second.suspended = true;
+    }
+    diagnostic.clear();
+    return true;
+}
+
+void WindowContainer::CaptureScreenSnapshots() {
+    auto snapshots = std::move(pending_screen_snapshots_);
+    for (const auto& [route_id, entry] : screen_cache_) {
+        if (!entry.root) continue;
+        ScreenRuntimeSnapshot snapshot;
+        snapshot.focused_component_id = entry.focused_component_id;
+        entry.root->CaptureRuntimeState(snapshot.component_states);
+        snapshots.insert_or_assign(route_id, std::move(snapshot));
+    }
+    pending_screen_snapshots_ = std::move(snapshots);
+}
+
+bool WindowContainer::InstallDocument(
+    std::shared_ptr<const config::ResolvedUiDocument> document,
+    std::string_view preferred_route, std::wstring& diagnostic) {
+    if (!document) {
+        diagnostic = L"Resolved UI document reload tidak tersedia.";
+        return false;
+    }
+    const auto window_definition = document->windows.find(window_id_);
+    if (window_definition == document->windows.end()) {
+        diagnostic = L"Window aktif tidak tersedia pada config generation baru.";
+        return false;
+    }
+    if (window_definition->second.type != config::ComponentType::Window) {
+        diagnostic = L"Config generation baru tidak memiliki Window definition yang valid.";
+        return false;
+    }
+    const auto& properties =
+        std::get<config::WindowProperties>(window_definition->second.properties);
+    const std::string target_route = document->screens.contains(preferred_route)
+                                         ? std::string(preferred_route)
+                                         : properties.initial_route;
+
+    focus_coordinator_.Clear();
+    ResetAutomationProvider();
+    root_ = nullptr;
+    screen_cache_.clear();
+    document_ = std::move(document);
+    window_definition_ = &document_->windows.at(window_id_);
+    component_host_->theme = &document_->theme(theme_kind_);
+    for (auto snapshot = pending_screen_snapshots_.begin();
+         snapshot != pending_screen_snapshots_.end();) {
+        if (!document_->screens.contains(snapshot->first)) {
+            snapshot = pending_screen_snapshots_.erase(snapshot);
+        } else {
+            ++snapshot;
+        }
+    }
+    active_route_.clear();
+    active_screen_instance_id_ = 0;
+    render_runtime_.AdvanceResourceEpoch();
+    resources_prepared_ = false;
+    frame_ready_ = false;
+
+    if (window_) {
+        const std::wstring title = ResolveWindowTitle(*window_definition_);
+        SetWindowTextW(window_, title.empty() ? app_identity::kProductName : title.c_str());
+        SetPropW(window_, L"Terminal.MinimumWidth",
+                 reinterpret_cast<HANDLE>(static_cast<INT_PTR>(
+                     components::ScaleDip(properties.minimum_width, dpi_))));
+        SetPropW(window_, L"Terminal.MinimumHeight",
+                 reinterpret_cast<HANDLE>(static_cast<INT_PTR>(
+                     components::ScaleDip(properties.minimum_height, dpi_))));
+    }
+    return ActivateRoute(target_route, diagnostic);
+}
+
+bool WindowContainer::ReloadDocument(
+    std::shared_ptr<const config::ResolvedUiDocument> document,
+    std::wstring& diagnostic) {
+    if (!document || !component_host_) {
+        diagnostic = L"Resolved UI document reload tidak tersedia.";
+        return false;
+    }
+    if (document == document_) {
+        diagnostic.clear();
+        return true;
+    }
+    if (document_ && document->generation <= document_->generation) {
+        diagnostic = L"Config generation reload harus meningkat secara monotonik.";
+        return false;
+    }
+    if (!document->windows.contains(window_id_)) {
+        diagnostic = L"Window aktif tidak tersedia pada config generation baru.";
+        return false;
+    }
+    if (!NormalizeForReload(diagnostic)) return false;
+    CaptureScreenSnapshots();
+
+    const auto previous_document = document_;
+    const std::string previous_route = active_route_;
+    const auto previous_snapshots = pending_screen_snapshots_;
+    if (InstallDocument(std::move(document), previous_route, diagnostic)) return true;
+
+    const std::wstring reload_diagnostic = diagnostic;
+    pending_screen_snapshots_ = previous_snapshots;
+    std::wstring rollback_diagnostic;
+    if (!InstallDocument(previous_document, previous_route, rollback_diagnostic)) {
+        diagnostic = reload_diagnostic + L" Rollback generation lama juga gagal: " +
+                     rollback_diagnostic;
+        return false;
+    }
+    diagnostic = reload_diagnostic;
+    return false;
 }
 
 bool WindowContainer::PrepareFirstFrame(std::wstring& diagnostic) {
@@ -405,6 +585,27 @@ std::string_view WindowContainer::active_route() const noexcept {
 
 std::size_t WindowContainer::cached_screen_count() const noexcept {
     return screen_cache_.size();
+}
+
+bool WindowContainer::IsDirty() const {
+    return dirty_participant_count() != 0;
+}
+
+std::size_t WindowContainer::dirty_participant_count() const {
+    std::size_t count = 0;
+    for (const auto& [route_id, entry] : screen_cache_) {
+        (void)route_id;
+        if (entry.root) count += CountDirtyParticipants(*entry.root);
+    }
+    for (const auto& [route_id, snapshot] : pending_screen_snapshots_) {
+        (void)route_id;
+        count += CountDirtySnapshot(snapshot.component_states);
+    }
+    return count;
+}
+
+std::uint64_t WindowContainer::document_generation() const noexcept {
+    return document_ ? document_->generation : 0;
 }
 
 LRESULT CALLBACK WindowContainer::WindowProcedure(HWND window, UINT message, WPARAM wparam,
@@ -648,6 +849,7 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             ResetAutomationProvider();
             root_ = nullptr;
             screen_cache_.clear();
+            pending_screen_snapshots_.clear();
             render_context_.Reset();
             RemovePropW(window_, L"Terminal.MinimumWidth");
             RemovePropW(window_, L"Terminal.MinimumHeight");

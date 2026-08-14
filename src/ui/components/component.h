@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -75,6 +76,21 @@ struct MeasuredSize {
     int height = 0;
 };
 
+struct ComponentRuntimeState {
+    config::ComponentType type = config::ComponentType::Container;
+    std::optional<std::wstring> draft_baseline;
+    std::optional<std::wstring> draft_value;
+    std::optional<std::size_t> selected_index;
+    std::optional<bool> checked;
+    std::optional<bool> selected;
+    std::optional<int> scroll_value;
+    std::optional<DWORD> selection_start;
+    std::optional<DWORD> selection_end;
+};
+
+using ComponentRuntimeStateMap =
+    std::map<std::string, ComponentRuntimeState, std::less<>>;
+
 struct ComponentHost {
     HWND window = nullptr;
     UINT dpi = 96;
@@ -137,6 +153,8 @@ public:
     virtual bool SuspendNativePeers(std::wstring& diagnostic);
     virtual void ResumeNativePeers();
     virtual void CollectEditableParticipants(std::vector<EditableParticipant*>& participants);
+    virtual void CaptureRuntimeState(ComponentRuntimeStateMap& states) const;
+    virtual void RestoreRuntimeState(const ComponentRuntimeStateMap& states);
     virtual void CollectAutomationElements(std::vector<Component*>& elements);
     virtual AutomationRole automation_role() const noexcept;
     virtual std::wstring automation_name() const;

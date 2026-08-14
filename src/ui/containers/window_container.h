@@ -39,10 +39,15 @@ public:
     void Show(int show_command);
     void ApplyTheme(config::ThemeKind theme_kind);
     bool Navigate(std::string_view route_id, std::wstring& diagnostic);
+    bool ReloadDocument(std::shared_ptr<const config::ResolvedUiDocument> document,
+                        std::wstring& diagnostic);
     void HandleIpcRequest(const platform::IpcRequest& request);
     HWND hwnd() const noexcept;
     std::string_view active_route() const noexcept;
     std::size_t cached_screen_count() const noexcept;
+    bool IsDirty() const;
+    std::size_t dirty_participant_count() const;
+    std::uint64_t document_generation() const noexcept;
 
 private:
     static LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
@@ -50,6 +55,10 @@ private:
 
     bool BuildComponentTree(std::wstring& diagnostic);
     bool ActivateRoute(std::string_view route_id, std::wstring& diagnostic);
+    bool NormalizeForReload(std::wstring& diagnostic);
+    void CaptureScreenSnapshots();
+    bool InstallDocument(std::shared_ptr<const config::ResolvedUiDocument> document,
+                         std::string_view preferred_route, std::wstring& diagnostic);
     void ResetAutomationProvider();
     bool RenderCompleteFrame(HDC reference);
     bool RenderFrame(HDC reference, const RECT& requested_region, bool force_full);
@@ -76,12 +85,18 @@ private:
     ModalOverlayStack modal_stack_;
     OverlayPlane overlay_plane_;
     std::unique_ptr<components::ComponentHost> component_host_;
+    struct ScreenRuntimeSnapshot {
+        components::ComponentRuntimeStateMap component_states;
+        std::string focused_component_id;
+    };
     struct ScreenEntry {
         std::uint64_t instance_id = 0;
         std::unique_ptr<components::Component> root;
+        std::string focused_component_id;
         bool suspended = false;
     };
     std::map<std::string, ScreenEntry, std::less<>> screen_cache_;
+    std::map<std::string, ScreenRuntimeSnapshot, std::less<>> pending_screen_snapshots_;
     components::Component* root_ = nullptr;
     std::string window_id_;
     std::string active_route_;

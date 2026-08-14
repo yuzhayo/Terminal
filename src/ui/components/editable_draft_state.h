@@ -15,6 +15,7 @@ public:
     bool StageDiscard();
     void CommitDiscard() noexcept;
     void RollbackDiscard();
+    void Restore(std::wstring baseline, std::wstring value);
 
     const std::wstring& value() const noexcept;
     const std::wstring& baseline() const noexcept;

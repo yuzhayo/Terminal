@@ -21,6 +21,8 @@ public:
     std::wstring automation_name() const override;
     std::optional<bool> automation_toggle_state() const noexcept override;
     bool AutomationToggle() override;
+    void CaptureRuntimeState(ComponentRuntimeStateMap& states) const override;
+    void RestoreRuntimeState(const ComponentRuntimeStateMap& states) override;
 
 private:
     config::VisualState State() const noexcept;

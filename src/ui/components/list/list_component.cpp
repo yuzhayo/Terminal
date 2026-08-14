@@ -324,6 +324,26 @@ void ListComponent::CollectAutomationElements(std::vector<Component*>& elements)
     if (scrollbar_ && scrollbar_visible_) scrollbar_->CollectAutomationElements(elements);
 }
 
+void ListComponent::CaptureRuntimeState(ComponentRuntimeStateMap& states) const {
+    ComponentRuntimeState state;
+    state.type = definition_.type;
+    state.selected_index = selected_index_;
+    state.scroll_value = scroll_value_;
+    states.insert_or_assign(definition_.id, std::move(state));
+    Component::CaptureRuntimeState(states);
+}
+
+void ListComponent::RestoreRuntimeState(const ComponentRuntimeStateMap& states) {
+    const auto found = states.find(definition_.id);
+    if (found != states.end() && found->second.type == definition_.type) {
+        selected_index_ = found->second.selected_index;
+        if (selected_index_ && *selected_index_ >= items_.size()) selected_index_.reset();
+        SetScrollValue(found->second.scroll_value.value_or(0));
+        RealizeVisibleRows();
+    }
+    Component::RestoreRuntimeState(states);
+}
+
 void ListComponent::OnDpiChanged() {
     if (scrollbar_) {
         auto& properties = std::get<config::ScrollbarProperties>(scrollbar_definition_.properties);

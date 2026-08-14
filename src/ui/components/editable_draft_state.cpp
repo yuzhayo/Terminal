@@ -32,6 +32,12 @@ void EditableDraftState::RollbackDiscard() {
     staged_value_.reset();
 }
 
+void EditableDraftState::Restore(std::wstring baseline, std::wstring value) {
+    baseline_ = std::move(baseline);
+    value_ = std::move(value);
+    staged_value_.reset();
+}
+
 const std::wstring& EditableDraftState::value() const noexcept {
     return value_;
 }

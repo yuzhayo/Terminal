@@ -21,6 +21,8 @@ public:
     AutomationRole automation_role() const noexcept override;
     bool automation_supports_invoke() const noexcept override;
     bool AutomationInvoke() override;
+    void CaptureRuntimeState(ComponentRuntimeStateMap& states) const override;
+    void RestoreRuntimeState(const ComponentRuntimeStateMap& states) override;
 
 private:
     config::VisualState State() const noexcept;

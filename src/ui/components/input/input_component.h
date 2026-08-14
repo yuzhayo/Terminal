@@ -27,6 +27,8 @@ public:
     void ResumeNativePeers() override;
     bool RequiresNativePeerSuppression() const noexcept override;
     void CollectEditableParticipants(std::vector<EditableParticipant*>& participants) override;
+    void CaptureRuntimeState(ComponentRuntimeStateMap& states) const override;
+    void RestoreRuntimeState(const ComponentRuntimeStateMap& states) override;
     void CollectAutomationElements(std::vector<Component*>& elements) override;
     AutomationRole automation_role() const noexcept override;
     std::wstring automation_name() const override;
@@ -83,6 +85,7 @@ private:
     bool geometry_valid_ = true;
     bool suspended_ = false;
     bool restore_focus_after_resume_ = false;
+    bool restoring_runtime_state_ = false;
 };
 
 }  // namespace ui::components
