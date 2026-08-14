@@ -2273,3 +2273,18 @@ disabled → `COLOR_GRAYTEXT`; accent/selection/focus → `COLOR_HIGHLIGHT`; acc
   installer/feed, binary, log, ETL/CSV, dan test temp. Tracked scripts/manifests/lock files tetap tidak
   di-ignore.
 - Perubahan plan belum otomatis menjadi Git history. Commit/push/release hanya atas instruksi user.
+
+### 25.12 Post-completion developer playbook dan skill
+
+1. `Playbook.md` menjadi panduan operasional untuk menambah screen, component, navigation binding,
+   action handler, business service, tests, serta smoke tanpa memilih ulang arsitektur.
+2. Selama Phase 4 dan Phase 5, perubahan schema/event/bridge/route/build contract wajib memperbarui
+   playbook pada perubahan yang sama agar contoh tidak drift dari runtime aktual.
+3. Hanya setelah exit criteria Phase 5 benar-benar PASS, turunkan playbook yang telah terbukti dipakai
+   menjadi repo-specific skill untuk menghasilkan skeleton screen JSON, navigation button, feature
+   action registration, dan test checklist. Skill harus membaca contract aktual, tidak mengedit nested
+   reference repository, tidak melakukan commit/push, dan tidak menjadi architecture/implementation
+   plan kedua.
+4. Skill dinyatakan siap hanya jika output sample-nya lolos config resolution, Debug/Release contract
+   tests, `git diff --check`, dan runtime route smoke. Pembuatan skill adalah tooling pasca-completion,
+   bukan blocker exit criteria V1.
