@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <TerminalVersion>0.1.0</TerminalVersion>
+    <TerminalVersionMajor>0</TerminalVersionMajor>
+    <TerminalVersionMinor>1</TerminalVersionMinor>
+    <TerminalVersionPatch>0</TerminalVersionPatch>
+    <TerminalVersionBuild>0</TerminalVersionBuild>
+  </PropertyGroup>
+</Project>

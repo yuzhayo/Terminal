@@ -1,0 +1,4 @@
+#include "../src/resource.h"
+
+IDI_APP_ICON ICON "../Assets/terminal.ico"
+IDR_UI_DEFAULT_JSON RCDATA "../Assets/ui/terminal.ui.default.v1.json"

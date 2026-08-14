@@ -3,11 +3,12 @@
 #include "app/app_version.h"
 #include "resource.h"
 
+IDI_APP_ICON ICON "../Assets/terminal.ico"
 IDR_UI_DEFAULT_JSON RCDATA "../Assets/ui/terminal.ui.default.v1.json"
 
 1 VERSIONINFO
- FILEVERSION OTN_VERSION_COMMA
- PRODUCTVERSION OTN_VERSION_COMMA
+ FILEVERSION TERMINAL_VERSION_COMMA
+ PRODUCTVERSION TERMINAL_VERSION_COMMA
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS VS_FF_DEBUG
@@ -24,11 +25,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Yuzha\0"
             VALUE "FileDescription", "Terminal\0"
-            VALUE "FileVersion", OTN_FILE_VERSION_STRING "\0"
+            VALUE "FileVersion", TERMINAL_FILE_VERSION_STRING "\0"
             VALUE "InternalName", "Terminal\0"
             VALUE "OriginalFilename", "Terminal.exe\0"
             VALUE "ProductName", "Terminal\0"
-            VALUE "ProductVersion", OTN_VERSION_STRING "\0"
+            VALUE "ProductVersion", TERMINAL_VERSION_STRING "\0"
         END
     END
     BLOCK "VarFileInfo"

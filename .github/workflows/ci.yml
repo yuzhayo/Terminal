@@ -27,6 +27,18 @@ jobs:
         shell: pwsh
         run: msbuild Terminal.sln /m /nologo /v:minimal /p:Configuration=Debug /p:Platform=x64
 
+      - name: Run Debug tests
+        shell: pwsh
+        run: ./build/x64/Debug/TerminalTests.exe
+
       - name: Build Release
         shell: pwsh
         run: msbuild Terminal.sln /m /nologo /v:minimal /p:Configuration=Release /p:Platform=x64
+
+      - name: Run Release tests
+        shell: pwsh
+        run: ./build/x64/Release/TerminalTests.exe
+
+      - name: Test installed preview update
+        shell: pwsh
+        run: ./tools/Test-InstalledUpdate.ps1 -Environment CurrentUser -AllowInstallMutation

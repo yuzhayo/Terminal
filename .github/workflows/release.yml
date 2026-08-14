@@ -1,0 +1,161 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version increment after the first release
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: terminal-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-2022
+    timeout-minutes: 40
+
+    steps:
+      - name: Require main branch
+        if: github.ref != 'refs/heads/main'
+        shell: pwsh
+        run: throw 'Release harus dijalankan dari branch main.'
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Require successful CI for dispatch commit
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $sha = git rev-parse HEAD
+          $runs = @(gh run list --workflow ci.yml --branch main --commit $sha `
+            --status completed --limit 10 --json conclusion,headSha | ConvertFrom-Json)
+          if (-not ($runs | Where-Object { $_.headSha -eq $sha -and $_.conclusion -eq 'success' })) {
+            throw "CI sukses untuk commit $sha tidak ditemukan."
+          }
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 9.0.304
+
+      - uses: microsoft/setup-msbuild@v3
+
+      - name: Restore tools and native dependencies
+        shell: pwsh
+        run: |
+          dotnet tool restore
+          ./tools/Restore-Dependencies.ps1
+
+      - name: Determine release version
+        id: version
+        shell: pwsh
+        run: |
+          $current = ./tools/Get-ProjectVersion.ps1
+          $currentTag = "v$current"
+          $tagExists = @(git tag --list $currentTag).Count -gt 0
+          $next = if ($tagExists) {
+            ./tools/Get-NextVersion.ps1 -Bump '${{ inputs.bump }}'
+          } else {
+            $current
+          }
+          if (@(git ls-remote --tags origin "refs/tags/v$next").Count -gt 0) {
+            throw "Tag v$next sudah ada dan tidak boleh dioverwrite."
+          }
+          ./tools/Set-ProjectVersion.ps1 -Version $next
+          "version=$next" >> $env:GITHUB_OUTPUT
+
+      - name: Commit version
+        id: commit
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add version.props
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "chore(release): v${{ steps.version.outputs.version }}"
+            git push origin HEAD:main
+          }
+          "sha=$(git rev-parse HEAD)" >> $env:GITHUB_OUTPUT
+
+      - name: Prepare release notes
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          $previousTag = git tag --sort=-v:refname | Select-Object -First 1
+          $lines = if ($previousTag) {
+            @(git log "$previousTag..HEAD" --pretty=format:'- %s')
+          } else {
+            @('- Initial updater-enabled release.')
+          }
+          @(
+            "# Terminal ${{ steps.version.outputs.version }}"
+            ''
+            $lines
+          ) | Set-Content -LiteralPath artifacts/release-notes.md -Encoding utf8
+
+      - name: Download previous Velopack release
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $releases = @(gh release list --limit 1 --json tagName | ConvertFrom-Json)
+          if ($releases.Count -gt 0) {
+            dotnet vpk download github `
+              --repoUrl 'https://github.com/yuzhayo/Terminal' `
+              --outputDir './artifacts/releases/win' `
+              --channel win `
+              --token $env:GITHUB_TOKEN
+          } else {
+            Write-Host 'No previous release; full package only.'
+          }
+
+      - name: Build, test, package, and verify
+        shell: pwsh
+        run: |
+          ./tools/Build-Package.ps1 `
+            -Version '${{ steps.version.outputs.version }}' `
+            -Channel win
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          dotnet vpk upload github `
+            --repoUrl 'https://github.com/yuzhayo/Terminal' `
+            --outputDir './artifacts/releases/win' `
+            --channel win `
+            --token $env:GITHUB_TOKEN `
+            --publish `
+            --releaseName 'Terminal ${{ steps.version.outputs.version }}' `
+            --tag 'v${{ steps.version.outputs.version }}' `
+            --targetCommitish '${{ steps.commit.outputs.sha }}'
+
+      - name: Release summary
+        shell: pwsh
+        run: |
+          $setup = './artifacts/releases/win/Yuzha.Terminal-win-Setup.exe'
+          $hash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash
+          @(
+            "## Terminal ${{ steps.version.outputs.version }}"
+            ''
+            "Installer: Yuzha.Terminal-win-Setup.exe"
+            "SHA-256: ``$hash``"
+          ) >> $env:GITHUB_STEP_SUMMARY

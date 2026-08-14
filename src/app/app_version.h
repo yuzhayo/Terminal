@@ -1,10 +1,8 @@
 #pragma once
 
-#define OTN_VERSION_MAJOR 0
-#define OTN_VERSION_MINOR 1
-#define OTN_VERSION_PATCH 0
-#define OTN_VERSION_BUILD 0
-#define OTN_VERSION_COMMA 0, 1, 0, 0
-#define OTN_VERSION_STRING "0.1.0"
-#define OTN_VERSION_STRING_W L"0.1.0"
-#define OTN_FILE_VERSION_STRING "0.1.0.0"
+#if !defined(TERMINAL_VERSION_MAJOR) || !defined(TERMINAL_VERSION_MINOR) || \
+    !defined(TERMINAL_VERSION_PATCH) || !defined(TERMINAL_VERSION_BUILD) || \
+    !defined(TERMINAL_VERSION_COMMA) || !defined(TERMINAL_VERSION_STRING) || \
+    !defined(TERMINAL_VERSION_STRING_W) || !defined(TERMINAL_FILE_VERSION_STRING)
+#error Terminal version definitions must come from version.props through MSBuild.
+#endif

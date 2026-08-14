@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <dwmapi.h>
 #include <shellapi.h>
 
 #include <cwchar>
@@ -6,15 +7,19 @@
 
 #include "app/app_identity.h"
 #include "config/ui_config_gate.h"
+#include "instrumentation/performance_trace.h"
 #include "platform/app_paths.h"
 #include "platform/single_instance.h"
 #include "platform/updater.h"
 #include "platform/windows_runtime.h"
 #include "rendering/gdi_renderer.h"
+#include "resource.h"
 
 namespace {
 
 rendering::GdiRenderer g_renderer;
+bool g_render_buffer_ready_traced = false;
+bool g_first_present_traced = false;
 
 void ShowBootstrapError(const std::wstring& diagnostic) {
     MessageBoxW(nullptr, diagnostic.c_str(), app_identity::kProductName,
@@ -48,11 +53,21 @@ void PaintWindow(HWND window) {
     const int width = client.right - client.left;
     const int height = client.bottom - client.top;
 
-    if (!g_renderer.Paint(window_dc, width, height, paint.rcPaint)) {
+    const bool presented = g_renderer.Paint(window_dc, width, height, paint.rcPaint);
+    if (!presented) {
         FillRect(window_dc, &paint.rcPaint, GetSysColorBrush(COLOR_WINDOW));
     }
 
     EndPaint(window, &paint);
+
+    if (presented && !g_render_buffer_ready_traced) {
+        g_render_buffer_ready_traced = true;
+        instrumentation::TraceRenderBufferReady();
+    }
+    if (presented && !g_first_present_traced) {
+        g_first_present_traced = true;
+        instrumentation::TraceFirstPresentComplete();
+    }
 }
 
 LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -90,7 +105,9 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
 }  // namespace
 
 int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
-    updater::RunStartupHooks();
+    const updater::StartupHookTiming startup_timing = updater::RunStartupHooks();
+    instrumentation::PerformanceTraceSession trace_session(startup_timing.process_entry_qpc,
+                                                           startup_timing.hooks_complete_qpc);
 
     std::wstring diagnostic;
     if (platform::CheckWindowsRuntime(diagnostic) != platform::WindowsRuntimeStatus::Supported) {
@@ -126,6 +143,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
         ShowBootstrapError(diagnostic);
         return 13;
     }
+    instrumentation::TraceConfigResolved();
 
     WNDCLASSEXW window_class{};
     window_class.cbSize = sizeof(window_class);
@@ -133,7 +151,15 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
     window_class.lpfnWndProc = WindowProcedure;
     window_class.hInstance = instance;
     window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    window_class.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(IDI_APP_ICON));
+    window_class.hIconSm = static_cast<HICON>(
+        LoadImageW(instance, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 16, 16, LR_SHARED));
     window_class.lpszClassName = platform::MainWindowClassName();
+
+    if (!window_class.hIcon || !window_class.hIconSm) {
+        ShowBootstrapError(L"Icon aplikasi tidak dapat dimuat dari executable.");
+        return 14;
+    }
 
     if (!RegisterClassExW(&window_class)) {
         return 1;
@@ -146,9 +172,14 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
     if (!window) {
         return 2;
     }
+    instrumentation::TraceFirstLayoutComplete();
 
     ShowWindow(window, show_command == 0 ? SW_SHOWNORMAL : show_command);
     UpdateWindow(window);
+    if (g_first_present_traced && SUCCEEDED(DwmFlush())) {
+        instrumentation::TraceFirstFrameVisible();
+        instrumentation::TraceResourceSnapshot();
+    }
 
     MSG message{};
     BOOL result = 0;

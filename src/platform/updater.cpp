@@ -8,6 +8,10 @@
 #pragma warning(pop)
 
 #include <exception>
+#include <array>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -17,6 +21,32 @@ namespace {
 
 constexpr wchar_t kUpdateSourceEnvironment[] = L"TERMINAL_UPDATE_SOURCE";
 constexpr char kGithubRepository[] = "https://github.com/yuzhayo/Terminal";
+
+bool IsPreviewPackage() {
+    std::array<wchar_t, 32768> executable_path{};
+    const DWORD length = GetModuleFileNameW(nullptr, executable_path.data(),
+                                            static_cast<DWORD>(executable_path.size()));
+    if (length == 0 || length >= executable_path.size()) {
+        return false;
+    }
+
+    const std::filesystem::path manifest_path =
+        std::filesystem::path(std::wstring_view(executable_path.data(), length)).parent_path() /
+        L"sq.version";
+    std::error_code error;
+    const std::uintmax_t size = std::filesystem::file_size(manifest_path, error);
+    if (error || size == 0 || size > 64U * 1024U) {
+        return false;
+    }
+
+    std::ifstream input(manifest_path, std::ios::binary);
+    if (!input) {
+        return false;
+    }
+    const std::string manifest((std::istreambuf_iterator<char>(input)),
+                               std::istreambuf_iterator<char>());
+    return manifest.find("<channel>win-preview</channel>") != std::string::npos;
+}
 
 std::optional<std::string> ToUtf8(const std::wstring& value) {
     if (value.empty()) {
@@ -40,6 +70,10 @@ std::optional<std::string> ToUtf8(const std::wstring& value) {
 }
 
 std::optional<std::string> ReadUpdateSourceOverride() {
+    if (!IsPreviewPackage()) {
+        return std::nullopt;
+    }
+
     const DWORD required = GetEnvironmentVariableW(kUpdateSourceEnvironment, nullptr, 0);
     if (required == 0) {
         return std::nullopt;
@@ -51,6 +85,12 @@ std::optional<std::string> ReadUpdateSourceOverride() {
         return std::nullopt;
     }
     value.resize(written);
+
+    const std::filesystem::path source(value);
+    std::error_code error;
+    if (!source.is_absolute() || !std::filesystem::is_directory(source, error) || error) {
+        return std::nullopt;
+    }
     return ToUtf8(value);
 }
 
@@ -67,8 +107,16 @@ UpdateResult ApplyFrom(Velopack::UpdateManager& manager) {
 
 }  // namespace
 
-void RunStartupHooks() {
+StartupHookTiming RunStartupHooks() {
+    LARGE_INTEGER counter{};
+    QueryPerformanceCounter(&counter);
+    StartupHookTiming timing{counter.QuadPart, 0};
+
     Velopack::VelopackApp::Build().SetAutoApplyOnStartup(false).Run();
+
+    QueryPerformanceCounter(&counter);
+    timing.hooks_complete_qpc = counter.QuadPart;
+    return timing;
 }
 
 UpdateResult CheckDownloadAndApply() {
