@@ -62,7 +62,7 @@
       <HighEntropyVA>true</HighEntropyVA>
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <AdditionalOptions>/CETCOMPAT %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalDependencies>user32.lib;gdi32.lib;comctl32.lib;imm32.lib;shell32.lib;uxtheme.lib;ole32.lib;oleaut32.lib;uuid.lib;windowsapp.lib;advapi32.lib;usp10.lib;uiautomationcore.lib;psapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>user32.lib;gdi32.lib;comctl32.lib;imm32.lib;shell32.lib;uxtheme.lib;dwmapi.lib;ole32.lib;oleaut32.lib;uuid.lib;windowsapp.lib;advapi32.lib;usp10.lib;uiautomationcore.lib;psapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <AdditionalManifestFiles>$(ProjectDir)..\src\app.manifest</AdditionalManifestFiles>
@@ -92,6 +92,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="test_main.cpp" />
+    <ClCompile Include="..\src\application\application_container.cpp" />
+    <ClCompile Include="..\src\application\application_infrastructure_window.cpp" />
     <ClCompile Include="..\src\instrumentation\performance_trace.cpp" />
     <ClCompile Include="..\src\rendering\corner_tile_cache.cpp" />
     <ClCompile Include="..\src\rendering\layered_popup_render_context.cpp" />

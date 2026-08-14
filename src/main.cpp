@@ -6,17 +6,16 @@
 #include <memory>
 #include <string>
 
+#include "application/application_container.h"
 #include "app/app_identity.h"
 #include "instrumentation/performance_trace.h"
 #include "platform/app_paths.h"
-#include "platform/infrastructure_window.h"
 #include "platform/single_instance.h"
 #include "platform/updater.h"
 #include "platform/windows_runtime.h"
 #include "rendering/render_runtime.h"
 #include "ui/config/ui_config_gate.h"
 #include "ui/application/stub_application_bridge.h"
-#include "ui/containers/window_container.h"
 #include "ui/theme/theme_platform_adapter.h"
 
 namespace {
@@ -97,50 +96,31 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
         ui::theme::ThemePlatformAdapter::ReadInitialSnapshot());
     rendering::RenderRuntime render_runtime;
     auto application_bridge = std::make_shared<ui::application::StubApplicationBridge>();
-    ui::containers::WindowContainer window_container(
-        instance, render_runtime, config_gate.document(),
-        theme_adapter.Select(ui::config::ThemePreference::System), application_bridge);
-    if (!window_container.Create("main", diagnostic)) {
-        ShowBootstrapError(diagnostic);
-        return 2;
-    }
     const auto startup_request = platform::BuildIpcRequestFromCommandLine(command_line);
-    if (startup_request && startup_request->command == platform::IpcCommand::OpenRoute &&
-        !window_container.Navigate(startup_request->route_id, diagnostic)) {
-        ShowBootstrapError(diagnostic);
-        return 17;
-    }
-    platform::InfrastructureWindow infrastructure_window;
-    if (!infrastructure_window.Create(
-            instance,
-            [&window_container](const platform::IpcRequest& request) {
-                window_container.HandleIpcRequest(request);
-            },
-            [&theme_adapter, &window_container] {
-                if (theme_adapter.Reconcile(theme_adapter.ReadPostFirstFrameSnapshot())) {
-                    window_container.ApplyTheme(
-                        theme_adapter.Select(ui::config::ThemePreference::System));
-                }
-            },
-            diagnostic)) {
+    application::ApplicationContainer application_container(
+        instance, render_runtime, config_gate.document(), theme_adapter, application_bridge);
+    if (!application_container.Initialize("main", startup_request, diagnostic)) {
         ShowBootstrapError(diagnostic);
         return 16;
     }
+    if (!application_container.nonfatal_diagnostic().empty()) {
+        OutputDebugStringW((application_container.nonfatal_diagnostic() + L"\n").c_str());
+    }
     instrumentation::TraceFirstLayoutComplete();
 
-    if (!window_container.PrepareFirstFrame(diagnostic)) {
+    ui::containers::WindowContainer* initial_window = application_container.initial_window();
+    if (!initial_window || !initial_window->PrepareFirstFrame(diagnostic)) {
         ShowBootstrapError(diagnostic);
         return 15;
     }
     instrumentation::TraceRenderBufferReady();
-    window_container.Show(show_command);
+    initial_window->Show(show_command);
     instrumentation::TraceFirstPresentComplete();
     if (SUCCEEDED(DwmFlush())) {
         instrumentation::TraceFirstFrameVisible();
         instrumentation::TraceResourceSnapshot(render_runtime.diagnostics());
     }
-    if (!theme_adapter.StartPostFirstFrameMonitoring(
-            infrastructure_window.hwnd(), infrastructure_window.theme_signal_message(), diagnostic)) {
+    if (!application_container.StartThemeMonitoring(diagnostic)) {
         OutputDebugStringW((diagnostic + L"\n").c_str());
     }
 
@@ -151,7 +131,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
         DispatchMessageW(&message);
     }
 
-    infrastructure_window.BeginShutdown();
+    application_container.BeginShutdown();
 
     return result == -1 ? 3 : static_cast<int>(message.wParam);
 }

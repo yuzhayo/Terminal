@@ -138,7 +138,7 @@ InstanceClaim ForwardRequest(const IpcRequest& request) {
     for (const DWORD scheduled : kReceiverScheduleMs) {
         const ULONGLONG elapsed = GetTickCount64() - started;
         if (elapsed < scheduled) Sleep(static_cast<DWORD>(scheduled - elapsed));
-        HWND receiver = FindWindowExW(HWND_MESSAGE, nullptr, kInfrastructureClass, nullptr);
+        HWND receiver = FindWindowW(kInfrastructureClass, nullptr);
         if (!receiver) continue;
         DWORD_PTR packed = 0;
         SetLastError(ERROR_SUCCESS);

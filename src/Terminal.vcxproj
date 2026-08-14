@@ -97,9 +97,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="application\application_container.cpp" />
+    <ClCompile Include="application\application_infrastructure_window.cpp" />
     <ClCompile Include="instrumentation\performance_trace.cpp" />
     <ClCompile Include="platform\app_paths.cpp" />
-    <ClCompile Include="platform\infrastructure_window.cpp" />
     <ClCompile Include="platform\single_instance.cpp" />
     <ClCompile Include="platform\updater.cpp" />
     <ClCompile Include="platform\windows_runtime.cpp" />
@@ -138,9 +139,10 @@
     <ClCompile Include="ui\theme\theme_platform_adapter.cpp" />
     <ClInclude Include="app\app_identity.h" />
     <ClInclude Include="app\app_version.h" />
+    <ClInclude Include="application\application_container.h" />
+    <ClInclude Include="application\application_infrastructure_window.h" />
     <ClInclude Include="instrumentation\performance_trace.h" />
     <ClInclude Include="platform\app_paths.h" />
-    <ClInclude Include="platform\infrastructure_window.h" />
     <ClInclude Include="platform\single_instance.h" />
     <ClInclude Include="platform\updater.h" />
     <ClInclude Include="platform\windows_runtime.h" />

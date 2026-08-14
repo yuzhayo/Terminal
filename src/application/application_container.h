@@ -1,0 +1,99 @@
+#pragma once
+
+#include <windows.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "application/application_infrastructure_window.h"
+#include "platform/single_instance.h"
+#include "rendering/render_runtime.h"
+#include "ui/application/ui_application_bridge.h"
+#include "ui/config/resolved_ui_document.h"
+#include "ui/containers/window_container.h"
+#include "ui/theme/theme_platform_adapter.h"
+
+namespace application {
+
+struct ApplicationContainerOptions {
+    bool enable_tray = true;
+    int created_window_show_command = SW_SHOWNORMAL;
+};
+
+class ApplicationContainer final {
+public:
+    ApplicationContainer(
+        HINSTANCE instance, rendering::RenderRuntime& render_runtime,
+        std::shared_ptr<const ui::config::ResolvedUiDocument> document,
+        ui::theme::ThemePlatformAdapter& theme_adapter,
+        std::shared_ptr<ui::application::UiApplicationBridge> application_bridge,
+        ApplicationContainerOptions options = {});
+    ~ApplicationContainer();
+
+    ApplicationContainer(const ApplicationContainer&) = delete;
+    ApplicationContainer& operator=(const ApplicationContainer&) = delete;
+
+    bool Initialize(std::string window_id,
+                    const std::optional<platform::IpcRequest>& startup_request,
+                    std::wstring& diagnostic);
+    bool PrepareAndShowInitialWindow(int show_command, std::wstring& diagnostic);
+    bool StartThemeMonitoring(std::wstring& diagnostic) noexcept;
+    bool OpenExternalRoute(std::string_view route_id, std::wstring& diagnostic);
+    void ActivateDefault();
+    void HandleIpcRequest(const platform::IpcRequest& request);
+    void BeginShutdown() noexcept;
+
+    ui::containers::WindowContainer* initial_window() noexcept;
+    ui::containers::WindowContainer* FindRouteWindow(std::string_view route_id) noexcept;
+    std::size_t window_count() const noexcept;
+    std::size_t visible_window_count() const noexcept;
+    bool tray_available() const noexcept;
+    HWND infrastructure_hwnd() const noexcept;
+    UINT taskbar_created_message() const noexcept;
+    const std::wstring& nonfatal_diagnostic() const noexcept;
+
+private:
+    struct WindowRecord {
+        std::unique_ptr<ui::containers::WindowContainer> container;
+    };
+
+    ui::containers::WindowContainer* CreateRouteWindow(std::string_view route_id,
+                                                        bool prepare_and_show,
+                                                        int show_command,
+                                                        std::wstring& diagnostic);
+    void OnWindowDestroyed(std::uint64_t registry_id) noexcept;
+    void DrainApplicationWork();
+    void HandleProcessSignals(std::uint32_t signals);
+    void HandleTrayInteraction(TrayInteraction interaction, POINT point);
+    void HandleTaskbarCreated();
+    void ShowTrayMenu(POINT point);
+    bool InstallTrayIcon(std::wstring& diagnostic) noexcept;
+    void RemoveTrayIcon() noexcept;
+    void RequestExit() noexcept;
+    std::string DefaultRoute() const;
+    bool IsConfiguredRoute(std::string_view route_id) const noexcept;
+
+    HINSTANCE instance_ = nullptr;
+    rendering::RenderRuntime& render_runtime_;
+    std::shared_ptr<const ui::config::ResolvedUiDocument> document_;
+    ui::theme::ThemePlatformAdapter& theme_adapter_;
+    std::shared_ptr<ui::application::UiApplicationBridge> application_bridge_;
+    ApplicationContainerOptions options_;
+    ApplicationInfrastructureWindow infrastructure_window_;
+    std::map<std::uint64_t, WindowRecord> windows_;
+    std::vector<std::uint64_t> destroyed_window_ids_;
+    std::string window_definition_id_;
+    std::uint64_t initial_window_id_ = 0;
+    std::uint64_t next_window_id_ = 1;
+    bool tray_icon_added_ = false;
+    bool shutdown_in_progress_ = false;
+    std::wstring nonfatal_diagnostic_;
+};
+
+}  // namespace application

@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <functional>
 #include <memory>
 #include <map>
 #include <optional>
@@ -23,6 +24,8 @@ namespace ui::containers {
 
 class WindowContainer final {
 public:
+    using DestroyedHandler = std::function<void(WindowContainer&)>;
+
     WindowContainer(HINSTANCE instance, rendering::RenderRuntime& render_runtime,
                     std::shared_ptr<const config::ResolvedUiDocument> document,
                     config::ThemeKind theme_kind,
@@ -38,10 +41,11 @@ public:
     void ResumeNativePeers();
     void Show(int show_command);
     void ApplyTheme(config::ThemeKind theme_kind);
+    void ApplySharedTheme(config::ThemeKind theme_kind);
     bool Navigate(std::string_view route_id, std::wstring& diagnostic);
     bool ReloadDocument(std::shared_ptr<const config::ResolvedUiDocument> document,
                         std::wstring& diagnostic);
-    void HandleIpcRequest(const platform::IpcRequest& request);
+    void SetDestroyedHandler(DestroyedHandler handler);
     HWND hwnd() const noexcept;
     std::string_view active_route() const noexcept;
     std::size_t cached_screen_count() const noexcept;
@@ -59,6 +63,8 @@ private:
     void CaptureScreenSnapshots();
     bool InstallDocument(std::shared_ptr<const config::ResolvedUiDocument> document,
                          std::string_view preferred_route, std::wstring& diagnostic);
+    void ApplyThemeState(config::ThemeKind theme_kind, bool advance_shared_epoch);
+    void ApplyNonClientTheme() noexcept;
     void ResetAutomationProvider();
     bool RenderCompleteFrame(HDC reference);
     bool RenderFrame(HDC reference, const RECT& requested_region, bool force_full);
@@ -112,6 +118,7 @@ private:
     std::uint64_t last_scenario_correlation_ = 0;
     bool resources_prepared_ = false;
     bool frame_ready_ = false;
+    DestroyedHandler destroyed_handler_;
 };
 
 }  // namespace ui::containers

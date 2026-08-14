@@ -9,6 +9,7 @@ cara memakai kontrak tersebut tanpa memilih ulang stack.
 ```text
 terminal.ui.default.v1.json
   -> UiConfigGate + ResolvedUiDocument
+  -> ApplicationContainer memiliki process/window registry
   -> WindowContainer memilih route aktif
   -> ComponentRegistry membuat component tree secara lazy
   -> component mengirim UiEvent berdasarkan events.action
@@ -16,6 +17,10 @@ terminal.ui.default.v1.json
   -> UiActionRegistry mencari handler
   -> handler menjalankan logic dan mengembalikan UiPatch
   -> WindowContainer menerapkan navigation, dialog, title, dan repaint
+
+second launch / tray / taskbar
+  -> ApplicationInfrastructureWindow memvalidasi dan mengantrekan intent
+  -> ApplicationContainer mengaktifkan route window yang ada atau membuat WindowContainer baru
 ```
 
 Route tidak memiliki inventory hardcoded. Semua key di object `screens` menjadi route yang valid.
@@ -48,6 +53,10 @@ dari component terdaftar dan logic dapat dipasang melalui action registry tanpa 
   tersedia sekarang.
 - `src/ui/containers/window_container.h/.cpp`: route lifecycle, lazy screen cache, input routing,
   modal, focus, UIA, layout, dan paint.
+- `src/application/application_infrastructure_window.h/.cpp`: hidden process window untuk IPC,
+  tray callback, `TaskbarCreated`, dan process-global Windows signals.
+- `src/application/application_container.h/.cpp`: composition root process, top-level window registry,
+  external route routing, tray lifetime, dan shared resource fan-out.
 - `tests/test_main.cpp`: contract dan behavior tests.
 
 Nested repository `Open-terminal` dan `Open-terminal-native` hanya referensi. Jangan menaruh source
@@ -402,6 +411,18 @@ Business logic tidak menerima `HWND`, device context, atau pointer component.
 `view_state` belum merupakan binding engine universal yang otomatis menulis semua property component.
 Jika feature menambah binding baru, bridge harus mengeksposnya melalui `ResolveStringItems` atau
 `ResolveStringValue`, dan component terkait harus mempunyai refresh behavior yang sesuai.
+
+### Process-level route intent
+
+Navigation dari `UiPatch.route_id` tetap same-window. Intent dari second launch, tray, atau taskbar
+masuk melalui `ApplicationContainer::OpenExternalRoute`. Route harus sudah ada di object `screens`;
+route invalid ditolak sebelum masuk IPC queue. Matching route window diaktifkan kembali, sedangkan
+route yang belum mempunyai window dibuat sebagai top-level `WindowContainer` baru. Jangan memanggil
+`CreateWindowEx`, `Shell_NotifyIcon`, atau mencari HWND route dari feature/action handler.
+
+`ApplicationInfrastructureWindow` adalah hidden top-level tool window, bukan `HWND_MESSAGE`, agar satu
+receiver yang sama dapat menerima `WM_COPYDATA`, tray callback, process-global theme/settings signal,
+dan broadcast `TaskbarCreated`. `WM_DPICHANGED` tetap ditangani masing-masing route window/popup.
 
 ### Reload generation dan state reconciliation
 

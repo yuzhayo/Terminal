@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <shellapi.h>
 
 #include <nlohmann/json.hpp>
 
@@ -17,6 +18,8 @@
 #include <string_view>
 #include <vector>
 
+#include "application/application_container.h"
+#include "application/application_infrastructure_window.h"
 #include "app/app_identity.h"
 #include "platform/app_paths.h"
 #include "platform/single_instance.h"
@@ -1643,6 +1646,178 @@ void TestSingleInstanceIpcContract() {
     REQUIRE_TRUE(!platform::ParseIpcPayload(duplicate.data(), duplicate.size()).request.has_value());
 }
 
+void PumpPostedWindowMessages() {
+    MSG message{};
+    while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+        if (message.message == WM_QUIT) {
+            PostQuitMessage(static_cast<int>(message.wParam));
+            break;
+        }
+        TranslateMessage(&message);
+        DispatchMessageW(&message);
+    }
+}
+
+LRESULT SendIpcRequest(HWND receiver, const platform::IpcRequest& request) {
+    const std::string payload = platform::SerializeIpcRequest(request);
+    REQUIRE_TRUE(!payload.empty());
+    COPYDATASTRUCT copy_data{platform::kIpcCopyDataId,
+                             static_cast<DWORD>(payload.size()),
+                             const_cast<char*>(payload.data())};
+    return SendMessageW(receiver, WM_COPYDATA, 0,
+                        reinterpret_cast<LPARAM>(&copy_data));
+}
+
+void TestApplicationInfrastructureWindowContract() {
+    std::vector<platform::IpcRequest> requests;
+    std::vector<std::uint32_t> signal_batches;
+    std::vector<application::TrayInteraction> tray_interactions;
+    int taskbar_created_count = 0;
+    int application_work_count = 0;
+    application::ApplicationInfrastructureWindow infrastructure;
+    std::wstring diagnostic;
+    REQUIRE_TRUE(infrastructure.Create(
+        GetModuleHandleW(nullptr),
+        [&requests](const platform::IpcRequest& request) { requests.push_back(request); },
+        [](std::string_view route_id) { return route_id == "settings"; },
+        [&signal_batches](std::uint32_t signals) { signal_batches.push_back(signals); },
+        [&tray_interactions](application::TrayInteraction interaction, POINT) {
+            tray_interactions.push_back(interaction);
+        },
+        [&taskbar_created_count] { ++taskbar_created_count; },
+        [&application_work_count] { ++application_work_count; }, diagnostic));
+
+    const HWND window = infrastructure.hwnd();
+    REQUIRE_TRUE(window != nullptr);
+    REQUIRE_TRUE(!IsWindowVisible(window));
+    REQUIRE_TRUE(GetParent(window) == nullptr);
+    const LONG_PTR extended_style = GetWindowLongPtrW(window, GWL_EXSTYLE);
+    REQUIRE_TRUE((extended_style & WS_EX_TOOLWINDOW) != 0);
+    REQUIRE_TRUE((extended_style & WS_EX_APPWINDOW) == 0);
+    REQUIRE_TRUE(FindWindowW(platform::InfrastructureWindowClassName(), nullptr) == window);
+    REQUIRE_TRUE(FindWindowExW(HWND_MESSAGE, nullptr,
+                               platform::InfrastructureWindowClassName(), nullptr) == nullptr);
+
+    const platform::IpcRequest valid{
+        "01234567-89ab-cdef-0123-456789abcdef",
+        platform::IpcCommand::OpenRoute, "settings"};
+    const LRESULT accepted = SendIpcRequest(window, valid);
+    REQUIRE_TRUE(LOWORD(accepted) == static_cast<WORD>(platform::IpcStatus::Accepted));
+    REQUIRE_TRUE(requests.empty());
+    PumpPostedWindowMessages();
+    REQUIRE_TRUE(requests.size() == 1);
+    REQUIRE_TRUE(requests.front() == valid);
+
+    REQUIRE_TRUE(LOWORD(SendIpcRequest(window, valid)) ==
+                 static_cast<WORD>(platform::IpcStatus::Accepted));
+    PumpPostedWindowMessages();
+    REQUIRE_TRUE(requests.size() == 1);
+
+    const platform::IpcRequest invalid_route{
+        "11234567-89ab-cdef-0123-456789abcdef",
+        platform::IpcCommand::OpenRoute, "terminal"};
+    const LRESULT rejected = SendIpcRequest(window, invalid_route);
+    REQUIRE_TRUE(LOWORD(rejected) == static_cast<WORD>(platform::IpcStatus::Rejected));
+    REQUIRE_TRUE(HIWORD(rejected) == static_cast<WORD>(platform::IpcError::InvalidRoute));
+
+    SendMessageW(window, WM_SYSCOLORCHANGE, 0, 0);
+    SendMessageW(window, WM_SETTINGCHANGE, 0, 0);
+    REQUIRE_TRUE(signal_batches.empty());
+    PumpPostedWindowMessages();
+    REQUIRE_TRUE(signal_batches.size() == 1);
+    REQUIRE_TRUE((signal_batches.front() &
+                  application::SignalMask(application::ProcessGlobalSignal::SystemColors)) != 0);
+    REQUIRE_TRUE((signal_batches.front() &
+                  application::SignalMask(application::ProcessGlobalSignal::Settings)) != 0);
+
+    SendMessageW(window, infrastructure.tray_callback_message(), 0, NIN_SELECT);
+    SendMessageW(window, infrastructure.tray_callback_message(), 0, WM_CONTEXTMENU);
+    REQUIRE_TRUE(tray_interactions.size() == 2);
+    REQUIRE_TRUE(tray_interactions[0] == application::TrayInteraction::ActivateDefault);
+    REQUIRE_TRUE(tray_interactions[1] == application::TrayInteraction::OpenContextMenu);
+
+    SendMessageW(window, infrastructure.taskbar_created_message(), 0, 0);
+    REQUIRE_TRUE(taskbar_created_count == 1);
+    REQUIRE_TRUE(infrastructure.PostApplicationWork());
+    PumpPostedWindowMessages();
+    REQUIRE_TRUE(application_work_count == 1);
+
+    infrastructure.BeginShutdown();
+    const platform::IpcRequest after_shutdown{
+        "21234567-89ab-cdef-0123-456789abcdef",
+        platform::IpcCommand::ActivateDefault, {}};
+    const LRESULT busy = SendIpcRequest(window, after_shutdown);
+    REQUIRE_TRUE(LOWORD(busy) == static_cast<WORD>(platform::IpcStatus::Busy));
+    REQUIRE_TRUE(HIWORD(busy) ==
+                 static_cast<WORD>(platform::IpcError::ShutdownInProgress));
+}
+
+void TestApplicationContainerRegistryAndRouting() {
+    const auto resolved = ui::config::detail::ResolveDocuments(
+        ReadEmbeddedDefaultJson(), std::nullopt, 1);
+    rendering::RenderRuntime runtime;
+    ui::theme::ThemePlatformAdapter theme_adapter(
+        {false, ui::theme::PlatformAppTheme::Light, false});
+    auto bridge = std::make_shared<ui::application::StubApplicationBridge>();
+    application::ApplicationContainerOptions options;
+    options.enable_tray = false;
+    options.created_window_show_command = SW_HIDE;
+    application::ApplicationContainer container(
+        GetModuleHandleW(nullptr), runtime, resolved.document, theme_adapter, bridge,
+        options);
+    std::wstring diagnostic;
+    REQUIRE_TRUE(container.Initialize("main", std::nullopt, diagnostic));
+    REQUIRE_TRUE(container.infrastructure_hwnd() != nullptr);
+    REQUIRE_TRUE(!IsWindowVisible(container.infrastructure_hwnd()));
+    REQUIRE_TRUE(container.window_count() == 1);
+    REQUIRE_TRUE(container.initial_window() != nullptr);
+    REQUIRE_TRUE(container.initial_window()->active_route() == "terminal");
+    REQUIRE_TRUE(container.PrepareAndShowInitialWindow(SW_HIDE, diagnostic));
+
+    REQUIRE_TRUE(container.OpenExternalRoute("chrome-launcher", diagnostic));
+    REQUIRE_TRUE(container.window_count() == 2);
+    ui::containers::WindowContainer* chrome =
+        container.FindRouteWindow("chrome-launcher");
+    REQUIRE_TRUE(chrome != nullptr);
+    REQUIRE_TRUE(container.initial_window()->active_route() == "terminal");
+    REQUIRE_TRUE(container.OpenExternalRoute("chrome-launcher", diagnostic));
+    REQUIRE_TRUE(container.window_count() == 2);
+    REQUIRE_TRUE(container.FindRouteWindow("chrome-launcher") == chrome);
+    REQUIRE_TRUE(!container.OpenExternalRoute("not-configured", diagnostic));
+    REQUIRE_TRUE(container.window_count() == 2);
+
+    const std::uint64_t epoch_before = runtime.resource_epoch();
+    SendMessageW(container.infrastructure_hwnd(), WM_SYSCOLORCHANGE, 0, 0);
+    SendMessageW(container.infrastructure_hwnd(), WM_SETTINGCHANGE, 0, 0);
+    PumpPostedWindowMessages();
+    REQUIRE_TRUE(runtime.resource_epoch() == epoch_before + 1);
+
+    const platform::IpcRequest second_launch{
+        "31234567-89ab-cdef-0123-456789abcdef",
+        platform::IpcCommand::OpenRoute, "settings"};
+    REQUIRE_TRUE(LOWORD(SendIpcRequest(container.infrastructure_hwnd(), second_launch)) ==
+                 static_cast<WORD>(platform::IpcStatus::Accepted));
+    PumpPostedWindowMessages();
+    REQUIRE_TRUE(container.window_count() == 3);
+    ui::containers::WindowContainer* settings = container.FindRouteWindow("settings");
+    REQUIRE_TRUE(settings != nullptr);
+
+    const platform::IpcRequest invalid_second_launch{
+        "41234567-89ab-cdef-0123-456789abcdef",
+        platform::IpcCommand::OpenRoute, "not-configured"};
+    const LRESULT rejected =
+        SendIpcRequest(container.infrastructure_hwnd(), invalid_second_launch);
+    REQUIRE_TRUE(LOWORD(rejected) == static_cast<WORD>(platform::IpcStatus::Rejected));
+    REQUIRE_TRUE(HIWORD(rejected) == static_cast<WORD>(platform::IpcError::InvalidRoute));
+
+    REQUIRE_TRUE(DestroyWindow(settings->hwnd()));
+    PumpPostedWindowMessages();
+    REQUIRE_TRUE(container.window_count() == 2);
+    REQUIRE_TRUE(container.FindRouteWindow("settings") == nullptr);
+    container.BeginShutdown();
+    REQUIRE_TRUE(container.window_count() == 0);
+}
+
 void TestStubApplicationBridgePatch() {
     ui::application::StubApplicationBridge bridge;
     REQUIRE_TRUE(bridge.registered_action_count() == 16);
@@ -1700,6 +1875,8 @@ void TestWindowsRuntimeMinimumBuild() {
 std::vector<TestCase> DiscoverTests() {
     std::vector<TestCase> tests = {
         {"AppIdentity.Contract", TestAppIdentityContract, __FILE__, __LINE__},
+        {"ApplicationContainer.RegistryAndRouting", TestApplicationContainerRegistryAndRouting, __FILE__, __LINE__},
+        {"ApplicationInfrastructureWindow.Contract", TestApplicationInfrastructureWindowContract, __FILE__, __LINE__},
         {"AppPaths.Contract", TestAppPathsContract, __FILE__, __LINE__},
         {"ComponentRegistry.VerticalSlice", TestComponentRegistryVerticalSlice, __FILE__, __LINE__},
         {"Combo.PopupPlacement", TestComboPopupPlacement, __FILE__, __LINE__},

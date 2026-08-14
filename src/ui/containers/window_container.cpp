@@ -1,5 +1,6 @@
 #include "ui/containers/window_container.h"
 
+#include <dwmapi.h>
 #include <shellapi.h>
 #include <windowsx.h>
 
@@ -121,6 +122,7 @@ bool WindowContainer::Create(const std::string& window_id, std::wstring& diagnos
         diagnostic = L"Main window tidak dapat dibuat.";
         return false;
     }
+    ApplyNonClientTheme();
     dpi_ = GetDpiForWindow(window_);
     render_context_.SetRedrawRequest([this] {
         if (window_) InvalidateRect(window_, nullptr, FALSE);
@@ -537,10 +539,20 @@ void WindowContainer::Show(int show_command) {
 }
 
 void WindowContainer::ApplyTheme(config::ThemeKind theme_kind) {
+    ApplyThemeState(theme_kind, true);
+}
+
+void WindowContainer::ApplySharedTheme(config::ThemeKind theme_kind) {
+    ApplyThemeState(theme_kind, false);
+}
+
+void WindowContainer::ApplyThemeState(config::ThemeKind theme_kind,
+                                      bool advance_shared_epoch) {
     if (!component_host_) return;
     theme_kind_ = theme_kind;
     component_host_->theme = &document_->theme(theme_kind_);
-    render_runtime_.AdvanceResourceEpoch();
+    if (advance_shared_epoch) render_runtime_.AdvanceResourceEpoch();
+    ApplyNonClientTheme();
     if (root_) root_->OnDpiChanged();
     resources_prepared_ = false;
     PrepareRenderResources();
@@ -548,31 +560,19 @@ void WindowContainer::ApplyTheme(config::ThemeKind theme_kind) {
     InvalidateRect(window_, nullptr, FALSE);
 }
 
+void WindowContainer::ApplyNonClientTheme() noexcept {
+    if (!window_) return;
+    const BOOL enabled = theme_kind_ == config::ThemeKind::Dark ? TRUE : FALSE;
+    DwmSetWindowAttribute(window_, DWMWA_USE_IMMERSIVE_DARK_MODE, &enabled,
+                          sizeof(enabled));
+}
+
 bool WindowContainer::Navigate(std::string_view route_id, std::wstring& diagnostic) {
     return ActivateRoute(route_id, diagnostic);
 }
 
-void WindowContainer::HandleIpcRequest(const platform::IpcRequest& request) {
-    if (!window_) return;
-    if (request.command == platform::IpcCommand::RequestExit) {
-        DestroyWindow(window_);
-        return;
-    }
-    if (request.command == platform::IpcCommand::OpenRoute) {
-        const std::uint64_t correlation = NextCorrelationId();
-        instrumentation::TraceNavigationRequested(correlation);
-        std::wstring diagnostic;
-        if (!ActivateRoute(request.route_id, diagnostic)) {
-            OutputDebugStringW((diagnostic + L"\n").c_str());
-            platform::ActivateMainWindow(window_);
-            return;
-        }
-        pending_navigation_correlation_ = correlation;
-        last_scenario_correlation_ = correlation;
-        SetTimer(window_, 1, 10000, nullptr);
-    }
-    platform::ActivateMainWindow(window_);
-    InvalidateRect(window_, nullptr, FALSE);
+void WindowContainer::SetDestroyedHandler(DestroyedHandler handler) {
+    destroyed_handler_ = std::move(handler);
 }
 
 HWND WindowContainer::hwnd() const noexcept {
@@ -717,10 +717,7 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
         }
         case WM_SYSCOLORCHANGE:
         case WM_THEMECHANGED:
-            render_runtime_.AdvanceResourceEpoch();
-            if (root_) root_->OnDpiChanged();
-            resources_prepared_ = false;
-            PrepareRenderResources();
+            // Process-global resource invalidation is owned by ApplicationContainer.
             return 0;
         case WM_PAINT: {
             PAINTSTRUCT paint{};
@@ -854,7 +851,7 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             RemovePropW(window_, L"Terminal.MinimumWidth");
             RemovePropW(window_, L"Terminal.MinimumHeight");
             window_ = nullptr;
-            PostQuitMessage(0);
+            if (destroyed_handler_) destroyed_handler_(*this);
             return 0;
         default:
             break;
