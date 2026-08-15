@@ -1494,7 +1494,20 @@ void TestWindowContainerDpiTransition() {
     std::uint64_t expected_epoch = runtime.resource_epoch();
     int offset = 40;
     for (const UINT dpi : {96u, 120u, 144u, 192u}) {
-        const RECT suggested{offset, offset, offset + 1600, offset + 1100};
+        MINMAXINFO current_limits{};
+        SendMessageW(window.hwnd(), WM_GETMINMAXINFO, 0,
+                     reinterpret_cast<LPARAM>(&current_limits));
+        const auto choose_suggested_extent = [](LONG minimum, LONG maximum) {
+            LONG extent = std::max(1L, minimum + 40);
+            if (maximum >= minimum && maximum > 0) extent = std::min(extent, maximum);
+            return extent;
+        };
+        const LONG suggested_width = choose_suggested_extent(
+            current_limits.ptMinTrackSize.x, current_limits.ptMaxTrackSize.x);
+        const LONG suggested_height = choose_suggested_extent(
+            current_limits.ptMinTrackSize.y, current_limits.ptMaxTrackSize.y);
+        const RECT suggested{offset, offset, offset + suggested_width,
+                             offset + suggested_height};
         SendMessageW(window.hwnd(), WM_DPICHANGED, MAKELONG(dpi, dpi),
                      reinterpret_cast<LPARAM>(&suggested));
         ++expected_epoch;
