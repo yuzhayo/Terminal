@@ -75,8 +75,11 @@ void LoadSettingsFile() {
     json::Value root;
     if (!json::Parse(text, &root, nullptr) || !root.is_object()) return;
 
-    g_settings.theme = root.StringField(L"theme", L"dark");
-    if (g_settings.theme != L"light") g_settings.theme = L"dark";
+    g_settings.theme = root.StringField(L"theme", L"system");
+    if (g_settings.theme != L"system" && g_settings.theme != L"light" &&
+        g_settings.theme != L"dark") {
+        g_settings.theme = L"system";
+    }
 
     if (const json::Value* terminal = root.ObjectField(L"terminal")) {
         g_settings.terminal_folder = terminal->StringField(L"folder");
@@ -84,6 +87,7 @@ void LoadSettingsFile() {
         g_settings.venv_powershell_admin = terminal->BoolField(L"venvPowerShellAdmin");
         g_settings.venv_powershell = terminal->BoolField(L"venvPowerShell");
         g_settings.venv_wsl = terminal->BoolField(L"venvWsl");
+        g_settings.confirm_before_run = terminal->BoolField(L"confirmBeforeRun", true);
     }
 
     if (const json::Value* inject = root.ObjectField(L"jsonInject")) {
@@ -194,7 +198,7 @@ void Load() {
 bool SaveSettings() {
     json::Value root = json::Value::Object();
     root.Set(L"version", json::Value::Number(1));
-    root.Set(L"theme", json::Value::String(g_settings.theme.empty() ? L"dark" : g_settings.theme));
+    root.Set(L"theme", json::Value::String(g_settings.theme.empty() ? L"system" : g_settings.theme));
 
     json::Value terminal = json::Value::Object();
     terminal.Set(L"folder", json::Value::String(g_settings.terminal_folder));
@@ -202,6 +206,7 @@ bool SaveSettings() {
     terminal.Set(L"venvPowerShellAdmin", json::Value::Bool(g_settings.venv_powershell_admin));
     terminal.Set(L"venvPowerShell", json::Value::Bool(g_settings.venv_powershell));
     terminal.Set(L"venvWsl", json::Value::Bool(g_settings.venv_wsl));
+    terminal.Set(L"confirmBeforeRun", json::Value::Bool(g_settings.confirm_before_run));
     root.Set(L"terminal", std::move(terminal));
 
     json::Value inject = json::Value::Object();

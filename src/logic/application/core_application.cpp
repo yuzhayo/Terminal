@@ -6,6 +6,9 @@
 #include "features/claude_settings_file.h"
 #include "features/terminal_launch.h"
 #include "storage/settings.h"
+#include "storage/json.h"
+#include "platform/wsl.h"
+#include "platform/com.h"
 
 namespace application {
 
@@ -15,13 +18,16 @@ public:
 };
 
 CoreApplication::CoreApplication() : impl_(std::make_unique<Impl>()) {}
-CoreApplication::~CoreApplication() = default;
+CoreApplication::~CoreApplication() {
+    platform::ReleaseCom();
+}
 
-void CoreApplication::Initialize() {
-    if (impl_->initialized) return;
+core::Status CoreApplication::Initialize() {
+    if (impl_->initialized) return core::NoStatus();
     storage::Load();             // loads settings.json and providers.json
     features::LoadProfileCache();
     impl_->initialized = true;
+    return core::NoStatus();
 }
 
 // --- Terminal ---
@@ -41,15 +47,34 @@ std::vector<std::wstring> CoreApplication::RecentFolders() const {
     return storage::CurrentSettings().recent_folders;
 }
 
-void CoreApplication::ClearRecentFolders() {
+std::wstring CoreApplication::TerminalFolder() const {
+    return storage::CurrentSettings().terminal_folder;
+}
+
+bool CoreApplication::TerminalVenvEnabled(features::TerminalTarget target) const {
+    return features::VenvEnabled(target);
+}
+
+core::Status CoreApplication::SetTerminalVenvEnabled(features::TerminalTarget target,
+                                                     bool enabled) {
+    return features::SetVenvEnabled(target, enabled);
+}
+
+core::Status CoreApplication::ClearRecentFolders() {
     storage::CurrentSettings().recent_folders.clear();
-    storage::SaveSettings();
+    if (!storage::SaveSettings()) {
+        return core::Error(core::ErrorCode::PersistenceFailed,
+                           L"Could not clear recent folders.");
+    }
+    return core::Success(L"Recent folders cleared.");
 }
 
 // --- Claude Inject ---
 
-core::Status CoreApplication::AddBaseUrl(const std::wstring& url) {
-    return features::AddBaseUrl(url, L"", L"");
+core::Status CoreApplication::AddBaseUrl(const std::wstring& url,
+                                         const std::wstring& label,
+                                         const std::wstring& model) {
+    return features::AddBaseUrl(url, label, model);
 }
 
 core::Status CoreApplication::BulkAddApiKeys(
@@ -68,22 +93,44 @@ core::Status CoreApplication::BulkAddApiKeys(
         : core::Info(L"No new API keys to add.");
 }
 
-core::Status CoreApplication::InjectClaude(bool target_wsl) {
-    const features::InjectTarget target = target_wsl
-        ? features::InjectTarget::UbuntuWsl
-        : features::InjectTarget::Windows;
-    if (features::InjectNeedsWslProbe(target))
-        return core::Info(
-            L"Still looking for the Ubuntu WSL home directory — try again in a moment.");
+core::Status CoreApplication::SelectBaseUrl(const std::wstring& id) {
+    return features::SelectBaseUrl(id);
+}
+
+core::Status CoreApplication::SelectApiKey(const std::wstring& id) {
+    return features::SelectApiKey(id);
+}
+
+core::Status CoreApplication::CommitInjectModel(const std::wstring& model) {
+    return features::CommitModel(model);
+}
+
+core::Status CoreApplication::InjectClaude(features::InjectTarget target) {
+    if (features::InjectNeedsWslProbe(target)) {
+        const wsl::Probe probe = wsl::ResolveProbe();
+        if (!probe.ok) return core::Error(core::ErrorCode::WslNotReady, probe.error);
+    }
     return features::Inject(target);
 }
 
-std::vector<std::wstring> CoreApplication::BaseUrls() const {
-    return features::BaseUrlDisplayList();
+std::vector<features::InjectChoice> CoreApplication::BaseUrlChoices() const {
+    return features::BaseUrlChoices();
 }
 
-std::vector<std::wstring> CoreApplication::ApiKeys() const {
-    return features::ApiKeyDisplayList();
+std::vector<features::InjectChoice> CoreApplication::ApiKeyChoices() const {
+    return features::ApiKeyChoices();
+}
+
+std::wstring CoreApplication::SelectedBaseUrlId() const {
+    return features::SelectedBaseUrlId();
+}
+
+std::wstring CoreApplication::SelectedApiKeyId() const {
+    return features::SelectedApiKeyId();
+}
+
+std::wstring CoreApplication::SelectedInjectModel() const {
+    return features::SelectedModel();
 }
 
 // --- Claude Settings File Editor ---
@@ -111,6 +158,15 @@ core::Status CoreApplication::SaveEditor(features::EditorTarget target,
 
 core::Status CoreApplication::RestoreEditorBackup(features::EditorTarget target) {
     return features::RestoreBackup(target);
+}
+
+core::Status CoreApplication::ValidateEditor(const features::EditorDraft& draft) const {
+    json::Value parsed;
+    std::wstring error;
+    if (!json::Parse(features::FromEditorText(draft.text), &parsed, &error)) {
+        return core::Error(core::ErrorCode::InvalidJson, std::move(error));
+    }
+    return core::Success(L"JSON is valid.");
 }
 
 // --- Chrome Profiles ---
@@ -165,6 +221,28 @@ core::Status CoreApplication::ReorderChromeCards(size_t from_index, size_t to_in
     return features::ReorderCards(from_index, to_index);
 }
 
+std::vector<features::ChromeProfile> CoreApplication::CachedChromeProfiles(
+    features::ChromeRuntime runtime) const {
+    return features::CachedProfiles(runtime);
+}
+
+std::vector<features::ChromeProfile> CoreApplication::VisibleChromeProfiles(
+    features::ChromeRuntime runtime) const {
+    return features::VisibleProfiles(runtime);
+}
+
+std::vector<features::ChromeBookmark> CoreApplication::ChromeBookmarks() const {
+    return features::Bookmarks();
+}
+
+std::wstring CoreApplication::SelectedChromeBookmarkId() const {
+    return features::SelectedBookmarkId();
+}
+
+core::Status CoreApplication::SelectChromeBookmarkById(const std::wstring& id) {
+    return features::SelectBookmarkById(id);
+}
+
 // --- App Settings ---
 
 std::wstring CoreApplication::CurrentTheme() const {
@@ -173,6 +251,14 @@ std::wstring CoreApplication::CurrentTheme() const {
 
 core::Status CoreApplication::SetTheme(const std::wstring& token) {
     return features::SetTheme(token);
+}
+
+bool CoreApplication::ConfirmBeforeRun() const {
+    return features::ConfirmBeforeRun();
+}
+
+core::Status CoreApplication::SetConfirmBeforeRun(bool enabled) {
+    return features::SetConfirmBeforeRun(enabled);
 }
 
 bool CoreApplication::IsStartWithWindowsEnabled() const {

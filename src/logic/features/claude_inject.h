@@ -82,4 +82,15 @@ void HealBaseUrlSelection();
 // Same for the API key within the currently selected base URL.
 void HealApiKeySelection();
 
+struct InjectChoice {
+    std::wstring id;
+    std::wstring label;
+};
+
+std::vector<InjectChoice> BaseUrlChoices();
+std::vector<InjectChoice> ApiKeyChoices();
+std::wstring SelectedBaseUrlId();
+std::wstring SelectedApiKeyId();
+std::wstring SelectedModel();
+
 }  // namespace features

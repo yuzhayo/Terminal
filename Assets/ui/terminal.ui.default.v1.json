@@ -1903,7 +1903,7 @@
               "valueBinding": {
                 "$bind": "viewState.terminalInput"
               },
-              "placeholder": "Ketik placeholder…",
+              "placeholder": "Pilih folder kerja terminal",
               "events": {
                 "changed": {
                   "action": "update-terminal-draft",
@@ -1969,18 +1969,18 @@
                   }
                 },
                 {
-                  "id": "terminal-active",
+                  "id": "terminal-venv-enabled",
                   "type": "Toggle",
                   "style": {
                     "$ref": "styles.toggle"
                   },
-                  "label": "Terminal aktif",
+                  "label": "Aktifkan .venv bila tersedia",
                   "checkedBinding": {
-                    "$bind": "viewState.terminalActive"
+                    "$bind": "viewState.terminalVenvEnabled"
                   },
                   "events": {
                     "changed": {
-                      "action": "toggle-terminal-active",
+                      "action": "toggle-terminal-venv",
                       "payload": {}
                     }
                   }
@@ -1994,7 +1994,7 @@
               }
             },
             {
-              "id": "terminal-sessions",
+              "id": "terminal-recent-folders",
               "type": "List",
               "style": {
                 "$ref": "styles.list"
@@ -2004,13 +2004,13 @@
                 "height": 120
               },
               "automation": {
-                "name": "Sesi terminal"
+                "name": "Recent folder"
               },
               "itemsBinding": {
-                "$bind": "viewState.terminalSessions"
+                "$bind": "viewState.recentFolders"
               },
               "itemTemplate": {
-                "id": "terminal-session-row",
+                "id": "terminal-recent-folder-row",
                 "type": "Card",
                 "style": {
                   "$ref": "styles.card"
@@ -2018,35 +2018,31 @@
                 "children": []
               },
               "selectedIdBinding": {
-                "$bind": "viewState.selectedTerminalSession"
+                "$bind": "viewState.selectedRecentFolder"
               },
               "rowHeight": 32,
               "overscanRows": 2,
               "selection": "single",
-              "emptyText": "Tidak ada sesi",
+              "emptyText": "Belum ada recent folder",
               "scrollbar": "auto",
               "events": {
                 "selectionChanged": {
-                  "action": "select-terminal-session",
-                  "payload": {}
-                },
-                "activate": {
-                  "action": "activate-terminal-session",
+                  "action": "select-terminal-folder",
                   "payload": {}
                 }
               }
             },
             {
-              "id": "terminal-stub-action",
+              "id": "terminal-run-action",
               "type": "Button",
               "style": {
                 "$ref": "styles.button-primary"
               },
-              "label": "Jalankan stub",
+              "label": "Jalankan terminal",
               "variant": "primary",
               "events": {
                 "click": {
-                  "action": "run-terminal-stub",
+                  "action": "run-terminal",
                   "payload": {}
                 }
               }
@@ -2064,20 +2060,6 @@
               "automation": {
                 "name": "Status Terminal",
                 "live": "polite"
-              }
-            },
-            {
-              "id": "terminal-dialog-action",
-              "type": "Button",
-              "style": {
-                "$ref": "styles.button-default"
-              },
-              "label": "Uji dialog",
-              "events": {
-                "click": {
-                  "action": "open-save-discard-dialog",
-                  "payload": {}
-                }
               }
             },
             {
@@ -2231,6 +2213,91 @@
               "payload": {}
             }
           }
+        },
+        {
+          "id": "run-confirm-dialog",
+          "type": "Dialog",
+          "style": {
+            "$ref": "styles.dialog"
+          },
+          "title": "Jalankan terminal?",
+          "width": 480,
+          "maxHeight": 720,
+          "dismissPolicy": {
+            "escape": true,
+            "outsideClick": false,
+            "explicitAction": true
+          },
+          "children": [
+            {
+              "id": "run-confirm-description",
+              "type": "Text",
+              "style": {
+                "$ref": "styles.text-body"
+              },
+              "text": "Terminal akan dibuka pada folder dan target yang dipilih.",
+              "variant": "body",
+              "wrap": true
+            },
+            {
+              "id": "run-confirm-actions",
+              "type": "Container",
+              "style": {
+                "$ref": "styles.surface"
+              },
+              "layout": {
+                "width": "fill"
+              },
+              "direction": "row",
+              "gap": 8,
+              "justify": "end",
+              "children": [
+                {
+                  "id": "run-confirm-execute",
+                  "type": "Button",
+                  "style": {
+                    "$ref": "styles.button-primary"
+                  },
+                  "label": "Jalankan",
+                  "variant": "primary",
+                  "events": {
+                    "click": {
+                      "action": "run-terminal-confirmed",
+                      "payload": {}
+                    }
+                  }
+                },
+                {
+                  "id": "run-confirm-cancel",
+                  "type": "Button",
+                  "style": {
+                    "$ref": "styles.button-default"
+                  },
+                  "label": "Batal",
+                  "events": {
+                    "click": {
+                      "action": "run-terminal-cancel",
+                      "payload": {}
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "events": {
+            "accept": {
+              "action": "run-confirmation-accepted",
+              "payload": {}
+            },
+            "cancel": {
+              "action": "run-confirmation-cancelled",
+              "payload": {}
+            },
+            "dismiss": {
+              "action": "run-confirmation-dismissed",
+              "payload": {}
+            }
+          }
         }
       ]
     },
@@ -2277,7 +2344,7 @@
               "style": {
                 "$ref": "styles.text-body"
               },
-              "text": "Pilih provider dan target contoh. Stub tidak membaca atau menulis settings nyata.",
+              "text": "Kelola provider Claude lalu terapkan ke settings Windows atau Ubuntu WSL.",
               "variant": "body"
             },
             {
@@ -2295,7 +2362,7 @@
               "selectedValueBinding": {
                 "$bind": "viewState.selectedInjectProvider"
               },
-              "placeholder": "Pilih provider contoh",
+              "placeholder": "Pilih provider",
               "events": {
                 "changed": {
                   "action": "select-inject-provider",
@@ -2318,7 +2385,7 @@
               "selectedValueBinding": {
                 "$bind": "viewState.selectedInjectTarget"
               },
-              "placeholder": "Pilih target contoh",
+              "placeholder": "Pilih target",
               "events": {
                 "changed": {
                   "action": "select-inject-target",
@@ -2327,23 +2394,86 @@
               }
             },
             {
-              "id": "json-inject-config",
+              "id": "json-inject-base-url",
+              "type": "Input",
+              "style": {
+                "$ref": "styles.input"
+              },
+              "layout": {
+                "width": "fill"
+              },
+              "valueBinding": {
+                "$bind": "viewState.injectBaseUrl"
+              },
+              "placeholder": "https://api.example.com",
+              "events": {
+                "changed": {
+                  "action": "update-inject-base-url",
+                  "payload": {}
+                }
+              }
+            },
+            {
+              "id": "json-inject-model",
+              "type": "Input",
+              "style": {
+                "$ref": "styles.input"
+              },
+              "layout": {
+                "width": "fill"
+              },
+              "valueBinding": {
+                "$bind": "viewState.injectModel"
+              },
+              "placeholder": "Model ID",
+              "events": {
+                "changed": {
+                  "action": "update-inject-model",
+                  "payload": {}
+                }
+              }
+            },
+            {
+              "id": "json-inject-api-key",
+              "type": "Combo",
+              "style": {
+                "$ref": "styles.combo"
+              },
+              "layout": {
+                "width": "fill"
+              },
+              "itemsBinding": {
+                "$bind": "viewState.injectApiKeys"
+              },
+              "selectedValueBinding": {
+                "$bind": "viewState.selectedInjectApiKey"
+              },
+              "placeholder": "Pilih API key",
+              "events": {
+                "changed": {
+                  "action": "select-inject-api-key",
+                  "payload": {}
+                }
+              }
+            },
+            {
+              "id": "json-inject-api-key-draft",
               "type": "Input",
               "style": {
                 "$ref": "styles.input"
               },
               "layout": {
                 "width": "fill",
-                "height": 112
+                "height": 96
               },
               "valueBinding": {
-                "$bind": "viewState.injectConfig"
+                "$bind": "viewState.injectApiKeyDraft"
               },
               "mode": "multiline",
-              "placeholder": "Konfigurasi contoh",
+              "placeholder": "Label | API key (satu per baris)",
               "events": {
                 "changed": {
-                  "action": "update-inject-config",
+                  "action": "update-inject-api-keys",
                   "payload": {}
                 }
               }
@@ -2381,10 +2511,10 @@
                   "style": {
                     "$ref": "styles.button-default"
                   },
-                  "label": "Validasi stub",
+                  "label": "Simpan provider",
                   "events": {
                     "click": {
-                      "action": "validate-inject-stub",
+                      "action": "save-inject-provider",
                       "payload": {}
                     }
                   }
@@ -2395,11 +2525,11 @@
                   "style": {
                     "$ref": "styles.button-primary"
                   },
-                  "label": "Apply stub",
+                  "label": "Terapkan konfigurasi",
                   "variant": "primary",
                   "events": {
                     "click": {
-                      "action": "apply-inject-stub",
+                      "action": "apply-inject",
                       "payload": {}
                     }
                   }
@@ -2487,7 +2617,7 @@
               "style": {
                 "$ref": "styles.text-body"
               },
-              "text": "Native multiline Edit untuk membuktikan draft, validation, backup, dan Save flow.",
+              "text": "Edit Claude settings.json dengan validation, backup, restore, dan atomic save.",
               "variant": "body"
             },
             {
@@ -2505,7 +2635,7 @@
               "selectedValueBinding": {
                 "$bind": "viewState.selectedJsonEditorTarget"
               },
-              "placeholder": "Pilih document contoh",
+              "placeholder": "Pilih settings.json",
               "events": {
                 "changed": {
                   "action": "select-json-editor-target",
@@ -2569,10 +2699,10 @@
                   "style": {
                     "$ref": "styles.button-default"
                   },
-                  "label": "Validasi stub",
+                  "label": "Validasi JSON",
                   "events": {
                     "click": {
-                      "action": "validate-json-editor-stub",
+                      "action": "validate-json-editor",
                       "payload": {}
                     }
                   }
@@ -2583,10 +2713,10 @@
                   "style": {
                     "$ref": "styles.button-default"
                   },
-                  "label": "Restore backup stub",
+                  "label": "Restore backup",
                   "events": {
                     "click": {
-                      "action": "restore-json-editor-backup-stub",
+                      "action": "restore-json-editor-backup",
                       "payload": {}
                     }
                   }
@@ -2597,11 +2727,11 @@
                   "style": {
                     "$ref": "styles.button-primary"
                   },
-                  "label": "Save stub",
+                  "label": "Simpan JSON",
                   "variant": "primary",
                   "events": {
                     "click": {
-                      "action": "save-json-editor-stub",
+                      "action": "save-json-editor",
                       "payload": {}
                     }
                   }
@@ -2672,7 +2802,7 @@
               "style": {
                 "$ref": "styles.text-body"
               },
-              "text": "Profile, bookmark, dan URL berikut hanya deterministic sample data.",
+              "text": "Buka URL atau bookmark memakai profile Chrome yang terlihat.",
               "variant": "body"
             },
             {
@@ -2690,7 +2820,7 @@
               "selectedValueBinding": {
                 "$bind": "viewState.selectedChromeProfile"
               },
-              "placeholder": "Pilih profile contoh",
+              "placeholder": "Pilih profile Chrome",
               "events": {
                 "changed": {
                   "action": "select-chrome-profile",
@@ -2729,7 +2859,7 @@
                 "height": 112
               },
               "automation": {
-                "name": "Bookmark contoh"
+                "name": "Bookmark Chrome"
               },
               "itemsBinding": {
                 "$bind": "viewState.chromeBookmarks"
@@ -2748,7 +2878,7 @@
               "rowHeight": 32,
               "overscanRows": 2,
               "selection": "single",
-              "emptyText": "Tidak ada bookmark contoh",
+              "emptyText": "Belum ada bookmark",
               "events": {
                 "selectionChanged": {
                   "action": "select-chrome-bookmark",
@@ -2789,11 +2919,11 @@
                   "style": {
                     "$ref": "styles.button-primary"
                   },
-                  "label": "Launch stub",
+                  "label": "Buka Chrome",
                   "variant": "primary",
                   "events": {
                     "click": {
-                      "action": "launch-chrome-stub",
+                      "action": "launch-chrome",
                       "payload": {}
                     }
                   }
@@ -2881,8 +3011,44 @@
               "style": {
                 "$ref": "styles.text-body"
               },
-              "text": "Edit metadata profile contoh tanpa membaca directory Chrome atau WSL.",
+              "text": "Pilih profile Chrome yang ditampilkan pada launcher.",
               "variant": "body"
+            },
+            {
+              "id": "chrome-profile-manager-runtime",
+              "type": "Combo",
+              "style": {
+                "$ref": "styles.combo"
+              },
+              "layout": {
+                "width": "fill"
+              },
+              "itemsBinding": {
+                "$bind": "viewState.chromeRuntimes"
+              },
+              "selectedValueBinding": {
+                "$bind": "viewState.selectedChromeRuntime"
+              },
+              "events": {
+                "changed": {
+                  "action": "select-chrome-runtime",
+                  "payload": {}
+                }
+              }
+            },
+            {
+              "id": "chrome-profile-manager-refresh",
+              "type": "Button",
+              "style": {
+                "$ref": "styles.button-default"
+              },
+              "label": "Refresh profiles",
+              "events": {
+                "click": {
+                  "action": "refresh-chrome-profiles",
+                  "payload": {}
+                }
+              }
             },
             {
               "id": "chrome-profile-manager-list",
@@ -2895,7 +3061,7 @@
                 "height": 112
               },
               "automation": {
-                "name": "Profile Chrome contoh"
+                "name": "Profile Chrome"
               },
               "itemsBinding": {
                 "$bind": "viewState.managedChromeProfiles"
@@ -2932,13 +3098,8 @@
               "valueBinding": {
                 "$bind": "viewState.profileName"
               },
-              "placeholder": "Nama profile contoh",
-              "events": {
-                "changed": {
-                  "action": "update-chrome-profile-name",
-                  "payload": {}
-                }
-              }
+              "placeholder": "Nama profile",
+              "readOnly": true
             },
             {
               "id": "chrome-profile-manager-enabled",
@@ -2990,11 +3151,11 @@
                   "style": {
                     "$ref": "styles.button-primary"
                   },
-                  "label": "Save stub",
+                  "label": "Simpan profile terlihat",
                   "variant": "primary",
                   "events": {
                     "click": {
-                      "action": "save-chrome-profile-stub",
+                      "action": "save-chrome-profiles",
                       "payload": {}
                     }
                   }
@@ -3065,7 +3226,7 @@
               "style": {
                 "$ref": "styles.text-body"
               },
-              "text": "Preference berikut hanya hidup di deterministic stub state.",
+              "text": "Preference aplikasi disimpan untuk user Windows saat ini.",
               "variant": "body"
             },
             {
@@ -3136,7 +3297,7 @@
                 "height": 112
               },
               "automation": {
-                "name": "Recent folder contoh"
+                "name": "Recent folder"
               },
               "itemsBinding": {
                 "$bind": "viewState.recentFolders"
@@ -3194,11 +3355,11 @@
                   "style": {
                     "$ref": "styles.button-primary"
                   },
-                  "label": "Apply stub",
+                  "label": "Simpan settings",
                   "variant": "primary",
                   "events": {
                     "click": {
-                      "action": "apply-settings-stub",
+                      "action": "apply-settings",
                       "payload": {}
                     }
                   }

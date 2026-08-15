@@ -1123,9 +1123,9 @@ application/business operation
 typed ViewState/UiPatch
 ```
 
-Business code baru di root tidak boleh mempunyai dependency build/runtime pada nested repository.
-Nested code hanya boleh menjadi referensi untuk port/reimplementation yang dilakukan secara eksplisit
-pada business phase.
+Business code canonical berada di `src/logic` dan tidak mempunyai dependency build/runtime pada
+folder referensi. `Open-terminal-core` dipakai satu kali sebagai migration input; source yang dibangun,
+dimodifikasi, dan dimiliki aplikasi adalah copy canonical di `src/logic`.
 
 ## 19. Packaging, installer, updater, dan release V1
 
@@ -1537,9 +1537,10 @@ Urutan final mengikuti dependency dan implementasi yang sudah bekerja di dua rep
 6. UI Editor: edit draft, preview, apply/save, token preservation, reload, dan rollback diagnostic.
 7. Deployment UI: manual/scheduled update state, download consent, apply/restart, dan uninstall choice.
 
-Untuk setiap nomor: tetapkan `UiEvent`/ViewState dari contract yang sudah ada, reimplement adapter di
-root tanpa dependency nested repository, ganti stub, jalankan regression, lalu lanjut. Agent tidak
-mengubah urutan ini kecuali user mengubah scope feature.
+Untuk setiap nomor: raw logic yang relevan berada di `src/logic/features`, facade typed berada di
+`src/logic/application`, dan adapter plug-and-play berada di `src/application/adapters`. Setiap action
+JSON tetap mempunyai fallback stub; adapter nyata memasangnya melalui `ReplaceAction` tanpa branch
+feature di component atau `WindowContainer`. Aplikasi tidak membangun source dari folder referensi.
 
 ### Phase 7 — Release readiness, cutover, dan legacy retirement
 

@@ -52,7 +52,7 @@
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX;WINVER=0x0A00;_WIN32_WINNT=0x0A00;TERMINAL_VERSION_MAJOR=$(TerminalVersionMajor);TERMINAL_VERSION_MINOR=$(TerminalVersionMinor);TERMINAL_VERSION_PATCH=$(TerminalVersionPatch);TERMINAL_VERSION_BUILD=$(TerminalVersionBuild);TERMINAL_VERSION_COMMA=$(TerminalVersionMajor),$(TerminalVersionMinor),$(TerminalVersionPatch),$(TerminalVersionBuild);TERMINAL_VERSION_STRING=&quot;$(TerminalVersion)&quot;;TERMINAL_VERSION_STRING_W=L&quot;$(TerminalVersion)&quot;;TERMINAL_FILE_VERSION_STRING=&quot;$(TerminalVersion).$(TerminalVersionBuild)&quot;;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(VelopackDir)include;$(NlohmannJsonDir)single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)logic;$(VelopackDir)include;$(NlohmannJsonDir)single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
@@ -99,7 +99,29 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="application\application_container.cpp" />
     <ClCompile Include="application\application_infrastructure_window.cpp" />
+    <ClCompile Include="application\adapters\settings_adapter.cpp" />
+    <ClCompile Include="application\adapters\chrome_adapter.cpp" />
+    <ClCompile Include="application\adapters\inject_adapter.cpp" />
+    <ClCompile Include="application\adapters\json_editor_adapter.cpp" />
+    <ClCompile Include="application\adapters\terminal_adapter.cpp" />
     <ClCompile Include="instrumentation\performance_trace.cpp" />
+    <ClCompile Include="logic\application\core_application.cpp" />
+    <ClCompile Include="logic\features\app_settings.cpp" />
+    <ClCompile Include="logic\features\chrome_profiles.cpp" />
+    <ClCompile Include="logic\features\chrome_visible_set.cpp" />
+    <ClCompile Include="logic\features\claude_inject.cpp" />
+    <ClCompile Include="logic\features\claude_settings_file.cpp" />
+    <ClCompile Include="logic\features\terminal_launch.cpp" />
+    <ClCompile Include="logic\platform\com.cpp" />
+    <ClCompile Include="logic\platform\files.cpp" />
+    <ClCompile Include="logic\platform\foreground.cpp" />
+    <ClCompile Include="logic\platform\paths.cpp" />
+    <ClCompile Include="logic\platform\process.cpp" />
+    <ClCompile Include="logic\platform\startup.cpp" />
+    <ClCompile Include="logic\platform\strings.cpp" />
+    <ClCompile Include="logic\platform\wsl.cpp" />
+    <ClCompile Include="logic\storage\json.cpp" />
+    <ClCompile Include="logic\storage\settings.cpp" />
     <ClCompile Include="platform\app_paths.cpp" />
     <ClCompile Include="platform\single_instance.cpp" />
     <ClCompile Include="platform\updater.cpp" />
@@ -141,7 +163,32 @@
     <ClInclude Include="app\app_version.h" />
     <ClInclude Include="application\application_container.h" />
     <ClInclude Include="application\application_infrastructure_window.h" />
+    <ClInclude Include="application\adapters\logic_adapter_common.h" />
+    <ClInclude Include="application\adapters\chrome_adapter.h" />
+    <ClInclude Include="application\adapters\inject_adapter.h" />
+    <ClInclude Include="application\adapters\json_editor_adapter.h" />
+    <ClInclude Include="application\adapters\settings_adapter.h" />
+    <ClInclude Include="application\adapters\terminal_adapter.h" />
     <ClInclude Include="instrumentation\performance_trace.h" />
+    <ClInclude Include="logic\core_gate.h" />
+    <ClInclude Include="logic\application\core_application.h" />
+    <ClInclude Include="logic\core\status.h" />
+    <ClInclude Include="logic\features\app_settings.h" />
+    <ClInclude Include="logic\features\chrome_profiles.h" />
+    <ClInclude Include="logic\features\chrome_visible_set.h" />
+    <ClInclude Include="logic\features\claude_inject.h" />
+    <ClInclude Include="logic\features\claude_settings_file.h" />
+    <ClInclude Include="logic\features\terminal_launch.h" />
+    <ClInclude Include="logic\platform\com.h" />
+    <ClInclude Include="logic\platform\files.h" />
+    <ClInclude Include="logic\platform\foreground.h" />
+    <ClInclude Include="logic\platform\paths.h" />
+    <ClInclude Include="logic\platform\process.h" />
+    <ClInclude Include="logic\platform\startup.h" />
+    <ClInclude Include="logic\platform\strings.h" />
+    <ClInclude Include="logic\platform\wsl.h" />
+    <ClInclude Include="logic\storage\json.h" />
+    <ClInclude Include="logic\storage\settings.h" />
     <ClInclude Include="platform\app_paths.h" />
     <ClInclude Include="platform\single_instance.h" />
     <ClInclude Include="platform\updater.h" />

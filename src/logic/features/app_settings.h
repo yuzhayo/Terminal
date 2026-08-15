@@ -12,7 +12,10 @@ const std::wstring& CurrentThemeToken();
 
 // Persists a new theme token. Does NOT apply it live — the frontend handles that.
 // No-op and returns NoStatus when the token is unchanged.
-core::Status SetTheme(const std::wstring& token);  // "dark" or "light"
+core::Status SetTheme(const std::wstring& token);  // "system", "dark", or "light"
+
+bool ConfirmBeforeRun();
+core::Status SetConfirmBeforeRun(bool enabled);
 
 // Reads the current state from the OS registry (authoritative source).
 bool IsStartWithWindowsEnabled();

@@ -507,4 +507,40 @@ ChromeEmptyState CardEmptyState() {
     return ChromeEmptyState::UseManage;
 }
 
+std::vector<ChromeProfile> CachedProfiles(ChromeRuntime runtime) {
+    return g_cache.For(runtime).profiles;
+}
+
+std::vector<ChromeProfile> VisibleProfiles(ChromeRuntime runtime) {
+    std::vector<ChromeProfile> result;
+    const std::vector<ChromeProfile>& cached = g_cache.For(runtime).profiles;
+    for (const storage::VisibleProfile& saved :
+         storage::ChromeStateFor(ChromeRuntimeName(runtime)).visible) {
+        if (const ChromeProfile* profile = FindInCache(cached, saved)) {
+            result.push_back(*profile);
+        }
+    }
+    return result;
+}
+
+std::vector<ChromeBookmark> Bookmarks() {
+    std::vector<ChromeBookmark> result;
+    for (const storage::Bookmark& bookmark : storage::CurrentSettings().bookmarks) {
+        result.push_back({bookmark.id, bookmark.label, bookmark.url});
+    }
+    return result;
+}
+
+std::wstring SelectedBookmarkId() {
+    return storage::CurrentSettings().selected_bookmark_id;
+}
+
+core::Status SelectBookmarkById(const std::wstring& id) {
+    const auto& bookmarks = storage::CurrentSettings().bookmarks;
+    for (std::size_t index = 0; index < bookmarks.size(); ++index) {
+        if (bookmarks[index].id == id) return SelectBookmark(index);
+    }
+    return core::Error(core::ErrorCode::BookmarkNotFound, L"Bookmark not found.");
+}
+
 }  // namespace features

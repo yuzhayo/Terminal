@@ -29,6 +29,14 @@ bool UiActionRegistry::Register(std::string action, Handler handler) {
     return handlers_.emplace(std::move(action), std::move(handler)).second;
 }
 
+bool UiActionRegistry::Replace(std::string_view action, Handler handler) {
+    if (!handler) return false;
+    const auto found = handlers_.find(action);
+    if (found == handlers_.end()) return false;
+    found->second = std::move(handler);
+    return true;
+}
+
 bool UiActionRegistry::Contains(std::string_view action) const noexcept {
     return handlers_.contains(action);
 }

@@ -19,6 +19,10 @@ public:
     std::optional<std::wstring> ResolveStringValue(
         std::string_view binding) const override;
     bool RegisterAction(std::string action, UiActionRegistry::Handler handler);
+    bool ReplaceAction(std::string_view action, UiActionRegistry::Handler handler);
+    void SetStringValue(std::string binding, std::string value);
+    void SetStringItems(std::string binding, std::vector<std::wstring> items);
+    std::optional<std::string> StringValue(std::string_view binding) const;
     bool HasRegisteredAction(std::string_view action) const noexcept;
     std::size_t registered_action_count() const noexcept;
 

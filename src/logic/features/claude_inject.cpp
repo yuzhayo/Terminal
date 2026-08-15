@@ -115,6 +115,41 @@ void HealApiKeySelection() {
     storage::SaveProviders();
 }
 
+std::vector<InjectChoice> BaseUrlChoices() {
+    std::vector<InjectChoice> result;
+    for (const storage::BaseUrl& base : storage::CurrentProviders().base_urls) {
+        result.push_back({base.id, BaseUrlDisplayText(base)});
+    }
+    return result;
+}
+
+std::vector<InjectChoice> ApiKeyChoices() {
+    std::vector<InjectChoice> result;
+    const storage::BaseUrl* base =
+        storage::FindBaseUrl(storage::CurrentProviders().selected_base_url_id);
+    if (!base) return result;
+    for (const storage::ApiKey& key : base->keys) {
+        result.push_back({key.id, ApiKeyDisplayText(key)});
+    }
+    return result;
+}
+
+std::wstring SelectedBaseUrlId() {
+    return storage::CurrentProviders().selected_base_url_id;
+}
+
+std::wstring SelectedApiKeyId() {
+    const storage::BaseUrl* base =
+        storage::FindBaseUrl(storage::CurrentProviders().selected_base_url_id);
+    return base ? base->selected_key_id : std::wstring{};
+}
+
+std::wstring SelectedModel() {
+    const storage::BaseUrl* base =
+        storage::FindBaseUrl(storage::CurrentProviders().selected_base_url_id);
+    return base ? base->model : std::wstring{};
+}
+
 // --- base-URL management ---
 
 core::Status AddBaseUrl(const std::wstring& url, const std::wstring& label,

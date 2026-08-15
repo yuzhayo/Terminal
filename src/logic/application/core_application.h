@@ -1,5 +1,5 @@
 // CoreApplication — typed facade for all business logic.
-// This is the only public API Open-terminal-core exposes.
+// This is the public facade used by application adapters.
 //
 // Responsibilities:
 // - Owns shared state: settings, chrome cache, provider list.
@@ -22,13 +22,17 @@
 namespace features {
     struct TerminalRequest;
     struct TerminalPlan;
+    enum class TerminalTarget;
     struct ChromeProfile;
+    struct ChromeBookmark;
     struct ChromeScanResult;
     struct CardLaunchResult;
     struct EditorDraft;
     enum class EditorTarget;
     struct EditorLoadResult;
     enum class ChromeRuntime;
+    enum class InjectTarget;
+    struct InjectChoice;
 }
 
 namespace application {
@@ -41,7 +45,7 @@ public:
     // --- Initialization (call once on startup) ---
     // Loads settings.json, providers.json, chrome_profiles.json.
     // Safe to call multiple times; subsequent calls are no-op.
-    void Initialize();
+    core::Status Initialize();
 
     // --- Terminal Launcher ---
     // Validates folder + venv without launching. Returns validation errors or NoStatus.
@@ -53,15 +57,25 @@ public:
     core::Status LaunchTerminal(const features::TerminalRequest& req);
 
     std::vector<std::wstring> RecentFolders() const;
-    void ClearRecentFolders();
+    std::wstring TerminalFolder() const;
+    bool TerminalVenvEnabled(features::TerminalTarget target) const;
+    core::Status SetTerminalVenvEnabled(features::TerminalTarget target, bool enabled);
+    core::Status ClearRecentFolders();
 
     // --- Claude Inject ---
-    core::Status AddBaseUrl(const std::wstring& url);
+    core::Status AddBaseUrl(const std::wstring& url, const std::wstring& label = {},
+                            const std::wstring& model = {});
     core::Status BulkAddApiKeys(const std::vector<std::wstring>& keys);
-    core::Status InjectClaude(bool target_wsl);  // target: false=Windows, true=WSL
+    core::Status SelectBaseUrl(const std::wstring& id);
+    core::Status SelectApiKey(const std::wstring& id);
+    core::Status CommitInjectModel(const std::wstring& model);
+    core::Status InjectClaude(features::InjectTarget target);
 
-    std::vector<std::wstring> BaseUrls() const;
-    std::vector<std::wstring> ApiKeys() const;
+    std::vector<features::InjectChoice> BaseUrlChoices() const;
+    std::vector<features::InjectChoice> ApiKeyChoices() const;
+    std::wstring SelectedBaseUrlId() const;
+    std::wstring SelectedApiKeyId() const;
+    std::wstring SelectedInjectModel() const;
 
     // --- Claude Settings File Editor ---
     // Blocking: WSL file read may take 100–500ms for the first call; run on a worker.
@@ -74,6 +88,7 @@ public:
     bool EditorReadyForFileAction(features::EditorTarget target, core::Status* status);
     core::Status SaveEditor(features::EditorTarget target, features::EditorDraft* draft);
     core::Status RestoreEditorBackup(features::EditorTarget target);
+    core::Status ValidateEditor(const features::EditorDraft& draft) const;
 
     // --- Chrome Profiles ---
     // Blocking: profile scan may take 200–1000ms for WSL; run on a worker.
@@ -99,10 +114,19 @@ public:
 
     // Reorder visible cards (drag-drop result).
     core::Status ReorderChromeCards(size_t from_index, size_t to_index);
+    std::vector<features::ChromeProfile> CachedChromeProfiles(
+        features::ChromeRuntime runtime) const;
+    std::vector<features::ChromeProfile> VisibleChromeProfiles(
+        features::ChromeRuntime runtime) const;
+    std::vector<features::ChromeBookmark> ChromeBookmarks() const;
+    std::wstring SelectedChromeBookmarkId() const;
+    core::Status SelectChromeBookmarkById(const std::wstring& id);
 
     // --- App Settings ---
     std::wstring CurrentTheme() const;  // "dark" or "light"
     core::Status SetTheme(const std::wstring& token);
+    bool ConfirmBeforeRun() const;
+    core::Status SetConfirmBeforeRun(bool enabled);
 
     bool IsStartWithWindowsEnabled() const;
     core::Status SetStartWithWindows(bool enabled);

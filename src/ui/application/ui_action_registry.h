@@ -15,6 +15,7 @@ public:
     using Handler = std::function<std::optional<UiPatch>(const UiEvent&)>;
 
     bool Register(std::string action, Handler handler);
+    bool Replace(std::string_view action, Handler handler);
     bool Contains(std::string_view action) const noexcept;
     std::optional<UiPatch> Dispatch(const UiEvent& event) const;
     std::size_t size() const noexcept;

@@ -35,7 +35,7 @@ ikut layout atau paint.
 | Button baru memakai action yang sudah ada | JSON saja |
 | Business action baru | JSON + satu handler registration |
 | Backend/service baru | Feature module + handler registration; UI tidak perlu tahu service |
-| Component visual baru | Component C++ + schema resolver + ComponentRegistry + tests |
+| Component visual baru | Component C++ + schema resolver + ComponentRegistry |
 
 Tidak ada arbitrary C++ atau DLL yang dimuat dari JSON. “Plug and play” berarti screen dapat disusun
 dari component terdaftar dan logic dapat dipasang melalui action registry tanpa menambah `if/else` di
@@ -50,17 +50,20 @@ dari component terdaftar dan logic dapat dipasang melalui action registry tanpa 
 - `src/ui/application/ui_application_bridge.h`: envelope `UiEvent` dan hasil `UiPatch`.
 - `src/ui/application/ui_action_registry.h/.cpp`: registry `action ID -> handler`.
 - `src/ui/application/stub_application_bridge.h/.cpp`: composition root untuk handler aplikasi yang
-  tersedia sekarang.
+  menyediakan fallback untuk seluruh action JSON.
+- `src/logic/features/*`: business rules per feature, tanpa dependency UI.
+- `src/logic/storage/*` dan `src/logic/platform/*`: persistence dan operasi Windows milik logic.
+- `src/logic/application/core_application.*`: facade typed untuk adapter.
+- `src/application/adapters/*`: modul plug-and-play yang mengganti handler stub per feature.
 - `src/ui/containers/window_container.h/.cpp`: route lifecycle, lazy screen cache, input routing,
   modal, focus, UIA, layout, dan paint.
 - `src/application/application_infrastructure_window.h/.cpp`: hidden process window untuk IPC,
   tray callback, `TaskbarCreated`, dan process-global Windows signals.
 - `src/application/application_container.h/.cpp`: composition root process, top-level window registry,
   external route routing, tray lifetime, dan shared resource fan-out.
-- `tests/test_main.cpp`: contract dan behavior tests.
 
-Nested repository `Open-terminal` dan `Open-terminal-native` hanya referensi. Jangan menaruh source
-baru atau mengedit implementation di dalamnya.
+`Open-terminal` dan `Open-terminal-native` hanya sumber referensi. `Open-terminal-core` telah
+dimigrasikan; business logic canonical yang dibangun aplikasi berada di `src/logic`.
 
 ## 3. Membuat screen baru
 
@@ -318,79 +321,52 @@ JSON hanya menyebut semantic action ID. Logic sebenarnya berada di handler C++.
 
 ### Langkah 2 — Registrasikan handler feature
 
-Jangan menambah branch action di `WindowContainer`. Buat fungsi registration milik feature dan
-pasang ke bridge saat composition:
+Jangan menambah branch action di `WindowContainer`. Tambahkan logic ke feature yang tepat di
+`src/logic`, lalu buat adapter kecil di `src/application/adapters`:
 
 ```cpp
-class ProfileFeature final {
-public:
-    bool RegisterActions(ui::application::StubApplicationBridge& bridge,
-                         ProfileService& service) {
-        if (!bridge.RegisterAction(
-                "update-profile-name",
-                [this](const ui::application::UiEvent& event)
-                    -> std::optional<ui::application::UiPatch> {
-                    const auto found = event.payload.find("value");
-                    if (found != event.payload.end()) {
-                        if (const auto* value =
-                                std::get_if<std::string>(&found->second.value)) {
-                            draft_name_ = *value;
-                        }
-                    }
-                    ui::application::UiPatch patch;
-                    patch.view_state["viewState.profileName"] = draft_name_;
-                    return patch;
-                })) {
-            return false;
-        }
-
-        return bridge.RegisterAction(
-            "save-profile",
-            [this, &service](const ui::application::UiEvent&)
-                -> std::optional<ui::application::UiPatch> {
-                if (!service.Save(draft_name_)) return std::nullopt;
-
-                ui::application::UiPatch patch;
-                patch.view_state["viewState.profileStatus"] = "saved";
-                patch.window_title = L"Terminal — profile saved";
-                patch.request_repaint = true;
-                return patch;
-            });
-    }
-
-private:
-    std::string draft_name_;
-};
+bool RegisterSettingsAdapter(
+    ui::application::StubApplicationBridge& bridge,
+    const std::shared_ptr<logic::CoreApplication>& logic) {
+    return bridge.ReplaceAction(
+        "apply-settings",
+        [&bridge, logic](const ui::application::UiEvent& event)
+            -> std::optional<ui::application::UiPatch> {
+            const logic::core::Status status = logic->SetTheme(L"dark");
+            ui::application::UiPatch patch;
+            patch.view_state["viewState.profileStatus"] = ToUtf8(status.text);
+            patch.request_repaint = true;
+            return patch;
+        });
+}
 ```
 
-`ProfileService` pada contoh adalah backend milik feature, bukan class framework yang wajib dibuat.
-Ia dapat diganti dengan repository, process launcher, file service, atau logic lain. Handler boleh
-memanggil real logic; JSON tidak berubah ketika implementasi stub diganti dengan implementasi nyata.
+Setiap action JSON harus lebih dahulu mempunyai fallback di `StubApplicationBridge`. Adapter feature
+memakai `ReplaceAction`, sehingga feature nyata dapat dipasang atau dilepas tanpa membuat action JSON
+hilang. Adapter hanya menerjemahkan payload, typed request/result, dan `UiPatch`; validation,
+persistence, scan, atau process launch tetap berada di `src/logic`.
 
 Registration dipanggil di composition root setelah bridge dibuat:
 
 ```cpp
-auto application_bridge =
-    std::make_shared<ui::application::StubApplicationBridge>();
-ProfileService profile_service;
-ProfileFeature profile_feature;
-if (!profile_feature.RegisterActions(*application_bridge, profile_service)) {
-    throw std::runtime_error("Profile action registration failed.");
+auto application_bridge = std::make_shared<ui::application::StubApplicationBridge>();
+auto logic = std::make_shared<logic::CoreApplication>();
+logic->Initialize();
+if (!RegisterSettingsAdapter(*application_bridge, logic)) {
+    throw std::runtime_error("Settings action registration failed.");
 }
 ```
 
-`profile_service` dan `profile_feature` harus hidup selama bridge memakai handler karena lambda
-menyimpan reference/pointer ke keduanya.
+Adapter menangkap `shared_ptr<logic::CoreApplication>`, sehingga lifetime logic mengikuti bridge.
 
-Duplicate action ID ditolak oleh registry. Action ID invalid atau tidak terdaftar tidak boleh dianggap
-berhasil; tambahkan test untuk handler tersebut.
+`RegisterAction` tetap menolak duplicate action. `ReplaceAction` hanya berhasil untuk fallback action
+yang memang sudah terdaftar.
 
-Bridge stub saat ini sengaja membagi registration per feature (`RegisterTerminalFeature`,
+Bridge stub membagi fallback registration per feature (`RegisterTerminalFeature`,
 `RegisterJsonInjectFeature`, `RegisterJsonEditorFeature`, `RegisterChromeLauncherFeature`,
 `RegisterChromeProfileManagerFeature`, `RegisterSettingsFeature`, dan `RegisterUiEditorFeature`).
-State awalnya deterministic dan hanya hidup di memory. Handler berakhiran `-stub` tidak boleh membaca
-atau menulis file nyata, menjalankan process, membuka browser, atau melakukan network request. Ketika
-backend tersedia, ganti isi handler feature yang sama; action ID dan JSON screen tidak perlu berubah.
+Fallback tidak membaca atau menulis file nyata, menjalankan process, membuka browser, atau melakukan
+network request. Adapter nyata menggantinya saat composition root dibuat.
 
 ### Data yang diterima handler
 

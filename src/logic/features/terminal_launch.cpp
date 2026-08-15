@@ -127,20 +127,29 @@ bool VenvEnabled(TerminalTarget target) {
     return false;
 }
 
-void SetVenvEnabled(TerminalTarget target, bool enabled) {
+core::Status SetVenvEnabled(TerminalTarget target, bool enabled) {
     storage::Settings& s = storage::CurrentSettings();
     switch (target) {
         case TerminalTarget::PowerShellAdmin: s.venv_powershell_admin = enabled; break;
         case TerminalTarget::PowerShell:      s.venv_powershell = enabled;       break;
         case TerminalTarget::UbuntuWsl:       s.venv_wsl = enabled;              break;
     }
-    storage::SaveSettings();
+    if (!storage::SaveSettings()) {
+        return core::Error(core::ErrorCode::PersistenceFailed,
+                           L"Could not save the virtual environment preference.");
+    }
+    return core::NoStatus();
 }
 
-void RememberFolder(const std::wstring& folder) {
-    if (folder.empty()) return;
+core::Status RememberFolder(const std::wstring& folder) {
+    if (folder.empty()) return core::Error(core::ErrorCode::ValidationFailed,
+                                           L"Choose a target folder first.");
     storage::RememberFolder(folder);
-    storage::SaveSettings();
+    if (!storage::SaveSettings()) {
+        return core::Error(core::ErrorCode::PersistenceFailed,
+                           L"Could not save the terminal folder.");
+    }
+    return core::NoStatus();
 }
 
 const std::vector<std::wstring>& RecentFolders() {

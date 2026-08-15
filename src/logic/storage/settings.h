@@ -63,6 +63,7 @@ struct Settings {
     bool venv_powershell_admin = false;
     bool venv_powershell = false;
     bool venv_wsl = false;
+    bool confirm_before_run = true;
 
     std::wstring json_target;  // "windows" or "wsl"
 

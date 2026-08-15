@@ -56,10 +56,10 @@ std::wstring VenvActivateWsl(const std::wstring& folder);
 bool VenvEnabled(TerminalTarget target);
 
 // Toggles and persists the venv flag for this target.
-void SetVenvEnabled(TerminalTarget target, bool enabled);
+core::Status SetVenvEnabled(TerminalTarget target, bool enabled);
 
 // Persists folder as the current folder without launching.
-void RememberFolder(const std::wstring& folder);
+core::Status RememberFolder(const std::wstring& folder);
 
 // The ordered recent-folder list from settings.
 const std::vector<std::wstring>& RecentFolders();

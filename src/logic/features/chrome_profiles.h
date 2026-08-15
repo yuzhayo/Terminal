@@ -61,6 +61,12 @@ struct CardLaunchResult {
     bool clear_input = false;  // true when the typed URL was used and launch succeeded
 };
 
+struct ChromeBookmark {
+    std::wstring id;
+    std::wstring label;
+    std::wstring url;
+};
+
 // Launches the card at `index` in the active runtime's visible list. `typed_url`
 // is the raw text from the URL input field.
 CardLaunchResult LaunchCard(size_t index, const std::wstring& typed_url);
@@ -95,5 +101,11 @@ enum class ChromeEmptyState {
     UseManage,       // suggest Manage Profiles
 };
 ChromeEmptyState CardEmptyState();
+
+std::vector<ChromeProfile> CachedProfiles(ChromeRuntime runtime);
+std::vector<ChromeProfile> VisibleProfiles(ChromeRuntime runtime);
+std::vector<ChromeBookmark> Bookmarks();
+std::wstring SelectedBookmarkId();
+core::Status SelectBookmarkById(const std::wstring& id);
 
 }  // namespace features

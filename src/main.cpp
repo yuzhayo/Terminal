@@ -7,6 +7,11 @@
 #include <string>
 
 #include "application/application_container.h"
+#include "application/adapters/settings_adapter.h"
+#include "application/adapters/chrome_adapter.h"
+#include "application/adapters/inject_adapter.h"
+#include "application/adapters/json_editor_adapter.h"
+#include "application/adapters/terminal_adapter.h"
 #include "app/app_identity.h"
 #include "instrumentation/performance_trace.h"
 #include "platform/app_paths.h"
@@ -14,6 +19,7 @@
 #include "platform/updater.h"
 #include "platform/windows_runtime.h"
 #include "rendering/render_runtime.h"
+#include "logic/core_gate.h"
 #include "ui/config/ui_config_gate.h"
 #include "ui/application/stub_application_bridge.h"
 #include "ui/theme/theme_platform_adapter.h"
@@ -96,6 +102,20 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
         ui::theme::ThemePlatformAdapter::ReadInitialSnapshot());
     rendering::RenderRuntime render_runtime;
     auto application_bridge = std::make_shared<ui::application::StubApplicationBridge>();
+    auto business_logic = std::make_shared<logic::CoreApplication>();
+    const logic::core::Status logic_status = business_logic->Initialize();
+    if (!logic_status.ok()) {
+        ShowBootstrapError(logic_status.text);
+        return 17;
+    }
+    if (!application::adapters::RegisterTerminalAdapter(*application_bridge, business_logic) ||
+        !application::adapters::RegisterSettingsAdapter(*application_bridge, business_logic) ||
+        !application::adapters::RegisterChromeAdapter(*application_bridge, business_logic) ||
+        !application::adapters::RegisterInjectAdapter(*application_bridge, business_logic) ||
+        !application::adapters::RegisterJsonEditorAdapter(*application_bridge, business_logic)) {
+        ShowBootstrapError(L"Business feature adapters tidak dapat diregistrasikan.");
+        return 18;
+    }
     const auto startup_request = platform::BuildIpcRequestFromCommandLine(command_line);
     application::ApplicationContainer application_container(
         instance, render_runtime, config_gate.document(), theme_adapter, application_bridge);
