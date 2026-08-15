@@ -10,7 +10,7 @@ namespace platform {
 namespace {
 
 constexpr wchar_t kRunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-constexpr wchar_t kValueName[] = L"OpenTerminalNative";
+constexpr wchar_t kValueName[] = L"Terminal";
 
 std::wstring TrayCommand() { return str::QuoteArg(paths::ExecutablePath()) + L" --tray"; }
 

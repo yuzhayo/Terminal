@@ -18,8 +18,46 @@ enum class StatusKind {
     Error,    // the operation did not happen
 };
 
+// Stable error codes for adapter branching. Text changes, codes don't.
+enum class ErrorCode {
+    None = 0,
+    // Terminal
+    FolderNotFound,
+    VenvActivationFailed,
+    PowerShellNotFound,
+    WslNotReady,
+    LaunchFailed,
+    // Inject
+    InvalidBaseUrl,
+    InvalidApiKey,
+    SettingsFileNotFound,
+    SettingsFileMalformed,
+    SettingsFileWriteFailed,
+    // Editor
+    FileReadFailed,
+    FileWriteFailed,
+    InvalidJson,
+    BackupNotFound,
+    // Chrome
+    ProfileScanFailed,
+    ProfileNotFound,
+    ChromeNotFound,
+    BookmarkAlreadyExists,
+    BookmarkNotFound,
+    PresetAlreadyExists,
+    PresetNotFound,
+    // Settings
+    InvalidTheme,
+    RegistryWriteFailed,
+    // General
+    ValidationFailed,
+    PersistenceFailed,
+    PlatformFailed,
+};
+
 struct Status {
     StatusKind kind = StatusKind::None;
+    ErrorCode code  = ErrorCode::None;
     std::wstring text;
 
     bool ok() const { return kind != StatusKind::Error; }
@@ -27,8 +65,8 @@ struct Status {
 };
 
 inline Status NoStatus() { return {}; }
-inline Status Info(std::wstring text) { return {StatusKind::Info, std::move(text)}; }
-inline Status Success(std::wstring text) { return {StatusKind::Success, std::move(text)}; }
-inline Status Error(std::wstring text) { return {StatusKind::Error, std::move(text)}; }
+inline Status Info(std::wstring text) { return {StatusKind::Info, ErrorCode::None, std::move(text)}; }
+inline Status Success(std::wstring text) { return {StatusKind::Success, ErrorCode::None, std::move(text)}; }
+inline Status Error(ErrorCode code, std::wstring text) { return {StatusKind::Error, code, std::move(text)}; }
 
 }  // namespace core

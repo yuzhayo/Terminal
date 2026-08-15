@@ -103,7 +103,7 @@ void HealApiKeySelection() {
 core::Status AddBaseUrl(const std::wstring& url, const std::wstring& label,
                         const std::wstring& model) {
     const std::wstring trimmed_url = str::Trim(url);
-    if (trimmed_url.empty()) return core::Error(L"Base URL cannot be empty.");
+    if (trimmed_url.empty()) return core::Error(core::ErrorCode::InvalidBaseUrl, L"Base URL cannot be empty.");
 
     storage::Providers& providers = storage::CurrentProviders();
     for (const storage::BaseUrl& existing : providers.base_urls) {
@@ -125,7 +125,7 @@ core::Status AddBaseUrl(const std::wstring& url, const std::wstring& label,
 }
 
 core::Status SelectBaseUrl(const std::wstring& id) {
-    if (!storage::FindBaseUrl(id)) return core::Error(L"Base URL not found.");
+    if (!storage::FindBaseUrl(id)) return core::Error(core::ErrorCode::ValidationFailed, L"Base URL not found.");
     storage::CurrentProviders().selected_base_url_id = id;
     storage::SaveProviders();
     HealApiKeySelection();
@@ -191,8 +191,8 @@ BulkAddResult BulkAddApiKeys(const std::vector<ParsedKey>& keys) {
 
 core::Status SelectApiKey(const std::wstring& id) {
     storage::BaseUrl* base = storage::FindBaseUrl(storage::CurrentProviders().selected_base_url_id);
-    if (!base) return core::Error(L"No base URL selected.");
-    if (!storage::FindApiKey(base, id)) return core::Error(L"API key not found.");
+    if (!base) return core::Error(core::ErrorCode::ValidationFailed, L"No base URL selected.");
+    if (!storage::FindApiKey(base, id)) return core::Error(core::ErrorCode::ValidationFailed, L"API key not found.");
     base->selected_key_id = id;
     storage::SaveProviders();
     return core::NoStatus();
@@ -202,18 +202,19 @@ core::Status SelectApiKey(const std::wstring& id) {
 
 core::Status Inject(InjectTarget target) {
     storage::BaseUrl* base = storage::FindBaseUrl(storage::CurrentProviders().selected_base_url_id);
-    if (!base) return core::Error(L"Add a base URL first.");
+    if (!base) return core::Error(core::ErrorCode::ValidationFailed, L"Add a base URL first.");
     storage::ApiKey* key = storage::FindApiKey(base, base->selected_key_id);
-    if (!key) return core::Error(L"Add and select an API key first.");
+    if (!key) return core::Error(core::ErrorCode::InvalidApiKey, L"Add and select an API key first.");
 
     std::wstring path;
     std::wstring path_error;
     if (!ResolveSettingsPath(target, &path, &path_error))
-        return core::Error(path_error);
+        return core::Error(core::ErrorCode::SettingsFileNotFound, path_error);
 
     json::Value root;
     std::wstring load_error;
-    if (!LoadRoot(path, &root, &load_error)) return core::Error(load_error);
+    if (!LoadRoot(path, &root, &load_error))
+        return core::Error(core::ErrorCode::SettingsFileMalformed, load_error);
 
     json::Value* env = root.Find(L"env");
     if (!env || !env->is_object()) {
@@ -234,11 +235,13 @@ core::Status Inject(InjectTarget target) {
     json::Value verify;
     std::wstring verify_error;
     if (!json::Parse(serialized, &verify, &verify_error))
-        return core::Error(L"Refusing to write invalid JSON: " + verify_error);
+        return core::Error(core::ErrorCode::InvalidJson, L"Refusing to write invalid JSON: " + verify_error);
 
     std::wstring io_error;
-    if (!files::MakeBackup(path, &io_error)) return core::Error(io_error);
-    if (!files::WriteTextAtomic(path, serialized, &io_error)) return core::Error(io_error);
+    if (!files::MakeBackup(path, &io_error))
+        return core::Error(core::ErrorCode::FileWriteFailed, io_error);
+    if (!files::WriteTextAtomic(path, serialized, &io_error))
+        return core::Error(core::ErrorCode::SettingsFileWriteFailed, io_error);
 
     return core::Success(L"Applied to " + path);
 }

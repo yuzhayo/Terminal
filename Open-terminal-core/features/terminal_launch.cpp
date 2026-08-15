@@ -72,9 +72,9 @@ core::Status Run(const TerminalRequest& request) {
     // Re-validate so Run is safe to call without a prior Plan call.
     const std::wstring folder = paths::Normalize(request.folder);
     if (folder.empty())
-        return core::Error(L"Choose a target folder first.");
+        return core::Error(core::ErrorCode::ValidationFailed, L"Choose a target folder first.");
     if (!paths::DirectoryExists(folder))
-        return core::Error(L"Folder does not exist:\n" + folder);
+        return core::Error(core::ErrorCode::FolderNotFound, L"Folder does not exist:\n" + folder);
 
     std::wstring error;
 
@@ -91,7 +91,7 @@ core::Status Run(const TerminalRequest& request) {
             command += L" -- bash -c " + str::QuoteArg(inner);
 
         if (!process::Launch({}, command, folder, process::Window::NewConsole, &error))
-            return core::Error(error);
+            return core::Error(core::ErrorCode::LaunchFailed, error);
     } else {
         const std::wstring activate_script =
             request.activate_venv ? VenvActivateWindows(folder) : std::wstring();
@@ -102,11 +102,11 @@ core::Status Run(const TerminalRequest& request) {
 
         if (request.target == TerminalTarget::PowerShellAdmin) {
             if (!process::ShellLaunch(L"runas", exe, parameters, folder, &error))
-                return core::Error(error);
+                return core::Error(core::ErrorCode::LaunchFailed, error);
         } else {
             const std::wstring command = str::QuoteArg(exe) + L" " + parameters;
             if (!process::Launch(exe, command, folder, process::Window::NewConsole, &error))
-                return core::Error(error);
+                return core::Error(core::ErrorCode::LaunchFailed, error);
         }
     }
 

@@ -241,14 +241,15 @@ ChromeScanResult ScanProfiles(ChromeRuntime runtime) {
 }
 
 core::Status ApplyScan(const ChromeScanResult& result) {
-    if (!result.ok) return core::Error(result.error);
+    if (!result.ok) return core::Error(core::ErrorCode::ProfileScanFailed, result.error);
 
     const size_t count = result.profiles.size();
     std::wstring write_error;
     if (!StoreCachedRuntime(result.runtime,
                             std::vector<ChromeProfile>(result.profiles),
                             result.distro, &write_error)) {
-        return core::Error(L"Scanned " + std::to_wstring(count) +
+        return core::Error(core::ErrorCode::PersistenceFailed,
+                           L"Scanned " + std::to_wstring(count) +
                            L" profile(s) but could not save the cache: " + write_error);
     }
 
@@ -283,7 +284,7 @@ CardLaunchResult LaunchCard(size_t index, const std::wstring& typed_url) {
     CardLaunchResult out;
     const std::vector<storage::VisibleProfile>& visible = VisibleList();
     if (index >= visible.size()) {
-        out.status = core::Error(L"No profile at that index.");
+        out.status = core::Error(core::ErrorCode::ProfileNotFound, L"No profile at that index.");
         return out;
     }
     const storage::VisibleProfile& saved = visible[index];
@@ -291,7 +292,7 @@ CardLaunchResult LaunchCard(size_t index, const std::wstring& typed_url) {
     const ChromeProfile* found = FindInCache(g_cache.For(runtime).profiles, saved);
     if (!found) {
         const std::wstring name = saved.name.empty() ? saved.directory : saved.name;
-        out.status = core::Error(
+        out.status = core::Error(core::ErrorCode::ProfileNotFound,
             name + L" is unavailable. Press Refresh, or remove it from Manage Profiles.");
         return out;
     }
@@ -300,7 +301,7 @@ CardLaunchResult LaunchCard(size_t index, const std::wstring& typed_url) {
     const bool from_input = !trimmed_raw.empty();
     const std::wstring url = ResolveUrl(typed_url);
     if (from_input && url.empty()) {
-        out.status = core::Error(L"That URL could not be understood: " + trimmed_raw);
+        out.status = core::Error(core::ErrorCode::ValidationFailed, L"That URL could not be understood: " + trimmed_raw);
         return out;
     }
 
@@ -312,12 +313,12 @@ CardLaunchResult LaunchCard(size_t index, const std::wstring& typed_url) {
         for (const WindowsBrowser& b : kWindowsBrowsers)
             if (found->browser == b.id) { browser = &b; break; }
         if (!browser) {
-            out.status = core::Error(L"Unsupported browser: " + found->browser);
+            out.status = core::Error(core::ErrorCode::ChromeNotFound, L"Unsupported browser: " + found->browser);
             return out;
         }
         const std::wstring exe = WindowsExe(*browser);
         if (exe.empty()) {
-            out.status = core::Error(L"Google Chrome is not installed for this user.");
+            out.status = core::Error(core::ErrorCode::ChromeNotFound, L"Google Chrome is not installed for this user.");
             return out;
         }
         std::wstring command = str::QuoteArg(exe) +
@@ -332,12 +333,12 @@ CardLaunchResult LaunchCard(size_t index, const std::wstring& typed_url) {
         for (const WslBrowser& b : kWslBrowsers)
             if (found->browser == b.id) { browser = &b; break; }
         if (!browser) {
-            out.status = core::Error(L"Unsupported browser: " + found->browser);
+            out.status = core::Error(core::ErrorCode::ChromeNotFound, L"Unsupported browser: " + found->browser);
             return out;
         }
         std::wstring distro;
         if (!wsl::Resolve(&distro, nullptr, &launch_error)) {
-            out.status = core::Error(launch_error);
+            out.status = core::Error(core::ErrorCode::WslNotReady, launch_error);
             return out;
         }
         std::wstring inner = std::wstring(browser->command) +
@@ -352,7 +353,7 @@ CardLaunchResult LaunchCard(size_t index, const std::wstring& typed_url) {
         launch_ok = process::Launch({}, command, {}, process::Window::Hidden, &launch_error);
     }
 
-    if (!launch_ok) { out.status = core::Error(launch_error); return out; }
+    if (!launch_ok) { out.status = core::Error(core::ErrorCode::LaunchFailed, launch_error); return out; }
 
     if (!url.empty()) storage::RememberUrl(url);
     storage::SaveSettings();
@@ -380,7 +381,7 @@ core::Status SwitchRuntime(ChromeRuntime runtime) {
 core::Status AddBookmark(const std::wstring& label, const std::wstring& url) {
     const std::wstring normalized = NormalizeUrl(url);
     if (normalized.empty())
-        return core::Error(L"That URL could not be understood: " + str::Trim(url));
+        return core::Error(core::ErrorCode::ValidationFailed, L"That URL could not be understood: " + str::Trim(url));
     storage::Bookmark bm;
     bm.id    = storage::NewId();
     bm.label = str::Trim(label);
@@ -393,7 +394,7 @@ core::Status AddBookmark(const std::wstring& label, const std::wstring& url) {
 core::Status RemoveBookmark() {
     storage::Settings& s = storage::CurrentSettings();
     if (s.selected_bookmark_id.empty())
-        return core::Error(L"Select a bookmark first.");
+        return core::Error(core::ErrorCode::BookmarkNotFound, L"Select a bookmark first.");
     for (size_t i = 0; i < s.bookmarks.size(); ++i) {
         if (s.bookmarks[i].id != s.selected_bookmark_id) continue;
         const std::wstring label =
@@ -403,12 +404,12 @@ core::Status RemoveBookmark() {
         storage::SaveSettings();
         return core::Success(L"Removed " + label + L".");
     }
-    return core::Error(L"Bookmark not found.");
+    return core::Error(core::ErrorCode::BookmarkNotFound, L"Bookmark not found.");
 }
 
 core::Status SelectBookmark(size_t index) {
     storage::Settings& s = storage::CurrentSettings();
-    if (index >= s.bookmarks.size()) return core::Error(L"Index out of range.");
+    if (index >= s.bookmarks.size()) return core::Error(core::ErrorCode::ValidationFailed, L"Index out of range.");
     const std::wstring& id = s.bookmarks[index].id;
     s.selected_bookmark_id = (s.selected_bookmark_id == id) ? std::wstring() : id;
     storage::SaveSettings();
@@ -429,7 +430,7 @@ core::Status LoadPreset() {
     storage::ChromeRuntimeState& state =
         storage::ChromeStateFor(storage::CurrentSettings().chrome_runtime);
     if (state.preset.empty())
-        return core::Error(L"No preset saved for this runtime yet.");
+        return core::Error(core::ErrorCode::PresetNotFound, L"No preset saved for this runtime yet.");
     state.visible = state.preset;
     storage::SaveSettings();
     return core::Success(L"Preset loaded: " + std::to_wstring(state.visible.size()) + L" profile(s).");
@@ -450,7 +451,7 @@ core::Status ClearVisible() {
 core::Status ReorderCards(size_t from_index, size_t to_index) {
     std::vector<storage::VisibleProfile>& visible = VisibleList();
     if (from_index >= visible.size() || to_index >= visible.size())
-        return core::Error(L"Index out of range.");
+        return core::Error(core::ErrorCode::ValidationFailed, L"Index out of range.");
     if (from_index == to_index) return core::NoStatus();
     storage::VisibleProfile moved = visible[from_index];
     visible.erase(visible.begin() + static_cast<ptrdiff_t>(from_index));

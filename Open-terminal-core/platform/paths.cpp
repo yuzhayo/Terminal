@@ -38,7 +38,7 @@ std::wstring ExecutableDir() { return Parent(ExecutablePath()); }
 std::wstring LocalAppDataDir() { return KnownFolder(FOLDERID_LocalAppData); }
 std::wstring UserProfileDir() { return KnownFolder(FOLDERID_Profile); }
 
-std::wstring AppDataDir() { return Join(LocalAppDataDir(), L"OpenTerminalNative"); }
+std::wstring AppDataDir() { return Join(Join(LocalAppDataDir(), L"Yuzha"), L"Terminal"); }
 std::wstring SettingsFile() { return Join(AppDataDir(), L"settings.json"); }
 std::wstring ProvidersFile() { return Join(AppDataDir(), L"providers.json"); }
 std::wstring ChromeProfilesFile() { return Join(AppDataDir(), L"chrome_profiles.json"); }

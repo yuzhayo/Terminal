@@ -29,17 +29,4 @@ bool SyncStartWithWindows();
 std::wstring AppDataDirPath();
 std::wstring UiConfigPath();
 
-// Status precedence: if ui::config has a pending last-error, return it as an
-// Error status. Otherwise return Info "ui.json is in use." / "Using built-in defaults."
-// Expose the two source calls so the frontend can compose this without knowing the
-// ui::config namespace.
-bool UiConfigInUse();
-std::wstring UiConfigLastError();
-core::Status AppSettingsStatus();
-
-// Called by the frontend after a ui_config_draft load so this module can report
-// the correct status on the settings screen.
-void SetUiConfigState(bool in_use, const std::wstring& last_error,
-                      const std::wstring& path);
-
 }  // namespace features

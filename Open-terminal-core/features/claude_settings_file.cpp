@@ -101,7 +101,7 @@ core::Status ApplyLoad(const EditorLoadResult& result, EditorDraft* draft) {
         draft->loaded = true;
         draft->text.clear();
         draft->dirty = false;
-        return core::Error(result.error);
+        return core::Error(core::ErrorCode::FileReadFailed, result.error);
     }
     const bool created = (result.text == L"{\n}\n" && !paths::FileExists(result.path));
     draft->text   = result.text;
@@ -131,16 +131,18 @@ core::Status Save(EditorTarget target, EditorDraft* draft) {
     std::wstring path;
     std::wstring path_error;
     if (!ResolveSettingsPath(target, &path, &path_error))
-        return core::Error(path_error);
+        return core::Error(core::ErrorCode::SettingsFileNotFound, path_error);
 
     json::Value parsed;
     std::wstring parse_error;
     if (!json::Parse(text, &parsed, &parse_error))
-        return core::Error(L"The editor content is not valid JSON:\n" + parse_error);
+        return core::Error(core::ErrorCode::InvalidJson, L"The editor content is not valid JSON:\n" + parse_error);
 
     std::wstring io_error;
-    if (!files::MakeBackup(path, &io_error)) return core::Error(io_error);
-    if (!files::WriteTextAtomic(path, text, &io_error)) return core::Error(io_error);
+    if (!files::MakeBackup(path, &io_error))
+        return core::Error(core::ErrorCode::FileWriteFailed, io_error);
+    if (!files::WriteTextAtomic(path, text, &io_error))
+        return core::Error(core::ErrorCode::FileWriteFailed, io_error);
 
     draft->text  = text;
     draft->dirty = false;
@@ -154,10 +156,11 @@ core::Status RestoreBackup(EditorTarget target) {
     std::wstring path;
     std::wstring path_error;
     if (!ResolveSettingsPath(target, &path, &path_error))
-        return core::Error(path_error);
+        return core::Error(core::ErrorCode::SettingsFileNotFound, path_error);
 
     std::wstring io_error;
-    if (!files::RestoreBackup(path, &io_error)) return core::Error(io_error);
+    if (!files::RestoreBackup(path, &io_error))
+        return core::Error(core::ErrorCode::BackupNotFound, io_error);
     return core::Success(L"Restored from backup.");
 }
 

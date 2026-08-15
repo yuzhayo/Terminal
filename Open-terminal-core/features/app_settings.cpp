@@ -5,16 +5,6 @@
 #include "storage/settings.h"
 
 namespace features {
-namespace {
-
-// ui::config equivalents are not available in core — the ui_config_draft feature
-// owns that domain. app_settings provides stubs that return sensible defaults;
-// the frontend overrides the behaviour by calling ui_config_draft directly.
-bool g_ui_config_in_use = false;
-std::wstring g_ui_config_last_error;
-std::wstring g_ui_config_path;
-
-}  // namespace
 
 const std::wstring& CurrentThemeToken() {
     const std::wstring& token = storage::CurrentSettings().theme;
@@ -56,29 +46,6 @@ bool SyncStartWithWindows() {
 }
 
 std::wstring AppDataDirPath() { return paths::AppDataDir(); }
-
-std::wstring UiConfigPath() {
-    return g_ui_config_path.empty() ? paths::UiConfigFile() : g_ui_config_path;
-}
-
-bool UiConfigInUse() { return g_ui_config_in_use; }
-std::wstring UiConfigLastError() { return g_ui_config_last_error; }
-
-// Called by the frontend after it has applied a ui_config_draft load so this
-// module can report the correct status.
-void SetUiConfigState(bool in_use, const std::wstring& last_error,
-                      const std::wstring& path) {
-    g_ui_config_in_use   = in_use;
-    g_ui_config_last_error = last_error;
-    g_ui_config_path     = path;
-}
-
-core::Status AppSettingsStatus() {
-    if (!g_ui_config_last_error.empty())
-        return core::Error(g_ui_config_last_error);
-    return g_ui_config_in_use
-        ? core::Info(L"ui.json is in use.")
-        : core::Info(L"Using the built-in UI defaults.");
-}
+std::wstring UiConfigPath() { return paths::UiConfigFile(); }
 
 }  // namespace features

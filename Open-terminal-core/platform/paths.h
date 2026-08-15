@@ -9,7 +9,7 @@ namespace paths {
 std::wstring ExecutablePath();
 std::wstring ExecutableDir();
 
-// %LOCALAPPDATA%\OpenTerminalNative — not created until data must be saved.
+// %LOCALAPPDATA%\Yuzha\Terminal — not created until data must be saved.
 std::wstring AppDataDir();
 std::wstring SettingsFile();
 std::wstring ProvidersFile();
