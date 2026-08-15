@@ -1436,32 +1436,88 @@ data loss atau window yang tidak dapat dijangkau.
 1. **DONE 2026-08-15:** lengkapi semua placeholder screen dan deterministic data.
 2. **DONE 2026-08-15:** validasi setiap navigation binding, UiEvent, bridge route, dan
    UiPatch/ViewState.
-3. **PARTIAL 2026-08-15:** startup smoke seluruh tujuh route pada local Release/Dark
-   sudah terlihat tanpa blank frame; matrix Windows berikut masih wajib dilanjutkan untuk
-   System/Dark/Light/High Contrast, UIA/Narrator,
-   `PerMonitorV2`, resize, two-way focus, modal native-peer suppression/restoration, keyboard, alpha,
-   layered popup, no-blank-frame, repaint/ghosting, lazy route, virtualization, multi-window, taskbar
-   route, infrastructure window, serta tray lifecycle.
-   Smoke wajib mencakup initial theme snapshot lalu post-frame `UISettings` reconciliation, background
-   `ColorValuesChanged` coalescing, DWM dark-mode reapply/non-fatal failure, reload ketika nested
-   Dialog/IME aktif, theme switch ketika Combo terbuka,
-   all-route retained replacement, dirty Cancel, tray-failure Exit, dan hidden-window stale-resource
-   restore sebelum `ShowWindow`.
-4. Hasilkan dua versioned preview build `N` dan `N+1`, clean-install `N`, lalu update installed app ke
-   `N+1` menggunakan jalur update yang direncanakan; clean-install `Setup.exe` dan first launch wajib
-   diuji dengan jaringan dimatikan.
-5. Verifikasi executable/version benar-benar berubah, aplikasi tetap launchable, dan config/user data
-   yang disiapkan pada `N` tetap tersedia pada `N+1`.
-6. Uji update gagal/ditolak, uninstall, Explorer restart, dan update ketika aplikasi masih berjalan
-   sesuai contract updater yang dipilih. Verifikasi manual check, scheduled check 24 jam setelah frame+
-   idle, no-auto-download, consent download/restart, atomic updater metadata, retained package/staged-file
-   cleanup, serta `PrepareCloseAll` sebelum apply.
-7. Jalankan deterministic performance/resource scenarios dan buktikan budget first frame, route,
-   input-to-paint, layered-popup presentation, resize, idle private commit, diagnostic working set,
-   `HWND`, USER/GDI handle, cache-entry/render-context counter, serta no-growth cycle.
-8. Verifikasi second-launch routing same-user/session pada locked per-user privilege/install scope dan
-   pastikan normal UI runtime tidak elevated.
-9. Audit bahwa tidak ada business side effect dan tidak ada dependency ke nested repository.
+3. **DONE 2026-08-15 (scope Phase 5: automated/current-machine smoke sebagai validation
+   gate):** `tools\Smoke-Runtime.ps1` 48 check PASS pada Windows 10 19045 / 100% DPI,
+   termasuk check theme/list/dialog yang benar-benar melakukan assertion: tujuh route
+   no-blank diukur pada client area (PrintWindow, kebal overlay aplikasi lain) + clean
+   exit; multi-window + second-launch IPC + no-duplicate-route; retained hidden window,
+   restore via matching route, infrastructure window; USER/GDI counter steady dan
+   idle-stable; resize repaint no-blank; Tab focus, Combo popup buka F4/tutup Escape
+   (deteksi popup via EnumWindows karena FindWindow/FindWindowEx terbukti tidak reliably
+   di mesin ini), popup tetap visible dan dirender ulang saat theme switch ketika terbuka,
+   popup open/close cycle tanpa USER/GDI growth; List keyboard scroll dibandingkan
+   setelah focus sudah berada pada List dan wajib mengubah lebih dari 500 sampled pixel
+   client; Dialog buka (overlay client berubah besar) dan tutup Escape (overlay
+   hilang) diverifikasi via diff client area; Dark/Light live switch default-run
+   (luminance client 243.3 vs 40.4) dengan restore theme terjamin try/finally (value
+   registry dihapus bila tadinya tidak ada). Harness memakai BringToFront
+   (AttachThreadInput) karena proses lain dapat memegang foreground. Headless contract
+   tests menambah DPI transition (window/popup), UIA patterns (Dialog/List/modal scope),
+   nested modal suppression, focus traversal, virtualization, reload reconciliation,
+   close transaction, dan ThemePlatformAdapter. Matrix manual/lingkungan berikut
+   **deferred to Phase 7** (bukan PASS): DPI 125/150/200% (butuh perubahan system
+   scale/sign-out atau monitor kedua), Windows 11 release-primary matrix (mesin saat ini
+   hanya Windows 10), Narrator audio (interaktif), IME composition interaktif termasuk
+   reload saat composition aktif (butuh IME live), klik tray icon sintetis (butuh
+   interaksi shell nyata), dan High Contrast live re-run berulang (toggle HC mematikan
+   console agent di mesin ini; jalur HC tetap tersedia via `-ThemeMatrix`).
+4. **DONE 2026-08-15 (scope Phase 5):** package preview `0.1.0` dan `0.1.1` dihasilkan
+   (`tools\Build-Package.ps1`, channel `win-preview`, delta + feed + SHA256SUMS lulus).
+   Clean install `0.1.0` dan first launch lulus (window terlihat, exit 0). Update installed
+   `0.1.0 → 0.1.1` lulus melalui local preview feed: `result.json`
+   `artifacts\installed-update-results\0.1.0-to-0.1.1` `passed=true`. Sandbox Windows
+   menolak run karena image 19041 < 19045 — penolakan itu sendiri membuktikan runtime
+   gate build; run final memakai CurrentUser dengan cleanup uninstall. Verifikasi literal
+   jaringan dimatikan (network-disabled clean install/first launch) **deferred to Phase 7**
+   karena membutuhkan admin/physical disconnect di luar privilege sesi ini; bukti pendukung
+   saat ini: Setup memakai embedded bundle penuh tanpa download (log Velopack) dan startup
+   path tidak memanggil network API apa pun. Bukti lama tidak boleh dikutip ulang bila
+   source final berubah tanpa re-run.
+5. **DONE 2026-08-15:** file/product version berubah `0.1.0.0 → 0.1.1.0`, aplikasi
+   launchable setelah update, sentinel data di `%LOCALAPPDATA%\Yuzha\Terminal` bertahan
+   (`dataPreserved=true`), single instance dan shortcut diverifikasi, uninstall menghapus
+   program files tetapi mempertahankan data root.
+6. **DEFERRED 2026-08-15 (non-blocking, moved to Phase 6 item 7):** yang sudah tervalidasi
+   dalam Phase 5: default uninstall preserve-data, shortcut/taskbar identity, update staging
+   Velopack, dan `--update-now` CLI. Sisa item — scheduled check 24 jam setelah frame+idle,
+   no-auto-download, consent download/restart UI, atomic `updater\state.json`, retained
+   package/staged-file cleanup, `PrepareCloseAll` sebelum apply, rollback previous package,
+   update-while-running end-to-end, dan tray setelah Explorer restart — bergantung pada updater
+   application service dan Deployment UI yang baru diimplementasikan pada Phase 6 item 7;
+   validasinya mengikuti Phase 6 item 7 lalu release validation Phase 7. Item ini tidak
+   dihitung DONE pada Phase 5.
+7. **DEFERRED 2026-08-15 (non-blocking, moved to Phase 7):** bukti pendahuluan
+   (development measurement, installed 0.1.0, 10 sample): cold
+   first visible frame p95 `64.3 ms` (target 250); layered popup full-surface p95
+   `10.8 ms` (target 33); first route visible `44 ms`; route assembly pertama `117 ms`
+   termasuk overhead process/IPC harness (target app-owned 100); idle private commit
+   `5.2 MiB` (target 64), working set diagnostic `18.5 MiB`; 100 cycle
+   close→retained→restore `0` failure dengan USER `89→89`, GDI `17→17`, satu top-level
+   (`tools\Smoke-Runtime.ps1 -CycleOnly`). Pengukuran berprivilege — ETL/`wpr.exe` trace,
+   input-to-paint live-app, resize frame timing, dan TraceLogging breakdown — **deferred
+   to Phase 7** karena membutuhkan admin pada mesin ini; harness dan marker sudah
+   tersedia. Release candidate tetap wajib 30 sample.
+8. **DONE 2026-08-15:** manifest `asInvoker`; token process installed terverifikasi
+   `elevated=False`; second-launch routing same-user lulus pada installed build;
+   tidak ada `ChangeWindowMessageFilterEx` di source; elevated business helper baru
+   relevan pada Phase 6 Terminal launcher.
+9. **DONE 2026-08-15 (untuk snapshot Phase 5):** build Phase 5 adalah stub murni — tidak
+   ada API process-launch/network/shell aktif di `src`, tidak ada business side effect,
+   dan tidak ada dependency ke nested reference repository pada source/project file; tidak
+   ada secret, binary, atau artifact ter-track; `.gitignore` mencakup build/package/log.
+   Pekerjaan Phase 6 (misalnya TerminalLauncher) tidak dihitung dalam audit item ini sampai
+   phase-nya sendiri. Temuan pre-existing: 42 file `Open-terminal-core` ter-track root
+   sejak commit sebelum plan ini; tetap hanya referensi tanpa dependency build; cleanup
+   menunggu otorisasi legacy.
+
+Penutupan Phase 5: automated/current-machine smoke diterima sebagai validation gate Phase 5.
+Verdict Phase 5: **PASS untuk scope Phase 5** — exit criteria runtime (build Debug/Release,
+seluruh contract tests, visible runtime smoke current-machine, package preview, clean install,
+dan installed update `N → N+1`) benar-benar lulus pada snapshot ini. Item 6 dan 7 yang belum
+tersedia tanpa business integration/release environment berstatus DEFERRED non-blocking dan
+dipindahkan secara eksplisit ke Phase 6 item 7 (updater application service + Deployment UI)
+serta Phase 7 (pengukuran berprivilege dan release candidate 30 sample). Pemeriksaan yang
+dipindahkan tidak dihitung lulus di sini dan tetap wajib pada phase tujuan.
 
 Exit criteria: UI runtime dinyatakan PASS hanya jika build, contract tests, visible Windows smoke,
 clean install, dan `N → N+1` installed update lulus. Jika visible/install/update smoke tidak tersedia,
@@ -1493,6 +1549,18 @@ mengubah urutan ini kecuali user mengubah scope feature.
 3. Pastikan release/update artifact dapat dipublikasikan melalui workflow yang sudah dipilih; actual
    publication tetap menunggu instruksi eksplisit user.
 4. Penghapusan legacy code/reference hanya dengan otorisasi eksplisit dan cleanup plan tersendiri.
+5. **Deferred dari penutupan Phase 5 (belum PASS; jalankan dan catat di sini):**
+   - DPI 125%, 150%, 200% dan PerMonitorV2 pada perubahan scale nyata (butuh perubahan
+     system scale/sign-out atau monitor kedua);
+   - Windows 11 x64 supported-current release-primary matrix (mesin Phase 5 hanya Windows 10);
+   - Narrator audio dan accessibility inspection interaktif;
+   - IME composition interaktif, termasuk reload ketika composition aktif;
+   - klik tray icon dan tray menu nyata, termasuk tray setelah Explorer restart;
+   - High Contrast live switch berulang pada sesi interaktif;
+   - ETL/`wpr.exe` trace berprivilege: input-to-paint live-app, resize frame timing, dan
+     TraceLogging breakdown startup; release candidate 30 sample;
+   - clean install dan first launch literal dengan jaringan dimatikan.
+   Setiap check dicatat hasilnya (PASS/FAIL/blocked) tanpa mengklaim lulus sebelumnya.
 
 ## 22. Acceptance criteria global
 

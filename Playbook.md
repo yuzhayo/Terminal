@@ -562,6 +562,17 @@ Smoke route dari executable Release:
 .\build\x64\Release\Terminal.exe --exit
 ```
 
+Smoke runtime/visual otomatis (route, multi-window, retained, interaksi keyboard,
+combo popup, dialog, list scroll, resource counter, dan live switch Dark/Light).
+`-ThemeMatrix` menambah High Contrast; `-ThemeOnly` hanya menjalankan matrix theme.
+Theme dipulihkan otomatis, dan script menolak berjalan bila executable target sudah
+aktif agar tidak mematikan instance yang mungkin membawa draft user:
+
+```powershell
+.\tools\Smoke-Runtime.ps1
+.\tools\Smoke-Runtime.ps1 -ThemeOnly
+```
+
 Sebelum commit:
 
 ```powershell

@@ -14,6 +14,22 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+function Get-Sha256Hex {
+    param([Parameter(Mandatory)] [string] $Path)
+    if (Get-Command Get-FileHash -ErrorAction SilentlyContinue) {
+        return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+    }
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $hash = [System.Security.Cryptography.SHA256]::Create().ComputeHash($stream)
+        return ([System.BitConverter]::ToString($hash) -replace '-', '').ToUpperInvariant()
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
 
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $repositoryPrefix = $repositoryRoot.TrimEnd('\') + '\'
@@ -104,7 +120,7 @@ if ($release.Count -ne 1) {
     throw "Feed tidak membawa tepat satu full package Yuzha.Terminal $Version."
 }
 
-$packageHash = (Get-FileHash -LiteralPath $fullPackage -Algorithm SHA256).Hash
+$packageHash = Get-Sha256Hex -Path $fullPackage
 if ($release[0].SHA256 -ne $packageHash) {
     throw 'SHA-256 full package tidak sama dengan metadata feed.'
 }
@@ -137,7 +153,7 @@ $hashLines = Get-ChildItem -LiteralPath $outputPath -File |
     Where-Object Name -ne 'SHA256SUMS' |
     Sort-Object Name |
     ForEach-Object {
-        $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+        $hash = Get-Sha256Hex -Path $_.FullName
         "$hash  $($_.Name)"
     }
 $hashLines | Set-Content -LiteralPath (Join-Path $outputPath 'SHA256SUMS') -Encoding ascii
@@ -146,7 +162,7 @@ $hashLines | Set-Content -LiteralPath (Join-Path $outputPath 'SHA256SUMS') -Enco
     Version = $Version
     Channel = $Channel
     Setup = $setup
-    SetupSha256 = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash
+    SetupSha256 = (Get-Sha256Hex -Path $setup)
     FullPackage = $fullPackage
     FullPackageSha256 = $packageHash
     Portable = $portable

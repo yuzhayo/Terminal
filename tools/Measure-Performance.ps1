@@ -65,7 +65,7 @@ $report | Add-Member -NotePropertyName environment -NotePropertyValue ([ordered]
     cpu = $cpu.Name.Trim()
     ramBytes = [uint64]$computer.TotalPhysicalMemory
 })
-$report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding utf8NoBOM
+[System.IO.File]::WriteAllText($reportPath, ($report | ConvertTo-Json -Depth 8), (New-Object System.Text.UTF8Encoding($false)))
 
 Get-Item -LiteralPath $reportPath
 if (Test-Path -LiteralPath $etlPath) { Get-Item -LiteralPath $etlPath }
