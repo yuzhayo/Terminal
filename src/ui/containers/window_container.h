@@ -52,6 +52,7 @@ public:
     bool IsDirty() const;
     std::size_t dirty_participant_count() const;
     std::uint64_t document_generation() const noexcept;
+    UINT dpi() const noexcept;
 
 private:
     static LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
@@ -65,6 +66,7 @@ private:
                          std::string_view preferred_route, std::wstring& diagnostic);
     void ApplyThemeState(config::ThemeKind theme_kind, bool advance_shared_epoch);
     void ApplyNonClientTheme() noexcept;
+    void UpdateMinimumTrackSize() noexcept;
     void ResetAutomationProvider();
     bool RenderCompleteFrame(HDC reference);
     bool RenderFrame(HDC reference, const RECT& requested_region, bool force_full);

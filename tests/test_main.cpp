@@ -884,6 +884,122 @@ void TestComboPopupPlacement() {
         RECT{700, 550, 780, 582}, work, SIZE{220, 160}, 2);
     REQUIRE_TRUE(above.opens_above);
     REQUIRE_TRUE(above.origin.x == 580 && above.origin.y == 388);
+
+    struct ExpectedMetrics {
+        UINT dpi;
+        int shadow;
+        int item_height;
+        int width;
+        int height;
+    };
+    for (const ExpectedMetrics expected : {
+             ExpectedMetrics{96, 8, 32, 216, 112},
+             ExpectedMetrics{120, 10, 40, 245, 140},
+             ExpectedMetrics{144, 12, 48, 294, 168},
+             ExpectedMetrics{192, 16, 64, 392, 224},
+         }) {
+        const auto metrics = ui::components::CalculateComboPopupMetrics(
+            200, 3, 10, 480, SIZE{2000, 2000}, expected.dpi);
+        REQUIRE_TRUE(metrics.shadow_margin == expected.shadow);
+        REQUIRE_TRUE(metrics.item_height == expected.item_height);
+        REQUIRE_TRUE(metrics.visible_rows == 3);
+        REQUIRE_TRUE(metrics.surface.cx == expected.width);
+        REQUIRE_TRUE(metrics.surface.cy == expected.height);
+    }
+
+    const auto constrained = ui::components::CalculateComboPopupMetrics(
+        500, 20, 10, 480, SIZE{180, 100}, 192);
+    REQUIRE_TRUE(constrained.surface.cx == 180);
+    REQUIRE_TRUE(constrained.surface.cy <= 100);
+    REQUIRE_TRUE(constrained.visible_rows == 1);
+}
+
+void TestComboPopupDpiTransition() {
+    HWND owner = CreateWindowExW(WS_EX_TOOLWINDOW, L"STATIC", L"Combo DPI test",
+                                 WS_POPUP, 100, 100, 640, 480, nullptr, nullptr,
+                                 GetModuleHandleW(nullptr), nullptr);
+    REQUIRE_TRUE(owner != nullptr);
+    {
+        rendering::RenderRuntime runtime;
+        ui::config::ResolvedTheme theme;
+        ui::config::ResolvedStyle style;
+        style.id = "combo";
+        style.font.family = "Segoe UI";
+        style.font.point_size = 9;
+        style.minimum_height = 32;
+        style.content_padding = {8, 4, 8, 4};
+        style.radius = 6;
+        for (auto& visual : style.states) {
+            visual.background = ui::config::LiteralRgba{32, 35, 42, 255};
+            visual.foreground = ui::config::LiteralRgba{240, 240, 240, 255};
+            visual.border = ui::config::LiteralRgba{80, 85, 96, 255};
+        }
+        theme.styles.push_back(style);
+
+        ui::components::ComponentHost host;
+        host.window = owner;
+        host.dpi = 96;
+        host.render_runtime = &runtime;
+        host.theme = &theme;
+        host.resolve_string_items = [](std::string_view) {
+            return std::vector<std::wstring>{L"PowerShell", L"Command Prompt", L"Ubuntu"};
+        };
+
+        ui::config::ResolvedComponent definition;
+        definition.id = "dpi-combo";
+        definition.type = ui::config::ComponentType::Combo;
+        definition.style_index = 0;
+        ui::config::ComboProperties properties;
+        properties.items_binding.path = "viewState.items";
+        properties.selected_value_binding.path = "viewState.selected";
+        properties.maximum_visible_items = 10;
+        properties.popup_maximum_height = 480;
+        definition.properties = properties;
+
+        ui::components::ComboComponent combo(definition, host);
+        combo.Arrange({20, 20, 220, 52});
+        combo.SetLogicalFocus(true, true);
+        REQUIRE_TRUE(combo.AutomationExpand());
+        HWND popup = combo.OwnedPopupHwnd();
+        REQUIRE_TRUE(popup != nullptr);
+        const LONG_PTR popup_style = GetWindowLongPtrW(popup, GWL_STYLE);
+        const LONG_PTR popup_extended_style = GetWindowLongPtrW(popup, GWL_EXSTYLE);
+        REQUIRE_TRUE((popup_style & WS_POPUP) != 0);
+        REQUIRE_TRUE((popup_extended_style & WS_EX_LAYERED) != 0);
+        REQUIRE_TRUE((popup_extended_style & WS_EX_NOACTIVATE) != 0);
+        REQUIRE_TRUE((popup_extended_style & WS_EX_TOOLWINDOW) != 0);
+        REQUIRE_TRUE((popup_extended_style & WS_EX_APPWINDOW) == 0);
+        REQUIRE_TRUE(GetWindow(popup, GW_OWNER) == owner);
+
+        POINT trigger_origin{20, 20};
+        ClientToScreen(owner, &trigger_origin);
+        const RECT trigger{trigger_origin.x, trigger_origin.y,
+                           trigger_origin.x + 200, trigger_origin.y + 32};
+        HMONITOR monitor = MonitorFromRect(&trigger, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO monitor_info{sizeof(monitor_info)};
+        REQUIRE_TRUE(GetMonitorInfoW(monitor, &monitor_info));
+        const SIZE work_area{monitor_info.rcWork.right - monitor_info.rcWork.left,
+                             monitor_info.rcWork.bottom - monitor_info.rcWork.top};
+
+        for (const UINT dpi : {96u, 120u, 144u, 192u}) {
+            RECT suggested{};
+            REQUIRE_TRUE(GetWindowRect(popup, &suggested));
+            SendMessageW(popup, WM_DPICHANGED, MAKELONG(dpi, dpi),
+                         reinterpret_cast<LPARAM>(&suggested));
+            RECT actual{};
+            REQUIRE_TRUE(GetWindowRect(popup, &actual));
+            const auto metrics = ui::components::CalculateComboPopupMetrics(
+                200, 3, 10, 480, work_area, dpi);
+            REQUIRE_TRUE(actual.right - actual.left == metrics.surface.cx);
+            REQUIRE_TRUE(actual.bottom - actual.top == metrics.surface.cy);
+            REQUIRE_TRUE(actual.left >= monitor_info.rcWork.left);
+            REQUIRE_TRUE(actual.top >= monitor_info.rcWork.top);
+            REQUIRE_TRUE(actual.right <= monitor_info.rcWork.right);
+            REQUIRE_TRUE(actual.bottom <= monitor_info.rcWork.bottom);
+        }
+        REQUIRE_TRUE(combo.AutomationCollapse());
+    }
+    REQUIRE_TRUE(DestroyWindow(owner));
 }
 
 void TestModalOverlayStackNestedSuppressionAndFocus() {
@@ -1361,6 +1477,43 @@ void TestWindowContainerRouteStateDirtyAndReload() {
     REQUIRE_TRUE(window.active_route() == "settings");
     REQUIRE_TRUE(window.cached_screen_count() == 1);
     REQUIRE_TRUE(!window.IsDirty());
+}
+
+void TestWindowContainerDpiTransition() {
+    const auto resolved = ui::config::detail::ResolveDocuments(
+        ReadEmbeddedDefaultJson(), std::nullopt, 1);
+    rendering::RenderRuntime runtime;
+    auto bridge = std::make_shared<ui::application::StubApplicationBridge>();
+    ui::containers::WindowContainer window(
+        GetModuleHandleW(nullptr), runtime, resolved.document,
+        ui::config::ThemeKind::Light, bridge);
+    std::wstring diagnostic;
+    REQUIRE_TRUE(window.Create("main", diagnostic));
+    REQUIRE_TRUE(window.PrepareFirstFrame(diagnostic));
+
+    std::uint64_t expected_epoch = runtime.resource_epoch();
+    int offset = 40;
+    for (const UINT dpi : {96u, 120u, 144u, 192u}) {
+        const RECT suggested{offset, offset, offset + 1600, offset + 1100};
+        SendMessageW(window.hwnd(), WM_DPICHANGED, MAKELONG(dpi, dpi),
+                     reinterpret_cast<LPARAM>(&suggested));
+        ++expected_epoch;
+        REQUIRE_TRUE(window.dpi() == dpi);
+        REQUIRE_TRUE(runtime.resource_epoch() == expected_epoch);
+        RECT actual{};
+        REQUIRE_TRUE(GetWindowRect(window.hwnd(), &actual));
+        REQUIRE_TRUE(actual.left == suggested.left && actual.top == suggested.top);
+        REQUIRE_TRUE(actual.right == suggested.right && actual.bottom == suggested.bottom);
+        MINMAXINFO minimum{};
+        SendMessageW(window.hwnd(), WM_GETMINMAXINFO, 0,
+                     reinterpret_cast<LPARAM>(&minimum));
+        REQUIRE_TRUE(minimum.ptMinTrackSize.x == ui::components::ScaleDip(620, dpi));
+        REQUIRE_TRUE(minimum.ptMinTrackSize.y == ui::components::ScaleDip(420, dpi));
+        offset += 10;
+    }
+
+    SendMessageW(window.hwnd(), WM_SYSCOLORCHANGE, 0, 0);
+    REQUIRE_TRUE(runtime.resource_epoch() == expected_epoch);
 }
 
 void TestNativePeerGeometryContainment() {
@@ -1880,6 +2033,7 @@ std::vector<TestCase> DiscoverTests() {
         {"AppPaths.Contract", TestAppPathsContract, __FILE__, __LINE__},
         {"ComponentRegistry.VerticalSlice", TestComponentRegistryVerticalSlice, __FILE__, __LINE__},
         {"Combo.PopupPlacement", TestComboPopupPlacement, __FILE__, __LINE__},
+        {"Combo.PopupDpiTransition", TestComboPopupDpiTransition, __FILE__, __LINE__},
         {"Dialog.ExplicitDismissPolicy", TestDialogExplicitDismissPolicy, __FILE__, __LINE__},
         {"Automation.DialogPatterns", TestAdvancedAutomationDialogPatterns, __FILE__, __LINE__},
         {"Automation.ListPatterns", TestAdvancedAutomationListPatterns, __FILE__, __LINE__},
@@ -1920,6 +2074,7 @@ std::vector<TestCase> DiscoverTests() {
         {"WindowRenderContext.InvalidationUnion", TestWindowRenderContextInvalidationUnion, __FILE__, __LINE__},
         {"WindowRenderContext.RoundedSourceOver", TestWindowRenderContextRoundedSourceOver, __FILE__, __LINE__},
         {"WindowContainer.RouteStateDirtyAndReload", TestWindowContainerRouteStateDirtyAndReload, __FILE__, __LINE__},
+        {"WindowContainer.DpiTransition", TestWindowContainerDpiTransition, __FILE__, __LINE__},
         {"WindowsRuntime.MinimumBuild", TestWindowsRuntimeMinimumBuild, __FILE__, __LINE__},
     };
     std::sort(tests.begin(), tests.end(),

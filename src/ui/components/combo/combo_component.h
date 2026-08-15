@@ -13,9 +13,20 @@ struct ComboPopupPlacement {
     bool opens_above = false;
 };
 
+struct ComboPopupMetrics {
+    SIZE surface{};
+    int shadow_margin = 0;
+    int item_height = 1;
+    int visible_rows = 1;
+};
+
 ComboPopupPlacement CalculateComboPopupPlacement(const RECT& trigger_screen,
                                                   const RECT& work_area,
                                                   SIZE popup_size, int gap) noexcept;
+ComboPopupMetrics CalculateComboPopupMetrics(int trigger_width, std::size_t item_count,
+                                              int maximum_visible_items,
+                                              int popup_maximum_height, SIZE work_area,
+                                              UINT dpi) noexcept;
 
 class ComboComponent final : public Component {
 public:
@@ -65,7 +76,7 @@ private:
     void OpenPopup();
     void ClosePopup(bool dispatch_event = true);
     void RefreshItems();
-    void PositionAndRenderPopup();
+    void PositionAndRenderPopup(std::optional<UINT> dpi_override = std::nullopt);
     void RenderPopup();
     int ItemAt(POINT point) const noexcept;
     void SelectHighlighted();

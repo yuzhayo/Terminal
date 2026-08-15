@@ -30,6 +30,31 @@ ComboPopupPlacement CalculateComboPopupPlacement(const RECT& trigger, const RECT
     return result;
 }
 
+ComboPopupMetrics CalculateComboPopupMetrics(int trigger_width, std::size_t item_count,
+                                              int maximum_visible_items,
+                                              int popup_maximum_height, SIZE work_area,
+                                              UINT dpi) noexcept {
+    ComboPopupMetrics result;
+    const UINT effective_dpi = dpi == 0 ? 96 : dpi;
+    result.shadow_margin = ScaleDip(8, effective_dpi);
+    result.item_height = std::max(1, ScaleDip(32, effective_dpi));
+    const int available_width = std::max(1, static_cast<int>(work_area.cx));
+    const int available_height = std::max(1, static_cast<int>(work_area.cy));
+    const int configured_height = std::max(
+        result.item_height, ScaleDip(popup_maximum_height, effective_dpi));
+    const int content_height_limit = std::max(
+        1, std::min(configured_height, available_height) - result.shadow_margin * 2);
+    const int height_limited_rows = std::max(1, content_height_limit / result.item_height);
+    result.visible_rows = std::max(
+        1, std::min({maximum_visible_items, height_limited_rows,
+                     static_cast<int>(std::max<std::size_t>(1, item_count))}));
+    const int body_width = std::max(trigger_width, ScaleDip(180, effective_dpi));
+    result.surface.cx = std::min(available_width, body_width + result.shadow_margin * 2);
+    result.surface.cy = std::min(
+        available_height, result.visible_rows * result.item_height + result.shadow_margin * 2);
+    return result;
+}
+
 ComboComponent::ComboComponent(const config::ResolvedComponent& definition, ComponentHost& host)
     : Component(definition, host), popup_render_context_(*host.render_runtime) {
     popup_render_context_.SetRedrawRequest([this] {
@@ -336,21 +361,9 @@ void ComboComponent::RefreshItems() {
     }
 }
 
-void ComboComponent::PositionAndRenderPopup() {
+void ComboComponent::PositionAndRenderPopup(std::optional<UINT> dpi_override) {
     if (!popup_open_ || !popup_) return;
-    popup_dpi_ = GetDpiForWindow(host_.window);
-    shadow_margin_ = ScaleDip(8, popup_dpi_);
-    item_height_ = ScaleDip(32, popup_dpi_);
-    const int height_limited_rows = std::max(
-        1, ScaleDip(Properties().popup_maximum_height, popup_dpi_) / item_height_);
-    visible_rows_ = std::max(
-        1, std::min({Properties().maximum_visible_items, height_limited_rows,
-                     static_cast<int>(std::max<std::size_t>(1, items_.size()))}));
-    EnsureHighlightVisible();
-    const int content_height = visible_rows_ * item_height_;
-    const int width = std::max(static_cast<int>(bounds_.right - bounds_.left),
-                               ScaleDip(180, popup_dpi_));
-    const SIZE surface{width + shadow_margin_ * 2, content_height + shadow_margin_ * 2};
+    popup_dpi_ = dpi_override.value_or(host_.dpi == 0 ? 96 : host_.dpi);
     POINT trigger_origin{bounds_.left, bounds_.top};
     ClientToScreen(host_.window, &trigger_origin);
     const RECT trigger{trigger_origin.x, trigger_origin.y,
@@ -358,15 +371,27 @@ void ComboComponent::PositionAndRenderPopup() {
                        trigger_origin.y + bounds_.bottom - bounds_.top};
     HMONITOR monitor = MonitorFromRect(&trigger, MONITOR_DEFAULTTONEAREST);
     MONITORINFO info{sizeof(info)};
-    GetMonitorInfoW(monitor, &info);
+    if (!GetMonitorInfoW(monitor, &info)) {
+        SystemParametersInfoW(SPI_GETWORKAREA, 0, &info.rcWork, 0);
+    }
+    const SIZE work_area{
+        static_cast<LONG>(std::max(1L, info.rcWork.right - info.rcWork.left)),
+        static_cast<LONG>(std::max(1L, info.rcWork.bottom - info.rcWork.top))};
+    const ComboPopupMetrics metrics = CalculateComboPopupMetrics(
+        bounds_.right - bounds_.left, items_.size(), Properties().maximum_visible_items,
+        Properties().popup_maximum_height, work_area, popup_dpi_);
+    shadow_margin_ = metrics.shadow_margin;
+    item_height_ = metrics.item_height;
+    visible_rows_ = metrics.visible_rows;
+    EnsureHighlightVisible();
     const ComboPopupPlacement placement = CalculateComboPopupPlacement(
-        trigger, info.rcWork, surface, ScaleDip(2, popup_dpi_));
-    if (!popup_render_context_.EnsureSize(surface.cx, surface.cy)) {
+        trigger, info.rcWork, metrics.surface, ScaleDip(2, popup_dpi_));
+    if (!popup_render_context_.EnsureSize(metrics.surface.cx, metrics.surface.cy)) {
         ClosePopup();
         return;
     }
-    SetWindowPos(popup_, nullptr, placement.origin.x, placement.origin.y, surface.cx, surface.cy,
-                 SWP_NOACTIVATE | SWP_NOZORDER);
+    SetWindowPos(popup_, nullptr, placement.origin.x, placement.origin.y,
+                 metrics.surface.cx, metrics.surface.cy, SWP_NOACTIVATE | SWP_NOZORDER);
     RenderPopup();
 }
 
@@ -530,8 +555,7 @@ LRESULT ComboComponent::HandlePopupMessage(UINT message, WPARAM wparam, LPARAM l
             RenderPopup();
             return 0;
         case WM_DPICHANGED:
-            popup_dpi_ = HIWORD(wparam);
-            PositionAndRenderPopup();
+            PositionAndRenderPopup(HIWORD(wparam));
             return 0;
         default:
             break;

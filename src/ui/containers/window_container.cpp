@@ -127,10 +127,7 @@ bool WindowContainer::Create(const std::string& window_id, std::wstring& diagnos
     render_context_.SetRedrawRequest([this] {
         if (window_) InvalidateRect(window_, nullptr, FALSE);
     });
-    const int minimum_width = components::ScaleDip(properties.minimum_width, dpi_);
-    const int minimum_height = components::ScaleDip(properties.minimum_height, dpi_);
-    SetPropW(window_, L"Terminal.MinimumWidth", reinterpret_cast<HANDLE>(static_cast<INT_PTR>(minimum_width)));
-    SetPropW(window_, L"Terminal.MinimumHeight", reinterpret_cast<HANDLE>(static_cast<INT_PTR>(minimum_height)));
+    UpdateMinimumTrackSize();
     return BuildComponentTree(diagnostic);
 }
 
@@ -447,12 +444,7 @@ bool WindowContainer::InstallDocument(
     if (window_) {
         const std::wstring title = ResolveWindowTitle(*window_definition_);
         SetWindowTextW(window_, title.empty() ? app_identity::kProductName : title.c_str());
-        SetPropW(window_, L"Terminal.MinimumWidth",
-                 reinterpret_cast<HANDLE>(static_cast<INT_PTR>(
-                     components::ScaleDip(properties.minimum_width, dpi_))));
-        SetPropW(window_, L"Terminal.MinimumHeight",
-                 reinterpret_cast<HANDLE>(static_cast<INT_PTR>(
-                     components::ScaleDip(properties.minimum_height, dpi_))));
+        UpdateMinimumTrackSize();
     }
     return ActivateRoute(target_route, diagnostic);
 }
@@ -567,6 +559,19 @@ void WindowContainer::ApplyNonClientTheme() noexcept {
                           sizeof(enabled));
 }
 
+void WindowContainer::UpdateMinimumTrackSize() noexcept {
+    if (!window_ || !window_definition_ ||
+        window_definition_->type != config::ComponentType::Window) return;
+    const auto& properties =
+        std::get<config::WindowProperties>(window_definition_->properties);
+    const int minimum_width = components::ScaleDip(properties.minimum_width, dpi_);
+    const int minimum_height = components::ScaleDip(properties.minimum_height, dpi_);
+    SetPropW(window_, L"Terminal.MinimumWidth",
+             reinterpret_cast<HANDLE>(static_cast<INT_PTR>(minimum_width)));
+    SetPropW(window_, L"Terminal.MinimumHeight",
+             reinterpret_cast<HANDLE>(static_cast<INT_PTR>(minimum_height)));
+}
+
 bool WindowContainer::Navigate(std::string_view route_id, std::wstring& diagnostic) {
     return ActivateRoute(route_id, diagnostic);
 }
@@ -607,6 +612,8 @@ std::size_t WindowContainer::dirty_participant_count() const {
 std::uint64_t WindowContainer::document_generation() const noexcept {
     return document_ ? document_->generation : 0;
 }
+
+UINT WindowContainer::dpi() const noexcept { return dpi_; }
 
 LRESULT CALLBACK WindowContainer::WindowProcedure(HWND window, UINT message, WPARAM wparam,
                                                    LPARAM lparam) {
@@ -701,16 +708,25 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             InvalidateRect(window_, nullptr, FALSE);
             return 0;
         case WM_DPICHANGED: {
-            dpi_ = HIWORD(wparam);
+            const UINT next_dpi = HIWORD(wparam) == 0 ? LOWORD(wparam) : HIWORD(wparam);
+            const auto* suggested = reinterpret_cast<const RECT*>(lparam);
+            if (suggested) {
+                SetWindowPos(window_, nullptr, suggested->left, suggested->top,
+                             suggested->right - suggested->left,
+                             suggested->bottom - suggested->top,
+                             SWP_NOACTIVATE | SWP_NOZORDER);
+            }
+            dpi_ = next_dpi == 0 ? 96 : next_dpi;
             if (component_host_) component_host_->dpi = dpi_;
+            UpdateMinimumTrackSize();
             if (root_) root_->OnDpiChanged();
             render_runtime_.AdvanceResourceEpoch();
             resources_prepared_ = false;
             PrepareRenderResources();
-            const auto* suggested = reinterpret_cast<const RECT*>(lparam);
-            SetWindowPos(window_, nullptr, suggested->left, suggested->top,
-                         suggested->right - suggested->left, suggested->bottom - suggested->top,
-                         SWP_NOACTIVATE | SWP_NOZORDER);
+            if (root_ && render_context_.valid()) {
+                Layout();
+                render_context_.InvalidateAll();
+            }
             frame_ready_ = false;
             InvalidateRect(window_, nullptr, FALSE);
             return 0;
