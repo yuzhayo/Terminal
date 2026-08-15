@@ -34,7 +34,7 @@ MeasuredSize DialogComponent::MeasurePanel(HDC dc, int available_width, int avai
     const int vertical_padding = ScaleDip(
         style().content_padding.top + style().content_padding.bottom, host_.dpi);
     const int inner_width = std::max(0, width - horizontal_padding);
-    const std::wstring title = ResolveText(Properties().title);
+    const std::wstring title = ResolveTextValue(Properties().title);
     const SIZE title_size = host_.render_runtime->MeasureText(
         title, style().font, host_.dpi, inner_width, DT_SINGLELINE | DT_NOPREFIX);
     int content_height = static_cast<int>(title_size.cy);
@@ -77,7 +77,7 @@ void DialogComponent::ArrangePanelChildren(HDC dc) {
     const int left = panel_bounds_.left + ScaleDip(style().content_padding.left, host_.dpi);
     const int right = panel_bounds_.right - ScaleDip(style().content_padding.right, host_.dpi);
     int cursor = panel_bounds_.top + ScaleDip(style().content_padding.top, host_.dpi);
-    const std::wstring title = ResolveText(Properties().title);
+    const std::wstring title = ResolveTextValue(Properties().title);
     const SIZE title_size = host_.render_runtime->MeasureText(
         title, style().font, host_.dpi, std::max(0, right - left), DT_SINGLELINE | DT_NOPREFIX);
     title_bounds_ = {left, cursor, right, cursor + title_size.cy};
@@ -129,7 +129,7 @@ void DialogComponent::PaintModalOverlay(rendering::WindowRenderContext& context,
     IntersectClipRect(dc, panel_bounds_.left, panel_bounds_.top, panel_bounds_.right,
                       panel_bounds_.bottom);
     host_.render_runtime->DrawTextRun(
-        dc, ResolveText(Properties().title), style().font, host_.dpi, title_bounds_,
+        dc, ResolveTextValue(Properties().title), style().font, host_.dpi, title_bounds_,
         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
         rendering::ToColorRef(host_.render_runtime->ResolveColor(visual.foreground)));
     PaintChildren(dc);
@@ -223,7 +223,7 @@ AutomationRole DialogComponent::automation_role() const noexcept {
 }
 
 std::wstring DialogComponent::automation_name() const {
-    return ResolveAutomationName(definition_, ResolveText(Properties().title));
+    return ResolveAutomationName(definition_, ResolveTextValue(Properties().title));
 }
 RECT DialogComponent::automation_bounds() const noexcept { return panel_bounds_; }
 

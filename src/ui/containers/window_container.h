@@ -166,6 +166,7 @@ private:
     bool close_decision_pending_ = false;
     bool close_prepared_ = false;
     bool retained_resources_released_ = false;
+    std::uint64_t last_patch_generation_ = 0;
 };
 
 }  // namespace ui::containers

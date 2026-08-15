@@ -18,6 +18,8 @@ struct UiAddress {
     std::string window_id;
     std::string route_id;
     std::string component_id;
+
+    bool operator==(const UiAddress&) const = default;
 };
 
 struct UiEvent {
@@ -46,6 +48,8 @@ struct CloseSaveResult {
 };
 
 struct UiPatch {
+    UiAddress target;
+    std::uint64_t config_generation = 0;
     std::uint64_t generation = 0;
     std::map<std::string, std::string, std::less<>> view_state;
     std::optional<std::wstring> window_title;

@@ -12,11 +12,14 @@ const config::ToggleProperties& Properties(const config::ResolvedComponent& defi
 }  // namespace
 
 ToggleComponent::ToggleComponent(const config::ResolvedComponent& definition, ComponentHost& host)
-    : Component(definition, host) {}
+    : Component(definition, host) {
+    checked_ = ResolveBooleanValue(
+        config::BooleanValue(Properties(definition_).checked_binding));
+}
 
 MeasuredSize ToggleComponent::Measure(HDC dc, int available_width, int available_height) {
     (void)dc;
-    const std::wstring label = ResolveText(Properties(definition_).label);
+    const std::wstring label = ResolveTextValue(Properties(definition_).label);
     const SIZE text = host_.render_runtime->MeasureText(
         label, style().font, host_.dpi, available_width, DT_SINGLELINE | DT_NOPREFIX);
     const int track_width = ScaleDip(36, host_.dpi);
@@ -64,7 +67,7 @@ void ToggleComponent::Paint(HDC dc) {
 
     RECT label_bounds{track.right + ScaleDip(8, host_.dpi), bounds_.top,
                       bounds_.right - ScaleDip(style().content_padding.right, host_.dpi), bounds_.bottom};
-    const std::wstring label = ResolveText(Properties(definition_).label);
+    const std::wstring label = ResolveTextValue(Properties(definition_).label);
     host_.render_runtime->DrawTextRun(dc, label, style().font, host_.dpi, label_bounds,
                                       DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
                                       foreground);
@@ -123,7 +126,7 @@ AutomationRole ToggleComponent::automation_role() const noexcept {
 }
 
 std::wstring ToggleComponent::automation_name() const {
-    return ResolveAutomationName(definition_, ResolveText(Properties(definition_).label));
+    return ResolveAutomationName(definition_, ResolveTextValue(Properties(definition_).label));
 }
 
 std::optional<bool> ToggleComponent::automation_toggle_state() const noexcept {

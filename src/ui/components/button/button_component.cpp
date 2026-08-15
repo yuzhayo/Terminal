@@ -13,7 +13,7 @@ const config::ButtonProperties& Properties(const config::ResolvedComponent& defi
 
 MeasuredSize ButtonComponent::Measure(HDC dc, int available_width, int available_height) {
     (void)dc;
-    const std::wstring label = ResolveText(Properties(definition_).label);
+    const std::wstring label = ResolveTextValue(Properties(definition_).label);
     const SIZE text_size = host_.render_runtime->MeasureText(
         label, style().font, host_.dpi, available_width, DT_SINGLELINE | DT_NOPREFIX);
     const int width = text_size.cx + ScaleDip(style().content_padding.left +
@@ -26,7 +26,7 @@ MeasuredSize ButtonComponent::Measure(HDC dc, int available_width, int available
 
 void ButtonComponent::Paint(HDC dc) {
     PaintStyleBox(dc, State(), bounds_);
-    const std::wstring label = ResolveText(Properties(definition_).label);
+    const std::wstring label = ResolveTextValue(Properties(definition_).label);
     const config::ResolvedVisualState& visual = style().states[static_cast<std::size_t>(State())];
     const rendering::RgbaColor foreground = host_.render_runtime->ResolveColor(visual.foreground);
     host_.render_runtime->DrawTextRun(dc, label, style().font, host_.dpi, bounds_,
@@ -87,7 +87,7 @@ bool ButtonComponent::HandleKeyDown(UINT virtual_key) {
 AutomationRole ButtonComponent::automation_role() const noexcept { return AutomationRole::Button; }
 
 std::wstring ButtonComponent::automation_name() const {
-    return ResolveAutomationName(definition_, ResolveText(Properties(definition_).label));
+    return ResolveAutomationName(definition_, ResolveTextValue(Properties(definition_).label));
 }
 
 bool ButtonComponent::automation_supports_invoke() const noexcept { return true; }
@@ -103,6 +103,9 @@ config::VisualState ButtonComponent::State() const noexcept {
     if (pressed_) return config::VisualState::Pressed;
     if (focused_ && window_active_) return config::VisualState::Focus;
     if (hovered_) return config::VisualState::Hover;
+    if (ResolveBooleanValue(Properties(definition_).selected)) {
+        return config::VisualState::Selected;
+    }
     return config::VisualState::Normal;
 }
 

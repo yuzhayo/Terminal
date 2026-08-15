@@ -338,7 +338,7 @@ public:
                         }
                     }
                     ui::application::UiPatch patch;
-                    patch.view_state["profileName"] = draft_name_;
+                    patch.view_state["viewState.profileName"] = draft_name_;
                     return patch;
                 })) {
             return false;
@@ -351,7 +351,7 @@ public:
                 if (!service.Save(draft_name_)) return std::nullopt;
 
                 ui::application::UiPatch patch;
-                patch.view_state["profileStatus"] = "saved";
+                patch.view_state["viewState.profileStatus"] = "saved";
                 patch.window_title = L"Terminal — profile saved";
                 patch.request_repaint = true;
                 return patch;
@@ -385,6 +385,13 @@ menyimpan reference/pointer ke keduanya.
 Duplicate action ID ditolak oleh registry. Action ID invalid atau tidak terdaftar tidak boleh dianggap
 berhasil; tambahkan test untuk handler tersebut.
 
+Bridge stub saat ini sengaja membagi registration per feature (`RegisterTerminalFeature`,
+`RegisterJsonInjectFeature`, `RegisterJsonEditorFeature`, `RegisterChromeLauncherFeature`,
+`RegisterChromeProfileManagerFeature`, `RegisterSettingsFeature`, dan `RegisterUiEditorFeature`).
+State awalnya deterministic dan hanya hidup di memory. Handler berakhiran `-stub` tidak boleh membaca
+atau menulis file nyata, menjalankan process, membuka browser, atau melakukan network request. Ketika
+backend tersedia, ganti isi handler feature yang sama; action ID dan JSON screen tidak perlu berubah.
+
 ### Data yang diterima handler
 
 `UiEvent` menyediakan:
@@ -402,6 +409,9 @@ Business logic tidak menerima `HWND`, device context, atau pointer component.
 
 `UiPatch` saat ini menyediakan:
 
+- `target`: identity window/screen/component asal event;
+- `config_generation`: generation config yang menghasilkan event;
+- `generation`: urutan patch monotonik dari bridge;
 - `view_state`: perubahan state semantic;
 - `window_title`: mengganti title top-level window;
 - `route_id`: navigation ke screen lain;
@@ -409,6 +419,12 @@ Business logic tidak menerima `HWND`, device context, atau pointer component.
 - `close_save_result`: hasil persistence Save untuk close transaction, lengkap dengan source identity
   dan config generation;
 - `request_repaint`: meminta render ulang.
+
+Handler feature cukup mengisi perubahan semantic. `StubApplicationBridge::Dispatch` menempelkan
+`target`, `config_generation`, dan `generation` setelah handler berhasil. `WindowContainer` menolak
+patch yang target-nya berbeda dari source event, berasal dari config generation lain, bernilai nol,
+atau generation-nya tidak lebih baru daripada patch terakhir. Jangan mengarang identity/generation
+di handler.
 
 `view_state` belum merupakan binding engine universal yang otomatis menulis semua property component.
 Jika feature menambah binding baru, bridge harus mengeksposnya melalui `ResolveStringItems` atau

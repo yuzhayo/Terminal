@@ -14,17 +14,57 @@ std::optional<std::string> PayloadString(const UiEvent& event, std::string_view 
                : std::nullopt;
 }
 
+std::optional<std::string> PayloadScalar(const UiEvent& event, std::string_view key) {
+    const auto found = event.payload.find(key);
+    if (found == event.payload.end()) return std::nullopt;
+    if (const auto* value = std::get_if<std::string>(&found->second.value)) return *value;
+    if (const auto* value = std::get_if<bool>(&found->second.value)) {
+        return *value ? "true" : "false";
+    }
+    if (const auto* value = std::get_if<std::int64_t>(&found->second.value)) {
+        return std::to_string(*value);
+    }
+    return std::nullopt;
+}
+
+bool ValidEventEnvelope(const UiEvent& event) noexcept {
+    return event.source.window_instance_id != 0 &&
+           event.source.screen_instance_id != 0 &&
+           event.source.component_instance_id != 0 &&
+           !event.source.window_id.empty() && !event.source.route_id.empty() &&
+           !event.source.component_id.empty() && !event.event_type.empty() &&
+           !event.action.empty() && event.config_generation != 0;
+}
+
+std::string CanonicalBinding(std::string_view binding) {
+    constexpr std::string_view prefix = "viewState.";
+    if (binding.starts_with(prefix)) return std::string(binding);
+    return std::string(prefix) + std::string(binding);
+}
+
 }  // namespace
 
 StubApplicationBridge::StubApplicationBridge() {
+    InitializeDeterministicState();
     RegisterTerminalFeature();
+    RegisterJsonInjectFeature();
+    RegisterJsonEditorFeature();
+    RegisterChromeLauncherFeature();
+    RegisterChromeProfileManagerFeature();
+    RegisterSettingsFeature();
+    RegisterUiEditorFeature();
     RegisterDialogFeature();
     RegisterNavigationFeature();
 }
 
 std::optional<UiPatch> StubApplicationBridge::Dispatch(const UiEvent& event) {
+    if (!ValidEventEnvelope(event)) return std::nullopt;
     auto patch = actions_.Dispatch(event);
-    if (patch) patch->generation = ++generation_;
+    if (patch) {
+        patch->target = event.source;
+        patch->config_generation = event.config_generation;
+        patch->generation = ++generation_;
+    }
     return patch;
 }
 
@@ -33,35 +73,226 @@ bool StubApplicationBridge::RegisterAction(std::string action,
     return actions_.Register(std::move(action), std::move(handler));
 }
 
+bool StubApplicationBridge::HasRegisteredAction(std::string_view action) const noexcept {
+    return actions_.Contains(action);
+}
+
 std::size_t StubApplicationBridge::registered_action_count() const noexcept {
     return actions_.size();
 }
 
-void StubApplicationBridge::RegisterTerminalFeature() {
-    const auto record_action = [this](const UiEvent& event) -> std::optional<UiPatch> {
-        view_state_["lastAction"] = event.action;
-        UiPatch patch;
-        patch.view_state["lastAction"] = event.action;
-        return patch;
+void StubApplicationBridge::InitializeDeterministicState() {
+    view_state_ = {
+        {"viewState.terminalInput", "C:\\Work\\Terminal"},
+        {"viewState.selectedTerminalProfile", "PowerShell"},
+        {"viewState.confirmBeforeRun", "true"},
+        {"viewState.terminalActive", "true"},
+        {"viewState.selectedTerminalSession", "Session 01 - PowerShell"},
+        {"viewState.terminalStatus", "Stub siap; tidak ada process yang akan dijalankan."},
+        {"viewState.injectConfig", "provider=Anthropic Compatible\r\ntarget=Windows\r\nmodel=stub-model"},
+        {"viewState.selectedInjectProvider", "Anthropic Compatible"},
+        {"viewState.selectedInjectTarget", "Windows"},
+        {"viewState.injectStatus", "Konfigurasi contoh belum divalidasi."},
+        {"viewState.selectedJsonEditorTarget", "Windows settings.json"},
+        {"viewState.jsonEditorDraft", "{\r\n  \"theme\": \"system\",\r\n  \"stub\": true\r\n}"},
+        {"viewState.jsonEditorStatus", "Draft contoh dimuat dari memory."},
+        {"viewState.selectedChromeProfile", "Personal — Windows"},
+        {"viewState.chromeUrl", "https://example.com"},
+        {"viewState.selectedChromeBookmark", "Documentation — https://example.com/docs"},
+        {"viewState.chromeStatus", "Profile cache contoh siap."},
+        {"viewState.selectedManagedProfile", "Personal — Windows"},
+        {"viewState.profileName", "Personal"},
+        {"viewState.profileEnabled", "true"},
+        {"viewState.profileStatus", "Metadata profile contoh siap."},
+        {"viewState.selectedTheme", "System"},
+        {"viewState.startupToTray", "false"},
+        {"viewState.settingsConfirmBeforeRun", "true"},
+        {"viewState.selectedRecentFolder", "C:\\Work\\Terminal"},
+        {"viewState.settingsStatus", "Settings stub belum diterapkan."},
+        {"viewState.uiEditorDraft", "tokens.accent = #4F8CFF\r\nstyles.button-primary.radius = 6"},
+        {"viewState.uiEditorStatus", "Preview masih lokal pada window ini."},
     };
-    for (const char* action : {"update-terminal-draft", "select-terminal-profile",
-                               "toggle-confirm-before-run", "toggle-terminal-active",
-                               "activate-terminal-options", "select-terminal-session",
-                               "activate-terminal-session"}) {
-        if (!RegisterAction(action, record_action)) {
-            throw std::logic_error("Duplicate terminal action registration.");
-        }
+
+    std::vector<std::wstring> sessions;
+    sessions.reserve(80);
+    for (int index = 1; index <= 80; ++index) {
+        std::wstring label = L"Session ";
+        if (index < 10) label += L"0";
+        label += std::to_wstring(index);
+        label += index % 3 == 0 ? L" - Ubuntu (WSL)"
+                 : index % 2 == 0 ? L" - Command Prompt"
+                                  : L" - PowerShell";
+        sessions.push_back(std::move(label));
     }
-    if (!RegisterAction("run-terminal-stub", [this](const UiEvent&) {
-            view_state_["stubStatus"] = "completed";
-            UiPatch patch;
-            patch.view_state["stubStatus"] = "completed";
-            patch.window_title = L"Terminal — stub selesai";
-            patch.request_repaint = true;
-            return std::optional<UiPatch>(std::move(patch));
-        })) {
-        throw std::logic_error("Duplicate terminal run action registration.");
+    item_state_ = {
+        {"viewState.terminalProfiles", {L"PowerShell", L"Command Prompt", L"Ubuntu (WSL)"}},
+        {"viewState.terminalSessions", std::move(sessions)},
+        {"viewState.injectProviders", {L"Anthropic Compatible", L"OpenAI Compatible", L"Local Stub"}},
+        {"viewState.injectTargets", {L"Windows", L"Ubuntu (WSL)"}},
+        {"viewState.jsonEditorTargets", {L"Windows settings.json", L"Ubuntu settings.json"}},
+        {"viewState.chromeProfiles", {L"Personal — Windows", L"Work — Windows", L"Research — Ubuntu (WSL)"}},
+        {"viewState.chromeBookmarks", {L"Documentation — https://example.com/docs", L"Dashboard — https://example.com/app", L"Local tools — http://localhost/"}},
+        {"viewState.managedChromeProfiles", {L"Personal — Windows", L"Work — Windows", L"Research — Ubuntu (WSL)"}},
+        {"viewState.themeOptions", {L"System", L"Dark", L"Light"}},
+        {"viewState.recentFolders", {L"C:\\Work\\Terminal", L"C:\\Projects", L"\\\\wsl.localhost\\Ubuntu\\home\\yuzha"}},
+    };
+}
+
+void StubApplicationBridge::RegisterPayloadStateAction(
+    std::string action, std::string payload_key, std::string binding,
+    std::string status_binding, std::string status) {
+    const std::string registered_action = action;
+    if (!RegisterAction(
+            std::move(action),
+            [this, payload_key = std::move(payload_key), binding = std::move(binding),
+             status_binding = std::move(status_binding), status = std::move(status)](
+                const UiEvent& event) -> std::optional<UiPatch> {
+                const auto value = PayloadScalar(event, payload_key);
+                if (!value) return std::nullopt;
+                view_state_[binding] = *value;
+                view_state_[status_binding] = status;
+                UiPatch patch;
+                patch.view_state[binding] = *value;
+                patch.view_state[status_binding] = status;
+                patch.request_repaint = true;
+                return patch;
+            })) {
+        throw std::logic_error("Duplicate stub payload action: " + registered_action);
     }
+}
+
+void StubApplicationBridge::RegisterStatusAction(
+    std::string action, std::string status_binding, std::string status,
+    std::optional<std::wstring> window_title) {
+    const std::string registered_action = action;
+    if (!RegisterAction(
+            std::move(action),
+            [this, status_binding = std::move(status_binding), status = std::move(status),
+             window_title = std::move(window_title)](const UiEvent&)
+                -> std::optional<UiPatch> {
+                view_state_[status_binding] = status;
+                UiPatch patch;
+                patch.view_state[status_binding] = status;
+                patch.window_title = window_title;
+                patch.request_repaint = true;
+                return patch;
+            })) {
+        throw std::logic_error("Duplicate stub status action: " + registered_action);
+    }
+}
+
+void StubApplicationBridge::RegisterTerminalFeature() {
+    RegisterPayloadStateAction("update-terminal-draft", "value",
+                               "viewState.terminalInput", "viewState.terminalStatus",
+                               "Folder draft diperbarui; belum ada process yang dijalankan.");
+    RegisterPayloadStateAction("select-terminal-profile", "selectedValue",
+                               "viewState.selectedTerminalProfile",
+                               "viewState.terminalStatus", "Profile terminal contoh dipilih.");
+    RegisterPayloadStateAction("toggle-confirm-before-run", "checked",
+                               "viewState.confirmBeforeRun", "viewState.terminalStatus",
+                               "Opsi konfirmasi stub diperbarui.");
+    RegisterPayloadStateAction("toggle-terminal-active", "checked",
+                               "viewState.terminalActive", "viewState.terminalStatus",
+                               "Status terminal stub diperbarui.");
+    RegisterStatusAction("activate-terminal-options", "viewState.terminalStatus",
+                         "Card opsi Terminal menerima action activate.");
+    RegisterPayloadStateAction("select-terminal-session", "selectedValue",
+                               "viewState.selectedTerminalSession",
+                               "viewState.terminalStatus", "Sesi terminal contoh dipilih.");
+    RegisterPayloadStateAction("activate-terminal-session", "selectedValue",
+                               "viewState.selectedTerminalSession",
+                               "viewState.terminalStatus", "Sesi contoh menerima action activate.");
+    RegisterStatusAction("run-terminal-stub", "viewState.terminalStatus",
+                         "Stub selesai; tidak ada PowerShell, WSL, atau process lain yang dijalankan.",
+                         L"Terminal — stub selesai");
+}
+
+void StubApplicationBridge::RegisterJsonInjectFeature() {
+    RegisterPayloadStateAction("update-inject-config", "value", "viewState.injectConfig",
+                               "viewState.injectStatus", "Draft konfigurasi contoh diperbarui.");
+    RegisterPayloadStateAction("select-inject-provider", "selectedValue",
+                               "viewState.selectedInjectProvider", "viewState.injectStatus",
+                               "Provider contoh dipilih.");
+    RegisterPayloadStateAction("select-inject-target", "selectedValue",
+                               "viewState.selectedInjectTarget", "viewState.injectStatus",
+                               "Target contoh dipilih.");
+    RegisterStatusAction("validate-inject-stub", "viewState.injectStatus",
+                         "Validasi stub lulus; tidak ada file nyata yang dibaca.");
+    RegisterStatusAction("apply-inject-stub", "viewState.injectStatus",
+                         "Apply stub selesai; tidak ada settings nyata yang ditulis.");
+}
+
+void StubApplicationBridge::RegisterJsonEditorFeature() {
+    RegisterPayloadStateAction("select-json-editor-target", "selectedValue",
+                               "viewState.selectedJsonEditorTarget",
+                               "viewState.jsonEditorStatus", "Target editor contoh dipilih.");
+    RegisterPayloadStateAction("update-json-editor-draft", "value",
+                               "viewState.jsonEditorDraft", "viewState.jsonEditorStatus",
+                               "Draft JSON contoh diperbarui.");
+    RegisterStatusAction("validate-json-editor-stub", "viewState.jsonEditorStatus",
+                         "Validasi JSON stub lulus.");
+    RegisterStatusAction("restore-json-editor-backup-stub", "viewState.jsonEditorStatus",
+                         "Backup contoh dipulihkan di memory; filesystem tidak disentuh.");
+    RegisterStatusAction("save-json-editor-stub", "viewState.jsonEditorStatus",
+                         "Save stub selesai; filesystem tidak disentuh.");
+}
+
+void StubApplicationBridge::RegisterChromeLauncherFeature() {
+    RegisterPayloadStateAction("select-chrome-profile", "selectedValue",
+                               "viewState.selectedChromeProfile", "viewState.chromeStatus",
+                               "Profile Chrome contoh dipilih.");
+    RegisterPayloadStateAction("update-chrome-url", "value", "viewState.chromeUrl",
+                               "viewState.chromeStatus", "URL draft diperbarui.");
+    RegisterPayloadStateAction("select-chrome-bookmark", "selectedValue",
+                               "viewState.selectedChromeBookmark", "viewState.chromeStatus",
+                               "Bookmark contoh dipilih.");
+    RegisterStatusAction("launch-chrome-stub", "viewState.chromeStatus",
+                         "Launch stub selesai; Chrome tidak dijalankan.");
+}
+
+void StubApplicationBridge::RegisterChromeProfileManagerFeature() {
+    RegisterPayloadStateAction("select-managed-chrome-profile", "selectedValue",
+                               "viewState.selectedManagedProfile", "viewState.profileStatus",
+                               "Metadata profile contoh dipilih.");
+    RegisterPayloadStateAction("update-chrome-profile-name", "value",
+                               "viewState.profileName", "viewState.profileStatus",
+                               "Nama profile draft diperbarui.");
+    RegisterPayloadStateAction("toggle-chrome-profile-enabled", "checked",
+                               "viewState.profileEnabled", "viewState.profileStatus",
+                               "Status profile draft diperbarui.");
+    RegisterStatusAction("save-chrome-profile-stub", "viewState.profileStatus",
+                         "Profile stub disimpan di memory; Chrome data tidak disentuh.");
+}
+
+void StubApplicationBridge::RegisterSettingsFeature() {
+    RegisterPayloadStateAction("select-settings-theme", "selectedValue",
+                               "viewState.selectedTheme", "viewState.settingsStatus",
+                               "Theme preference stub diperbarui.");
+    RegisterPayloadStateAction("toggle-startup-to-tray", "checked",
+                               "viewState.startupToTray", "viewState.settingsStatus",
+                               "Startup-to-tray stub diperbarui.");
+    RegisterPayloadStateAction("toggle-settings-confirm-before-run", "checked",
+                               "viewState.settingsConfirmBeforeRun",
+                               "viewState.settingsStatus", "Konfirmasi terminal stub diperbarui.");
+    RegisterPayloadStateAction("select-recent-folder", "selectedValue",
+                               "viewState.selectedRecentFolder", "viewState.settingsStatus",
+                               "Recent folder contoh dipilih.");
+    RegisterStatusAction("apply-settings-stub", "viewState.settingsStatus",
+                         "Settings stub diterapkan di memory; tidak ada persistence.");
+}
+
+void StubApplicationBridge::RegisterUiEditorFeature() {
+    RegisterPayloadStateAction("update-ui-editor-draft", "value",
+                               "viewState.uiEditorDraft", "viewState.uiEditorStatus",
+                               "Draft token UI diperbarui.");
+    RegisterStatusAction("preview-ui-editor-stub", "viewState.uiEditorStatus",
+                         "Preview stub dirender tanpa mengganti config generation.");
+    RegisterStatusAction("apply-ui-editor-stub", "viewState.uiEditorStatus",
+                         "Apply stub selesai; override file tidak ditulis.");
+    RegisterStatusAction("reload-ui-editor-stub", "viewState.uiEditorStatus",
+                         "Reload stub selesai dari deterministic in-memory document.");
+    RegisterStatusAction("rollback-ui-editor-stub", "viewState.uiEditorStatus",
+                         "Rollback stub selesai; config aktif tidak berubah.");
 }
 
 void StubApplicationBridge::RegisterDialogFeature() {
@@ -118,30 +349,13 @@ const std::map<std::string, std::string, std::less<>>& StubApplicationBridge::vi
 
 std::vector<std::wstring> StubApplicationBridge::ResolveStringItems(
     std::string_view binding) const {
-    if (binding == "terminalProfiles" || binding == "items" ||
-        binding == "viewState.terminalProfiles" || binding == "viewState.items") {
-        return {L"PowerShell", L"Command Prompt", L"Ubuntu (WSL)"};
-    }
-    if (binding == "terminalSessions" || binding == "viewState.terminalSessions") {
-        std::vector<std::wstring> sessions;
-        sessions.reserve(80);
-        for (int index = 1; index <= 80; ++index) {
-            std::wstring label = L"Session ";
-            if (index < 10) label += L"0";
-            label += std::to_wstring(index);
-            label += index % 3 == 0 ? L" - Ubuntu (WSL)"
-                     : index % 2 == 0 ? L" - Command Prompt"
-                                      : L" - PowerShell";
-            sessions.push_back(std::move(label));
-        }
-        return sessions;
-    }
-    return {};
+    const auto found = item_state_.find(CanonicalBinding(binding));
+    return found == item_state_.end() ? std::vector<std::wstring>{} : found->second;
 }
 
 std::optional<std::wstring> StubApplicationBridge::ResolveStringValue(
     std::string_view binding) const {
-    const auto found = view_state_.find(std::string(binding));
+    const auto found = view_state_.find(CanonicalBinding(binding));
     if (found == view_state_.end()) return std::nullopt;
     return std::wstring(found->second.begin(), found->second.end());
 }

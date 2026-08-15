@@ -1433,9 +1433,12 @@ data loss atau window yang tidak dapat dijangkau.
 
 ### Phase 5 — Stub application dan installed-update validation gate
 
-1. Lengkapi semua placeholder screen dan deterministic data.
-2. Validasi setiap navigation binding, UiEvent, bridge route, dan UiPatch/ViewState.
-3. Jalankan Windows visual/runtime smoke untuk System/Dark/Light/High Contrast, UIA/Narrator,
+1. **DONE 2026-08-15:** lengkapi semua placeholder screen dan deterministic data.
+2. **DONE 2026-08-15:** validasi setiap navigation binding, UiEvent, bridge route, dan
+   UiPatch/ViewState.
+3. **PARTIAL 2026-08-15:** startup smoke seluruh tujuh route pada local Release/Dark
+   sudah terlihat tanpa blank frame; matrix Windows berikut masih wajib dilanjutkan untuk
+   System/Dark/Light/High Contrast, UIA/Narrator,
    `PerMonitorV2`, resize, two-way focus, modal native-peer suppression/restoration, keyboard, alpha,
    layered popup, no-blank-frame, repaint/ghosting, lazy route, virtualization, multi-window, taskbar
    route, infrastructure window, serta tray lifecycle.

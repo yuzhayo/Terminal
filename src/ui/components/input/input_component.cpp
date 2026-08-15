@@ -44,7 +44,18 @@ InputComponent::InputComponent(const config::ResolvedComponent& definition, Comp
         properties.scrollbar == config::ScrollbarMode::Auto) {
         EnsureScrollbar();
     }
-    if (edit_) ApplyNativeStyle();
+    if (edit_) {
+        ApplyNativeStyle();
+        if (host_.resolve_string_value) {
+            const auto initial = host_.resolve_string_value(properties.value_binding.path);
+            if (initial) {
+                restoring_runtime_state_ = true;
+                draft_.Restore(*initial, *initial);
+                WriteDraftToPeer();
+                restoring_runtime_state_ = false;
+            }
+        }
+    }
 }
 
 InputComponent::~InputComponent() {
@@ -133,6 +144,7 @@ void InputComponent::Arrange(const RECT& bounds) {
         native_peer_content_rect_.right = full_right;
         MoveWindow(edit_, left, top, full_right - left, bottom - top, TRUE);
     }
+    if (!suspended_ && visible()) ShowWindow(edit_, SW_SHOWNA);
 }
 
 void InputComponent::Paint(HDC dc) {

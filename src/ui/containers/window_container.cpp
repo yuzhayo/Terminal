@@ -72,6 +72,13 @@ const config::ResolvedComponent* FindComponentDefinition(
     return nullptr;
 }
 
+bool PatchTargetsEvent(const application::UiPatch& patch,
+                       const application::UiEvent& event) noexcept {
+    return patch.target == event.source &&
+           patch.config_generation == event.config_generation &&
+           patch.generation != 0;
+}
+
 }  // namespace
 
 WindowContainer::WindowContainer(HINSTANCE instance, rendering::RenderRuntime& render_runtime,
@@ -1160,6 +1167,12 @@ void WindowContainer::DispatchUiEvent(components::Component& source,
     ui_event.config_generation = document_->generation;
     const auto patch = application_bridge_->Dispatch(ui_event);
     if (!patch) return;
+    if (!PatchTargetsEvent(*patch, ui_event) ||
+        patch->config_generation != document_->generation ||
+        patch->generation <= last_patch_generation_) {
+        return;
+    }
+    last_patch_generation_ = patch->generation;
     if (patch->close_save_result && close_decision_pending_) {
         const application::CloseSaveResult& result = *patch->close_save_result;
         if (result.source.window_instance_id == ui_event.source.window_instance_id &&
@@ -1197,6 +1210,7 @@ void WindowContainer::DispatchUiEvent(components::Component& source,
         }
     }
     if (patch->request_repaint) {
+        if (!patch->view_state.empty()) Layout();
         frame_ready_ = false;
         InvalidateRect(window_, nullptr, FALSE);
     }

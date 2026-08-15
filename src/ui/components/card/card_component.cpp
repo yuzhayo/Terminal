@@ -9,15 +9,12 @@ const config::CardProperties& Properties(const config::ResolvedComponent& defini
     return std::get<config::CardProperties>(definition.properties);
 }
 
-bool InitialSelected(const config::BooleanValue& selected) {
-    const auto* literal = std::get_if<bool>(&selected);
-    return literal && *literal;
-}
-
 }  // namespace
 
 CardComponent::CardComponent(const config::ResolvedComponent& definition, ComponentHost& host)
-    : Component(definition, host), selected_(InitialSelected(Properties(definition).selected)) {}
+    : Component(definition, host) {
+    selected_ = ResolveBooleanValue(Properties(definition).selected);
+}
 
 MeasuredSize CardComponent::Measure(HDC dc, int available_width, int available_height) {
     const int horizontal_padding = ScaleDip(

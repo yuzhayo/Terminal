@@ -19,15 +19,30 @@ public:
     std::optional<std::wstring> ResolveStringValue(
         std::string_view binding) const override;
     bool RegisterAction(std::string action, UiActionRegistry::Handler handler);
+    bool HasRegisteredAction(std::string_view action) const noexcept;
     std::size_t registered_action_count() const noexcept;
 
 private:
+    void InitializeDeterministicState();
     void RegisterTerminalFeature();
+    void RegisterJsonInjectFeature();
+    void RegisterJsonEditorFeature();
+    void RegisterChromeLauncherFeature();
+    void RegisterChromeProfileManagerFeature();
+    void RegisterSettingsFeature();
+    void RegisterUiEditorFeature();
     void RegisterDialogFeature();
     void RegisterNavigationFeature();
+    void RegisterPayloadStateAction(std::string action, std::string payload_key,
+                                    std::string binding, std::string status_binding,
+                                    std::string status);
+    void RegisterStatusAction(std::string action, std::string status_binding,
+                              std::string status,
+                              std::optional<std::wstring> window_title = std::nullopt);
 
     UiActionRegistry actions_;
     std::map<std::string, std::string, std::less<>> view_state_;
+    std::map<std::string, std::vector<std::wstring>, std::less<>> item_state_;
     std::uint64_t generation_ = 0;
 };
 

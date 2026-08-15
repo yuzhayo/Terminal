@@ -227,6 +227,8 @@ public:
     Component* FindById(std::string_view id) noexcept;
 
 protected:
+    std::wstring ResolveTextValue(const config::TextValue& value) const;
+    bool ResolveBooleanValue(const config::BooleanValue& value) const;
     void PaintStyleBox(HDC dc, config::VisualState state, const RECT& bounds) const;
     void PaintChildren(HDC dc);
     void EmitEvent(std::string_view event_type,

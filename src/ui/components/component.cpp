@@ -368,6 +368,24 @@ Component* Component::FindById(std::string_view id) noexcept {
     return nullptr;
 }
 
+std::wstring Component::ResolveTextValue(const config::TextValue& value) const {
+    if (const auto* binding = std::get_if<config::ValueBinding>(&value)) {
+        if (host_.resolve_string_value) {
+            return host_.resolve_string_value(binding->path).value_or(std::wstring{});
+        }
+        return {};
+    }
+    return ResolveText(value);
+}
+
+bool Component::ResolveBooleanValue(const config::BooleanValue& value) const {
+    if (const auto* literal = std::get_if<bool>(&value)) return *literal;
+    const auto* binding = std::get_if<config::ValueBinding>(&value);
+    if (!binding || !host_.resolve_string_value) return false;
+    const auto resolved = host_.resolve_string_value(binding->path);
+    return resolved && (*resolved == L"true" || *resolved == L"1");
+}
+
 void Component::PaintStyleBox(HDC dc, config::VisualState state, const RECT& bounds) const {
     const config::ResolvedStyle& resolved_style = style();
     const config::ResolvedVisualState& visual = resolved_style.states[StateIndex(state)];

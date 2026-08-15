@@ -12,6 +12,7 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -85,6 +86,16 @@ struct ApplicationContainerTestAccess {
         return application.close_operation_.kind !=
                ApplicationContainer::CloseOperationKind::None;
     }
+
+    static ui::components::Component* FindComponent(
+        ui::containers::WindowContainer& window, std::string_view component_id) {
+        return window.root_ ? window.root_->FindById(component_id) : nullptr;
+    }
+
+    static std::uint64_t LastPatchGeneration(
+        const ui::containers::WindowContainer& window) {
+        return window.last_patch_generation_;
+    }
 };
 
 }  // namespace application
@@ -149,6 +160,130 @@ std::string ReadEmbeddedDefaultJson() {
 
 Json ReadEmbeddedDefaultDocument() {
     return Json::parse(ReadEmbeddedDefaultJson());
+}
+
+ui::application::UiEvent MakeUiEvent(
+    std::string action, std::string event_type = "click",
+    std::string route_id = "terminal", std::string component_id = "test-component",
+    ui::config::EventPayloadValue::Object payload = {}) {
+    ui::application::UiEvent event(std::move(action), std::move(payload));
+    event.source.window_instance_id = 10;
+    event.source.screen_instance_id = 20;
+    event.source.component_instance_id = 30;
+    event.source.window_id = "main";
+    event.source.route_id = std::move(route_id);
+    event.source.component_id = std::move(component_id);
+    event.event_type = std::move(event_type);
+    event.config_generation = 1;
+    return event;
+}
+
+void CollectResolvedComponents(
+    const ui::config::ResolvedComponent& component,
+    std::vector<const ui::config::ResolvedComponent*>& components) {
+    components.push_back(&component);
+    for (const auto& child : component.children) {
+        CollectResolvedComponents(child, components);
+    }
+}
+
+void AddTextBinding(const ui::config::TextValue& value,
+                    std::vector<std::string>& bindings) {
+    if (const auto* binding = std::get_if<ui::config::ValueBinding>(&value)) {
+        bindings.push_back(binding->path);
+    }
+}
+
+void AddBooleanBinding(const ui::config::BooleanValue& value,
+                       std::vector<std::string>& bindings) {
+    if (const auto* binding = std::get_if<ui::config::ValueBinding>(&value)) {
+        bindings.push_back(binding->path);
+    }
+}
+
+std::vector<std::string> ScalarBindings(
+    const ui::config::ResolvedComponent& component) {
+    std::vector<std::string> bindings;
+    switch (component.type) {
+        case ui::config::ComponentType::Window:
+            AddTextBinding(std::get<ui::config::WindowProperties>(component.properties).title,
+                           bindings);
+            break;
+        case ui::config::ComponentType::Text:
+            AddTextBinding(std::get<ui::config::TextProperties>(component.properties).text,
+                           bindings);
+            break;
+        case ui::config::ComponentType::Button: {
+            const auto& properties =
+                std::get<ui::config::ButtonProperties>(component.properties);
+            AddTextBinding(properties.label, bindings);
+            AddBooleanBinding(properties.selected, bindings);
+            break;
+        }
+        case ui::config::ComponentType::Input:
+            bindings.push_back(
+                std::get<ui::config::InputProperties>(component.properties)
+                    .value_binding.path);
+            break;
+        case ui::config::ComponentType::Combo:
+            bindings.push_back(
+                std::get<ui::config::ComboProperties>(component.properties)
+                    .selected_value_binding.path);
+            break;
+        case ui::config::ComponentType::Checkbox: {
+            const auto& properties =
+                std::get<ui::config::CheckboxProperties>(component.properties);
+            AddTextBinding(properties.label, bindings);
+            bindings.push_back(properties.checked_binding.path);
+            break;
+        }
+        case ui::config::ComponentType::Toggle: {
+            const auto& properties =
+                std::get<ui::config::ToggleProperties>(component.properties);
+            AddTextBinding(properties.label, bindings);
+            bindings.push_back(properties.checked_binding.path);
+            break;
+        }
+        case ui::config::ComponentType::Card:
+            AddBooleanBinding(
+                std::get<ui::config::CardProperties>(component.properties).selected,
+                bindings);
+            break;
+        case ui::config::ComponentType::List: {
+            const auto& properties =
+                std::get<ui::config::ListProperties>(component.properties);
+            if (properties.selected_id_binding) {
+                bindings.push_back(properties.selected_id_binding->path);
+            }
+            break;
+        }
+        case ui::config::ComponentType::Dialog:
+            AddTextBinding(std::get<ui::config::DialogProperties>(component.properties).title,
+                           bindings);
+            break;
+        case ui::config::ComponentType::Screen:
+        case ui::config::ComponentType::Container:
+        case ui::config::ComponentType::Scrollbar:
+            break;
+    }
+    if (const auto* binding =
+            std::get_if<ui::config::ValueBinding>(&component.automation.name)) {
+        bindings.push_back(binding->path);
+    }
+    return bindings;
+}
+
+std::optional<std::string> ItemsBinding(
+    const ui::config::ResolvedComponent& component) {
+    if (component.type == ui::config::ComponentType::Combo) {
+        return std::get<ui::config::ComboProperties>(component.properties)
+            .items_binding.path;
+    }
+    if (component.type == ui::config::ComponentType::List) {
+        return std::get<ui::config::ListProperties>(component.properties)
+            .items_binding.path;
+    }
+    return std::nullopt;
 }
 
 Json EmptyOverrideDocument() {
@@ -548,7 +683,7 @@ void TestUiConfigGateEmbeddedDefault() {
     REQUIRE_TRUE(terminal_screen.children.size() == 2);
     const auto& shell = terminal_screen.children.front();
     REQUIRE_TRUE(shell.type == ui::config::ComponentType::Container);
-    REQUIRE_TRUE(shell.children.size() == 9);
+    REQUIRE_TRUE(shell.children.size() == 12);
     REQUIRE_TRUE(shell.children[0].type == ui::config::ComponentType::Text);
     REQUIRE_TRUE(shell.children[2].type == ui::config::ComponentType::Input);
     REQUIRE_TRUE(shell.children[3].type == ui::config::ComponentType::Combo);
@@ -558,8 +693,18 @@ void TestUiConfigGateEmbeddedDefault() {
     REQUIRE_TRUE(shell.children[4].children[1].type == ui::config::ComponentType::Toggle);
     REQUIRE_TRUE(shell.children[5].type == ui::config::ComponentType::List);
     REQUIRE_TRUE(shell.children[6].type == ui::config::ComponentType::Button);
-    REQUIRE_TRUE(shell.children[7].type == ui::config::ComponentType::Button);
+    REQUIRE_TRUE(shell.children[7].type == ui::config::ComponentType::Text);
     REQUIRE_TRUE(shell.children[8].type == ui::config::ComponentType::Button);
+    REQUIRE_TRUE(shell.children[9].type == ui::config::ComponentType::Button);
+    REQUIRE_TRUE(shell.children[10].type == ui::config::ComponentType::Button);
+    REQUIRE_TRUE(shell.children[11].type == ui::config::ComponentType::Button);
+    for (const std::string_view route : {"json-inject", "json-editor", "chrome-launcher",
+                                        "chrome-profile-manager", "settings", "ui-editor"}) {
+        const auto& screen = gate.document()->screens.at(std::string(route));
+        REQUIRE_TRUE(screen.children.size() == 1);
+        REQUIRE_TRUE(screen.children.front().type == ui::config::ComponentType::Container);
+        REQUIRE_TRUE(screen.children.front().children.size() >= 5);
+    }
     const auto& dialog = terminal_screen.children[1];
     REQUIRE_TRUE(dialog.type == ui::config::ComponentType::Dialog);
     REQUIRE_TRUE(dialog.children.size() == 2);
@@ -1487,7 +1632,7 @@ void TestWindowContainerRouteStateDirtyAndReload() {
     REQUIRE_TRUE(window.IsDirty());
 
     Json generation_two_json = ReadEmbeddedDefaultDocument();
-    generation_two_json["screens"]["settings"]["children"][0]["text"] =
+    generation_two_json["screens"]["settings"]["children"][0]["children"][0]["text"] =
         "Settings generation two";
     const auto generation_two = ui::config::detail::ResolveDocuments(
         generation_two_json.dump(), std::nullopt, 2);
@@ -1518,6 +1663,70 @@ void TestWindowContainerRouteStateDirtyAndReload() {
     REQUIRE_TRUE(window.document_generation() == 3);
     REQUIRE_TRUE(window.active_route() == "settings");
     REQUIRE_TRUE(window.cached_screen_count() == 1);
+    REQUIRE_TRUE(!window.IsDirty());
+}
+
+void TestWindowContainerStubFeatureRoutes() {
+    const auto resolved = ui::config::detail::ResolveDocuments(
+        ReadEmbeddedDefaultJson(), std::nullopt, 1);
+    rendering::RenderRuntime runtime;
+    auto bridge = std::make_shared<ui::application::StubApplicationBridge>();
+    ui::containers::WindowContainer window(
+        GetModuleHandleW(nullptr), runtime, resolved.document,
+        ui::config::ThemeKind::Dark, bridge);
+    std::wstring diagnostic;
+    REQUIRE_TRUE(window.Create("main", diagnostic));
+    REQUIRE_TRUE(window.PrepareFirstFrame(diagnostic));
+
+    const auto require_component = [&window](std::string_view id) {
+        ui::components::Component* component =
+            application::ApplicationContainerTestAccess::FindComponent(window, id);
+        REQUIRE_TRUE(component != nullptr);
+        return component;
+    };
+    const auto input_text = [&require_component](std::string_view id) {
+        ui::components::Component* component = require_component(id);
+        const HWND peer = component->automation_native_peer();
+        REQUIRE_TRUE(peer != nullptr);
+        REQUIRE_TRUE((GetWindowLongPtrW(peer, GWL_STYLE) & WS_VISIBLE) != 0);
+        const int length = GetWindowTextLengthW(peer);
+        std::wstring value(static_cast<std::size_t>(length) + 1, L'\0');
+        GetWindowTextW(peer, value.data(), length + 1);
+        value.resize(static_cast<std::size_t>(length));
+        return value;
+    };
+
+    REQUIRE_TRUE(input_text("terminal-input") == L"C:\\Work\\Terminal");
+    REQUIRE_TRUE(require_component("terminal-confirm")->automation_toggle_state() == true);
+    REQUIRE_TRUE(require_component("terminal-active")->automation_toggle_state() == true);
+    ui::components::ComponentRuntimeStateMap terminal_profile_state;
+    require_component("terminal-profile")->CaptureRuntimeState(terminal_profile_state);
+    REQUIRE_TRUE(terminal_profile_state.at("terminal-profile").selected_index == 0);
+    REQUIRE_TRUE(!window.IsDirty());
+
+    REQUIRE_TRUE(window.Navigate("json-inject", diagnostic));
+    REQUIRE_TRUE(input_text("json-inject-config").starts_with(L"provider=Anthropic"));
+    REQUIRE_TRUE(window.Navigate("json-editor", diagnostic));
+    REQUIRE_TRUE(input_text("json-editor-draft").starts_with(L"{\r\n"));
+    REQUIRE_TRUE(window.Navigate("chrome-launcher", diagnostic));
+    REQUIRE_TRUE(input_text("chrome-launcher-url") == L"https://example.com");
+    REQUIRE_TRUE(window.Navigate("chrome-profile-manager", diagnostic));
+    REQUIRE_TRUE(input_text("chrome-profile-manager-name") == L"Personal");
+    REQUIRE_TRUE(require_component("chrome-profile-manager-enabled")
+                     ->automation_toggle_state() == true);
+
+    REQUIRE_TRUE(window.Navigate("settings", diagnostic));
+    REQUIRE_TRUE(require_component("settings-startup-to-tray")
+                     ->automation_toggle_state() == false);
+    REQUIRE_TRUE(require_component("settings-confirm-before-run")
+                     ->automation_toggle_state() == true);
+    REQUIRE_TRUE(require_component("settings-apply")->AutomationInvoke());
+    REQUIRE_TRUE(bridge->view_state().at("viewState.settingsStatus") ==
+                 "Settings stub diterapkan di memory; tidak ada persistence.");
+    REQUIRE_TRUE(application::ApplicationContainerTestAccess::LastPatchGeneration(window) > 0);
+    REQUIRE_TRUE(require_component("settings-open-ui-editor")->AutomationInvoke());
+    REQUIRE_TRUE(window.active_route() == "ui-editor");
+    REQUIRE_TRUE(input_text("ui-editor-draft").starts_with(L"tokens.accent"));
     REQUIRE_TRUE(!window.IsDirty());
 }
 
@@ -1965,7 +2174,7 @@ void TestApplicationContainerRegistryAndRouting() {
         ReadEmbeddedDefaultJson(), std::nullopt, 1);
     rendering::RenderRuntime runtime;
     ui::theme::ThemePlatformAdapter theme_adapter(
-        {false, ui::theme::PlatformAppTheme::Light, false});
+        {false, ui::theme::PlatformAppTheme::Dark, false});
     auto bridge = std::make_shared<ui::application::StubApplicationBridge>();
     application::ApplicationContainerOptions options;
     options.enable_tray = false;
@@ -1980,7 +2189,14 @@ void TestApplicationContainerRegistryAndRouting() {
     REQUIRE_TRUE(container.window_count() == 1);
     REQUIRE_TRUE(container.initial_window() != nullptr);
     REQUIRE_TRUE(container.initial_window()->active_route() == "terminal");
-    REQUIRE_TRUE(container.PrepareAndShowInitialWindow(SW_HIDE, diagnostic));
+    REQUIRE_TRUE(container.PrepareAndShowInitialWindow(SW_SHOWNORMAL, diagnostic));
+    PumpPostedWindowMessages();
+    ui::components::Component* terminal_input =
+        application::ApplicationContainerTestAccess::FindComponent(
+            *container.initial_window(), "terminal-input");
+    REQUIRE_TRUE(terminal_input != nullptr);
+    REQUIRE_TRUE(GetWindowTextLengthW(terminal_input->automation_native_peer()) > 0);
+    REQUIRE_TRUE(IsWindowVisible(terminal_input->automation_native_peer()));
 
     REQUIRE_TRUE(container.OpenExternalRoute("chrome-launcher", diagnostic));
     REQUIRE_TRUE(container.window_count() == 2);
@@ -1999,6 +2215,7 @@ void TestApplicationContainerRegistryAndRouting() {
     SendMessageW(container.infrastructure_hwnd(), WM_SETTINGCHANGE, 0, 0);
     PumpPostedWindowMessages();
     REQUIRE_TRUE(runtime.resource_epoch() == epoch_before + 1);
+    REQUIRE_TRUE(GetWindowTextLengthW(terminal_input->automation_native_peer()) > 0);
 
     const platform::IpcRequest second_launch{
         "31234567-89ab-cdef-0123-456789abcdef",
@@ -2329,7 +2546,7 @@ void TestApplicationContainerPrepareCloseAll() {
 
 void TestStubApplicationBridgePatch() {
     ui::application::StubApplicationBridge bridge;
-    REQUIRE_TRUE(bridge.registered_action_count() == 16);
+    REQUIRE_TRUE(bridge.registered_action_count() == 44);
     const auto profiles = bridge.ResolveStringItems("terminalProfiles");
     REQUIRE_TRUE(profiles.size() == 3);
     REQUIRE_TRUE(profiles.front() == L"PowerShell");
@@ -2337,23 +2554,23 @@ void TestStubApplicationBridgePatch() {
     REQUIRE_TRUE(sessions.size() == 80);
     REQUIRE_TRUE(sessions.front() == L"Session 01 - PowerShell");
     REQUIRE_TRUE(sessions.back() == L"Session 80 - Command Prompt");
-    const auto patch = bridge.Dispatch({"run-terminal-stub", {}});
+    const ui::application::UiEvent run_event =
+        MakeUiEvent("run-terminal-stub", "click", "terminal", "terminal-stub-action");
+    const auto patch = bridge.Dispatch(run_event);
     REQUIRE_TRUE(patch.has_value());
     REQUIRE_TRUE(patch->generation == 1);
-    REQUIRE_TRUE(patch->view_state.at("stubStatus") == "completed");
+    REQUIRE_TRUE(patch->target == run_event.source);
+    REQUIRE_TRUE(patch->config_generation == run_event.config_generation);
+    REQUIRE_TRUE(patch->view_state.contains("viewState.terminalStatus"));
     REQUIRE_TRUE(patch->window_title.has_value());
     REQUIRE_TRUE(patch->request_repaint);
-    const auto dialog = bridge.Dispatch({"open-save-discard-dialog", {}});
+    const auto dialog = bridge.Dispatch(MakeUiEvent(
+        "open-save-discard-dialog", "click", "terminal", "terminal-dialog-action"));
     REQUIRE_TRUE(dialog.has_value() && dialog->dialog_request.has_value());
     REQUIRE_TRUE(dialog->dialog_request->action == ui::application::DialogRequestAction::Open);
     REQUIRE_TRUE(dialog->dialog_request->dialog_id == "save-discard-dialog");
-    ui::application::UiEvent save_event{"dialog-save", {}};
-    save_event.source.window_instance_id = 10;
-    save_event.source.screen_instance_id = 20;
-    save_event.source.component_instance_id = 30;
-    save_event.source.window_id = "main";
-    save_event.source.route_id = "terminal";
-    save_event.source.component_id = "save-dialog-save";
+    ui::application::UiEvent save_event =
+        MakeUiEvent("dialog-save", "click", "terminal", "save-dialog-save");
     save_event.config_generation = 40;
     const auto save = bridge.Dispatch(save_event);
     REQUIRE_TRUE(save.has_value() && save->close_save_result.has_value());
@@ -2365,11 +2582,14 @@ void TestStubApplicationBridgePatch() {
     REQUIRE_TRUE(save->close_save_result->source.window_id == "main");
     REQUIRE_TRUE(save->close_save_result->source.route_id == "terminal");
     REQUIRE_TRUE(save->close_save_result->source.component_id == "save-dialog-save");
-    REQUIRE_TRUE(!bridge.Dispatch({"unknown-action", {}}).has_value());
+    REQUIRE_TRUE(!bridge.Dispatch(MakeUiEvent("unknown-action")).has_value());
+    REQUIRE_TRUE(!bridge.Dispatch({"run-terminal-stub", {}}).has_value());
 
     ui::config::EventPayloadValue route;
     route.value = std::string("settings");
-    const auto navigation = bridge.Dispatch({"navigate-route", {{"routeId", route}}});
+    const auto navigation = bridge.Dispatch(MakeUiEvent(
+        "navigate-route", "click", "terminal", "terminal-settings-action",
+        {{"routeId", route}}));
     REQUIRE_TRUE(navigation.has_value());
     REQUIRE_TRUE(navigation->route_id == "settings");
 
@@ -2384,12 +2604,84 @@ void TestStubApplicationBridgePatch() {
     REQUIRE_TRUE(!bridge.RegisterAction("feature-custom", [](const auto&) {
         return std::optional<ui::application::UiPatch>{};
     }));
-    ui::application::UiEvent custom_event{"feature-custom", {}};
-    custom_event.source.component_id = "custom-button";
+    ui::application::UiEvent custom_event =
+        MakeUiEvent("feature-custom", "click", "terminal", "custom-button");
     const auto custom_patch = bridge.Dispatch(custom_event);
     REQUIRE_TRUE(custom_called);
     REQUIRE_TRUE(custom_patch.has_value());
     REQUIRE_TRUE(custom_patch->view_state.at("custom") == "done");
+}
+
+void TestStubApplicationBridgeFeatureCatalog() {
+    const auto resolved = ui::config::detail::ResolveDocuments(
+        ReadEmbeddedDefaultJson(), std::nullopt, 1);
+    ui::application::StubApplicationBridge bridge;
+    std::set<std::string, std::less<>> referenced_actions;
+    std::uint64_t last_patch_generation = 0;
+
+    for (const auto& [route_id, screen] : resolved.document->screens) {
+        std::vector<const ui::config::ResolvedComponent*> components;
+        CollectResolvedComponents(screen, components);
+        for (const ui::config::ResolvedComponent* component : components) {
+            REQUIRE_TRUE(component != nullptr);
+            for (const std::string& binding : ScalarBindings(*component)) {
+                REQUIRE_TRUE(bridge.ResolveStringValue(binding).has_value());
+            }
+            if (const auto binding = ItemsBinding(*component)) {
+                REQUIRE_TRUE(!bridge.ResolveStringItems(*binding).empty());
+            }
+
+            for (const auto& [event_type, definition] : component->events) {
+                referenced_actions.insert(definition.action);
+                REQUIRE_TRUE(bridge.HasRegisteredAction(definition.action));
+                ui::config::EventPayloadValue::Object payload = definition.payload;
+                if (component->type == ui::config::ComponentType::Input &&
+                    event_type == "changed") {
+                    ui::config::EventPayloadValue value;
+                    value.value = std::string("deterministic-input");
+                    payload.insert_or_assign("value", std::move(value));
+                } else if (component->type == ui::config::ComponentType::Checkbox ||
+                           component->type == ui::config::ComponentType::Toggle) {
+                    ui::config::EventPayloadValue checked;
+                    checked.value = true;
+                    payload.insert_or_assign("checked", std::move(checked));
+                } else if (component->type == ui::config::ComponentType::Combo ||
+                           component->type == ui::config::ComponentType::List) {
+                    const auto items_binding = ItemsBinding(*component);
+                    REQUIRE_TRUE(items_binding.has_value());
+                    const auto items = bridge.ResolveStringItems(*items_binding);
+                    REQUIRE_TRUE(!items.empty());
+                    ui::config::EventPayloadValue selected_index;
+                    selected_index.value = std::int64_t{0};
+                    ui::config::EventPayloadValue selected_value;
+                    selected_value.value = ui::components::WideToUtf8(items.front());
+                    payload.insert_or_assign("selectedIndex", std::move(selected_index));
+                    payload.insert_or_assign("selectedValue", std::move(selected_value));
+                }
+
+                const ui::application::UiEvent event = MakeUiEvent(
+                    definition.action, event_type, route_id, component->id,
+                    std::move(payload));
+                const auto patch = bridge.Dispatch(event);
+                REQUIRE_TRUE(patch.has_value());
+                REQUIRE_TRUE(patch->target == event.source);
+                REQUIRE_TRUE(patch->config_generation == event.config_generation);
+                REQUIRE_TRUE(patch->generation > last_patch_generation);
+                last_patch_generation = patch->generation;
+
+                if (definition.action == "navigate-route") {
+                    const auto route = event.payload.find("routeId");
+                    REQUIRE_TRUE(route != event.payload.end());
+                    const auto* target =
+                        std::get_if<std::string>(&route->second.value);
+                    REQUIRE_TRUE(target != nullptr);
+                    REQUIRE_TRUE(resolved.document->screens.contains(*target));
+                    REQUIRE_TRUE(patch->route_id == *target);
+                }
+            }
+        }
+    }
+    REQUIRE_TRUE(referenced_actions.size() == bridge.registered_action_count());
 }
 
 void TestWindowsRuntimeMinimumBuild() {
@@ -2430,6 +2722,7 @@ std::vector<TestCase> DiscoverTests() {
         {"SingleInstance.IpcContract", TestSingleInstanceIpcContract, __FILE__, __LINE__},
         {"Scrollbar.Metrics", TestScrollbarMetrics, __FILE__, __LINE__},
         {"StubApplicationBridge.Patch", TestStubApplicationBridgePatch, __FILE__, __LINE__},
+        {"StubApplicationBridge.FeatureCatalog", TestStubApplicationBridgeFeatureCatalog, __FILE__, __LINE__},
         {"ThemePlatformAdapter.Contract", TestThemePlatformAdapterContract, __FILE__, __LINE__},
         {"UiConfigGate.AllComponentSchemas", TestUiConfigAllComponentSchemasResolve, __FILE__, __LINE__},
         {"UiConfigGate.BootstrapInvalidOverrideFallback", TestUiConfigBootstrapRejectsOverrideAndUsesDefault, __FILE__, __LINE__},
@@ -2451,6 +2744,7 @@ std::vector<TestCase> DiscoverTests() {
         {"WindowRenderContext.InvalidationUnion", TestWindowRenderContextInvalidationUnion, __FILE__, __LINE__},
         {"WindowRenderContext.RoundedSourceOver", TestWindowRenderContextRoundedSourceOver, __FILE__, __LINE__},
         {"WindowContainer.RouteStateDirtyAndReload", TestWindowContainerRouteStateDirtyAndReload, __FILE__, __LINE__},
+        {"WindowContainer.StubFeatureRoutes", TestWindowContainerStubFeatureRoutes, __FILE__, __LINE__},
         {"WindowContainer.DpiTransition", TestWindowContainerDpiTransition, __FILE__, __LINE__},
         {"WindowContainer.CloseTransaction", TestWindowContainerCloseTransaction, __FILE__, __LINE__},
         {"WindowsRuntime.MinimumBuild", TestWindowsRuntimeMinimumBuild, __FILE__, __LINE__},
