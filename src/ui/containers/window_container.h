@@ -22,15 +22,21 @@
 
 namespace application {
 class ApplicationContainer;
+struct ApplicationContainerTestAccess;
 }
 
 namespace ui::containers {
+
+enum class ClosePreparation { Ready, AwaitingDecision, Cancelled, Failed };
 
 class WindowContainer final {
 public:
     using DestroyedHandler = std::function<void(WindowContainer&)>;
     using RouteRequestHandler =
         std::function<bool(WindowContainer&, std::string_view, std::wstring&)>;
+    using ClosePreparedHandler =
+        std::function<void(WindowContainer&, ClosePreparation)>;
+    using CloseRequestedHandler = std::function<void(WindowContainer&)>;
 
     WindowContainer(HINSTANCE instance, rendering::RenderRuntime& render_runtime,
                     std::shared_ptr<const config::ResolvedUiDocument> document,
@@ -46,6 +52,7 @@ public:
     bool SuspendNativePeers(std::wstring& diagnostic);
     void ResumeNativePeers();
     bool RestoreAndShow(int show_command, std::wstring& diagnostic);
+    void ReleaseRetainedResources() noexcept;
     void Show(int show_command);
     void ApplyTheme(config::ThemeKind theme_kind);
     void ApplySharedTheme(config::ThemeKind theme_kind);
@@ -54,6 +61,11 @@ public:
                         std::wstring& diagnostic);
     void SetDestroyedHandler(DestroyedHandler handler);
     void SetRouteRequestHandler(RouteRequestHandler handler);
+    void SetCloseRequestedHandler(CloseRequestedHandler handler);
+    ClosePreparation PrepareClose(ClosePreparedHandler handler,
+                                  std::wstring& diagnostic);
+    bool CommitClose(std::wstring& diagnostic);
+    void RollbackPreparedClose() noexcept;
     HWND hwnd() const noexcept;
     std::string_view active_route() const noexcept;
     std::size_t cached_screen_count() const noexcept;
@@ -61,14 +73,18 @@ public:
     std::size_t dirty_participant_count() const;
     std::uint64_t document_generation() const noexcept;
     UINT dpi() const noexcept;
+    bool close_decision_pending() const noexcept;
+    bool retained_resources_released() const noexcept;
 
 private:
     friend class ::application::ApplicationContainer;
+    friend struct ::application::ApplicationContainerTestAccess;
 
     static LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
     LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
 
     bool BuildComponentTree(std::wstring& diagnostic);
+    bool PrepareFrameForShow(bool resume_native_peers, std::wstring& diagnostic);
     bool ActivateRoute(std::string_view route_id, std::wstring& diagnostic);
     bool NormalizeForReload(std::wstring& diagnostic);
     void CaptureScreenSnapshots();
@@ -88,6 +104,15 @@ private:
                          const config::EventDefinition& event);
     bool OpenModal(std::string_view dialog_id, std::wstring& diagnostic);
     bool CloseModal(components::ModalResult result, std::wstring& diagnostic);
+    bool ResolveCloseDecision(components::ModalResult result,
+                              std::wstring& diagnostic);
+    bool OpenCloseConfirmation(std::wstring& diagnostic);
+    void AttachCloseConfirmationIfMissing(components::Component& screen);
+    std::vector<components::EditableParticipant*> CollectEditableParticipants();
+    bool StageDiscardTransaction(std::wstring& diagnostic);
+    void ApplySaveSuccess() noexcept;
+    void CommitDiscardTransaction() noexcept;
+    void RollbackDiscardTransaction() noexcept;
     components::Component* HitTestInteractive(POINT point) const;
 
     HINSTANCE instance_ = nullptr;
@@ -132,6 +157,15 @@ private:
     bool frame_ready_ = false;
     DestroyedHandler destroyed_handler_;
     RouteRequestHandler route_request_handler_;
+    CloseRequestedHandler close_requested_handler_;
+    ClosePreparedHandler close_prepared_handler_;
+    std::vector<components::EditableParticipant*> staged_discard_participants_;
+    std::optional<std::map<std::string, ScreenRuntimeSnapshot, std::less<>>>
+        staged_snapshot_backup_;
+    std::optional<application::CloseSaveResult> pending_close_save_result_;
+    bool close_decision_pending_ = false;
+    bool close_prepared_ = false;
+    bool retained_resources_released_ = false;
 };
 
 }  // namespace ui::containers

@@ -406,6 +406,8 @@ Business logic tidak menerima `HWND`, device context, atau pointer component.
 - `window_title`: mengganti title top-level window;
 - `route_id`: navigation ke screen lain;
 - `dialog_request`: open/save/discard/cancel dialog;
+- `close_save_result`: hasil persistence Save untuk close transaction, lengkap dengan source identity
+  dan config generation;
 - `request_repaint`: meminta render ulang.
 
 `view_state` belum merupakan binding engine universal yang otomatis menulis semua property component.
@@ -444,6 +446,35 @@ hilang fallback ke `windows.<id>.initialRoute`.
 Gunakan `WindowContainer::IsDirty` atau `dirty_participant_count` untuk window-level dirty status;
 business layer tidak perlu membaca draft component. Koordinasi candidate dari `UiConfigGate` ke semua
 window akan dimiliki `ApplicationContainer`, bukan screen atau action handler.
+
+### Close, retain, dan Exit
+
+`WM_CLOSE` adalah process-level lifecycle intent. Jangan menghancurkan `HWND` dari feature handler.
+`ApplicationContainer` memilih transaksi berikut:
+
+- bila masih ada route window lain yang reachable, hanya target yang melewati `PrepareClose` lalu
+  `CommitClose`;
+- bila target adalah window terakhir dan tray tersedia tanpa retained window, instance yang sama
+  disuspend dan disimpan sebagai retained window tanpa prompt, termasuk ketika masih dirty;
+- bila slot retained sudah terisi, retained window lama dipulihkan dan diprepare lebih dahulu. Save
+  atau Discard menghancurkan yang lama lalu menaruh window terbaru di slot; Cancel mempertahankan
+  retained window lama dan membiarkan window terbaru terbuka;
+- Exit memulihkan retained window lalu menjalankan `PrepareCloseAll`. Tidak ada window dihancurkan
+  sebelum semuanya siap; Cancel mengembalikan staged discard dan visibility semula.
+
+Ketika retained, component tree dan draft tetap hidup, tetapi native peer disuspend serta persistent
+DIB dan native GDI lease dilepas. Restore memakai tree yang sama, memperoleh resource lagi, merender
+satu frame lengkap, baru menampilkan window.
+
+Close confirmation memakai definisi JSON `save-discard-dialog`. `WindowContainer` memasang instance
+runtime dari definisi itu pada setiap screen yang dibuat lazy, sehingga dialog dapat muncul tanpa
+mengganti route aktif. ID tersebut harus tetap unik di dalam setiap screen tree.
+
+Handler Save wajib melakukan persistence business logic terlebih dahulu. Hanya setelah berhasil,
+kembalikan `UiPatch.close_save_result` dengan `source` dari `UiEvent`, `config_generation` yang sama,
+dan `success = true`; hasil stale atau milik window/screen/route lain diabaikan. Implementasi stub
+sekarang selalu mengembalikan sukses hanya untuk membuktikan wiring—ganti handler itu saat backend
+nyata dipasang. Discard distage oleh UI dan baru permanen pada `CommitClose`; Cancel melakukan rollback.
 
 ## 6. Dialog dari JSON
 

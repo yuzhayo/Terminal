@@ -55,6 +55,36 @@ struct ApplicationContainerTestAccess {
                                   std::wstring& diagnostic) {
         return application.RetainRouteWindow(window, diagnostic);
     }
+
+    static void SetTrayAvailable(ApplicationContainer& application, bool available) {
+        application.tray_icon_added_ = available;
+    }
+
+    static bool ResolveCloseDecision(
+        ui::containers::WindowContainer& window, ui::components::ModalResult result,
+        bool save_success, std::wstring& diagnostic) {
+        if (result == ui::components::ModalResult::Accept) {
+            ui::application::UiAddress source;
+            source.window_instance_id = window.window_instance_id_;
+            source.screen_instance_id = window.active_screen_instance_id_;
+            source.component_instance_id = 1;
+            source.window_id = window.window_id_;
+            source.route_id = window.active_route_;
+            source.component_id = "test-save-action";
+            window.pending_close_save_result_ = ui::application::CloseSaveResult{
+                std::move(source), window.document_->generation, save_success};
+        }
+        return window.ResolveCloseDecision(result, diagnostic);
+    }
+
+    static void RequestExit(ApplicationContainer& application) {
+        application.RequestExit();
+    }
+
+    static bool CloseOperationActive(const ApplicationContainer& application) {
+        return application.close_operation_.kind !=
+               ApplicationContainer::CloseOperationKind::None;
+    }
 };
 
 }  // namespace application
@@ -2087,6 +2117,216 @@ void TestApplicationContainerRouteReusePolicy() {
     REQUIRE_TRUE(container.window_count() == 0);
 }
 
+void TestWindowContainerCloseTransaction() {
+    const auto resolved = ui::config::detail::ResolveDocuments(
+        ReadEmbeddedDefaultJson(), std::nullopt, 1);
+    rendering::RenderRuntime runtime;
+    auto bridge = std::make_shared<ui::application::StubApplicationBridge>();
+    ui::containers::WindowContainer window(
+        GetModuleHandleW(nullptr), runtime, resolved.document,
+        ui::config::ThemeKind::Light, bridge);
+    std::wstring diagnostic;
+    REQUIRE_TRUE(window.Create("main", diagnostic));
+    REQUIRE_TRUE(window.PrepareFirstFrame(diagnostic));
+    HWND input = FindWindowExW(window.hwnd(), nullptr, L"Edit", nullptr);
+    REQUIRE_TRUE(input != nullptr);
+    REQUIRE_TRUE(SetWindowTextW(input, L"close transaction draft"));
+    REQUIRE_TRUE(window.IsDirty());
+
+    ui::containers::ClosePreparation completion =
+        ui::containers::ClosePreparation::Failed;
+    auto prepare = window.PrepareClose(
+        [&completion](ui::containers::WindowContainer&,
+                      ui::containers::ClosePreparation result) {
+            completion = result;
+        },
+        diagnostic);
+    REQUIRE_TRUE(prepare == ui::containers::ClosePreparation::AwaitingDecision);
+    REQUIRE_TRUE(window.close_decision_pending());
+    REQUIRE_TRUE(!application::ApplicationContainerTestAccess::ResolveCloseDecision(
+        window, ui::components::ModalResult::Accept, false, diagnostic));
+    REQUIRE_TRUE(window.close_decision_pending());
+    REQUIRE_TRUE(window.IsDirty());
+    REQUIRE_TRUE(application::ApplicationContainerTestAccess::ResolveCloseDecision(
+        window, ui::components::ModalResult::Cancel, false, diagnostic));
+    REQUIRE_TRUE(completion == ui::containers::ClosePreparation::Cancelled);
+    REQUIRE_TRUE(!window.close_decision_pending());
+    REQUIRE_TRUE(window.IsDirty());
+
+    REQUIRE_TRUE(window.Navigate("settings", diagnostic));
+    REQUIRE_TRUE(window.active_route() == "settings");
+    completion = ui::containers::ClosePreparation::Failed;
+    prepare = window.PrepareClose(
+        [&completion](ui::containers::WindowContainer&,
+                      ui::containers::ClosePreparation result) {
+            completion = result;
+        },
+        diagnostic);
+    REQUIRE_TRUE(prepare == ui::containers::ClosePreparation::AwaitingDecision);
+    REQUIRE_TRUE(window.active_route() == "settings");
+    REQUIRE_TRUE(application::ApplicationContainerTestAccess::ResolveCloseDecision(
+        window, ui::components::ModalResult::Cancel, false, diagnostic));
+    REQUIRE_TRUE(completion == ui::containers::ClosePreparation::Cancelled);
+    REQUIRE_TRUE(window.active_route() == "settings");
+    REQUIRE_TRUE(window.IsDirty());
+    REQUIRE_TRUE(window.Navigate("terminal", diagnostic));
+
+    completion = ui::containers::ClosePreparation::Failed;
+    prepare = window.PrepareClose(
+        [&completion](ui::containers::WindowContainer&,
+                      ui::containers::ClosePreparation result) {
+            completion = result;
+        },
+        diagnostic);
+    REQUIRE_TRUE(prepare == ui::containers::ClosePreparation::AwaitingDecision);
+    REQUIRE_TRUE(application::ApplicationContainerTestAccess::ResolveCloseDecision(
+        window, ui::components::ModalResult::Discard, false, diagnostic));
+    REQUIRE_TRUE(completion == ui::containers::ClosePreparation::Ready);
+    REQUIRE_TRUE(!window.IsDirty());
+    window.RollbackPreparedClose();
+    REQUIRE_TRUE(window.IsDirty());
+
+    completion = ui::containers::ClosePreparation::Failed;
+    prepare = window.PrepareClose(
+        [&completion](ui::containers::WindowContainer&,
+                      ui::containers::ClosePreparation result) {
+            completion = result;
+        },
+        diagnostic);
+    REQUIRE_TRUE(prepare == ui::containers::ClosePreparation::AwaitingDecision);
+    REQUIRE_TRUE(application::ApplicationContainerTestAccess::ResolveCloseDecision(
+        window, ui::components::ModalResult::Accept, true, diagnostic));
+    REQUIRE_TRUE(completion == ui::containers::ClosePreparation::Ready);
+    REQUIRE_TRUE(!window.IsDirty());
+    window.RollbackPreparedClose();
+    REQUIRE_TRUE(!window.IsDirty());
+
+    REQUIRE_TRUE(SetWindowTextW(input, L"discard before commit"));
+    REQUIRE_TRUE(window.IsDirty());
+    prepare = window.PrepareClose({}, diagnostic);
+    REQUIRE_TRUE(prepare == ui::containers::ClosePreparation::AwaitingDecision);
+    REQUIRE_TRUE(application::ApplicationContainerTestAccess::ResolveCloseDecision(
+        window, ui::components::ModalResult::Discard, false, diagnostic));
+    REQUIRE_TRUE(window.CommitClose(diagnostic));
+    REQUIRE_TRUE(window.hwnd() == nullptr);
+}
+
+void TestApplicationContainerRetainedLifecycle() {
+    const auto resolved = ui::config::detail::ResolveDocuments(
+        ReadEmbeddedDefaultJson(), std::nullopt, 1);
+    rendering::RenderRuntime runtime;
+    ui::theme::ThemePlatformAdapter theme_adapter(
+        {false, ui::theme::PlatformAppTheme::Light, false});
+    auto bridge = std::make_shared<ui::application::StubApplicationBridge>();
+    application::ApplicationContainerOptions options;
+    options.enable_tray = false;
+    options.created_window_show_command = SW_HIDE;
+    application::ApplicationContainer container(
+        GetModuleHandleW(nullptr), runtime, resolved.document, theme_adapter, bridge,
+        options);
+    std::wstring diagnostic;
+    REQUIRE_TRUE(container.Initialize("main", std::nullopt, diagnostic));
+    REQUIRE_TRUE(container.PrepareAndShowInitialWindow(SW_HIDE, diagnostic));
+    auto* terminal = container.initial_window();
+    REQUIRE_TRUE(terminal != nullptr);
+    HWND input = FindWindowExW(terminal->hwnd(), nullptr, L"Edit", nullptr);
+    REQUIRE_TRUE(input != nullptr);
+    REQUIRE_TRUE(SetWindowTextW(input, L"retained dirty draft"));
+    REQUIRE_TRUE(terminal->IsDirty());
+
+    application::ApplicationContainerTestAccess::SetTrayAvailable(container, true);
+    SendMessageW(terminal->hwnd(), WM_CLOSE, 0, 0);
+    REQUIRE_TRUE(container.retained_window() == terminal);
+    REQUIRE_TRUE(!IsWindowVisible(terminal->hwnd()));
+    REQUIRE_TRUE(terminal->retained_resources_released());
+    REQUIRE_TRUE(terminal->IsDirty());
+    REQUIRE_TRUE(runtime.diagnostics().native_peer_font_leases == 0);
+    REQUIRE_TRUE(runtime.diagnostics().native_peer_brush_leases == 0);
+
+    container.ActivateDefault();
+    REQUIRE_TRUE(container.retained_window() == nullptr);
+    REQUIRE_TRUE(!terminal->retained_resources_released());
+    REQUIRE_TRUE(terminal->IsDirty());
+    REQUIRE_TRUE(runtime.diagnostics().native_peer_font_leases > 0);
+    REQUIRE_TRUE(runtime.diagnostics().native_peer_brush_leases > 0);
+
+    REQUIRE_TRUE(container.OpenExternalRoute("chrome-launcher", diagnostic));
+    auto* chrome = container.FindRouteWindow("chrome-launcher");
+    REQUIRE_TRUE(chrome != nullptr);
+    SendMessageW(chrome->hwnd(), WM_CLOSE, 0, 0);
+    PumpPostedWindowMessages();
+    REQUIRE_TRUE(container.window_count() == 1);
+    REQUIRE_TRUE(container.FindRouteWindow("chrome-launcher") == nullptr);
+
+    SendMessageW(terminal->hwnd(), WM_CLOSE, 0, 0);
+    REQUIRE_TRUE(container.retained_window() == terminal);
+    REQUIRE_TRUE(container.OpenExternalRoute("chrome-launcher", diagnostic));
+    chrome = container.FindRouteWindow("chrome-launcher");
+    REQUIRE_TRUE(chrome != nullptr);
+    SendMessageW(chrome->hwnd(), WM_CLOSE, 0, 0);
+    REQUIRE_TRUE(container.retained_window() == nullptr);
+    REQUIRE_TRUE(terminal->close_decision_pending());
+    REQUIRE_TRUE(application::ApplicationContainerTestAccess::ResolveCloseDecision(
+        *terminal, ui::components::ModalResult::Cancel, false, diagnostic));
+    REQUIRE_TRUE(container.retained_window() == terminal);
+    REQUIRE_TRUE(container.FindRouteWindow("chrome-launcher") == chrome);
+    REQUIRE_TRUE(container.window_count() == 2);
+
+    SendMessageW(chrome->hwnd(), WM_CLOSE, 0, 0);
+    REQUIRE_TRUE(terminal->close_decision_pending());
+    REQUIRE_TRUE(application::ApplicationContainerTestAccess::ResolveCloseDecision(
+        *terminal, ui::components::ModalResult::Discard, false, diagnostic));
+    PumpPostedWindowMessages();
+    REQUIRE_TRUE(container.window_count() == 1);
+    REQUIRE_TRUE(container.retained_window() == chrome);
+    REQUIRE_TRUE(chrome->retained_resources_released());
+    REQUIRE_TRUE(container.route_registry_is_unique());
+
+    application::ApplicationContainerTestAccess::SetTrayAvailable(container, false);
+    container.BeginShutdown();
+    REQUIRE_TRUE(container.window_count() == 0);
+}
+
+void TestApplicationContainerPrepareCloseAll() {
+    const auto resolved = ui::config::detail::ResolveDocuments(
+        ReadEmbeddedDefaultJson(), std::nullopt, 1);
+    rendering::RenderRuntime runtime;
+    ui::theme::ThemePlatformAdapter theme_adapter(
+        {false, ui::theme::PlatformAppTheme::Light, false});
+    auto bridge = std::make_shared<ui::application::StubApplicationBridge>();
+    application::ApplicationContainerOptions options;
+    options.enable_tray = false;
+    options.created_window_show_command = SW_HIDE;
+    application::ApplicationContainer container(
+        GetModuleHandleW(nullptr), runtime, resolved.document, theme_adapter, bridge,
+        options);
+    std::wstring diagnostic;
+    REQUIRE_TRUE(container.Initialize("main", std::nullopt, diagnostic));
+    REQUIRE_TRUE(container.PrepareAndShowInitialWindow(SW_HIDE, diagnostic));
+    auto* terminal = container.initial_window();
+    REQUIRE_TRUE(terminal != nullptr);
+    HWND input = FindWindowExW(terminal->hwnd(), nullptr, L"Edit", nullptr);
+    REQUIRE_TRUE(input != nullptr);
+    REQUIRE_TRUE(SetWindowTextW(input, L"exit dirty draft"));
+    REQUIRE_TRUE(terminal->IsDirty());
+
+    application::ApplicationContainerTestAccess::RequestExit(container);
+    REQUIRE_TRUE(application::ApplicationContainerTestAccess::CloseOperationActive(container));
+    REQUIRE_TRUE(terminal->close_decision_pending());
+    REQUIRE_TRUE(application::ApplicationContainerTestAccess::ResolveCloseDecision(
+        *terminal, ui::components::ModalResult::Cancel, false, diagnostic));
+    REQUIRE_TRUE(!application::ApplicationContainerTestAccess::CloseOperationActive(container));
+    REQUIRE_TRUE(container.window_count() == 1);
+    REQUIRE_TRUE(terminal->IsDirty());
+
+    application::ApplicationContainerTestAccess::RequestExit(container);
+    REQUIRE_TRUE(terminal->close_decision_pending());
+    REQUIRE_TRUE(application::ApplicationContainerTestAccess::ResolveCloseDecision(
+        *terminal, ui::components::ModalResult::Accept, true, diagnostic));
+    PumpPostedWindowMessages();
+    REQUIRE_TRUE(container.window_count() == 0);
+}
+
 void TestStubApplicationBridgePatch() {
     ui::application::StubApplicationBridge bridge;
     REQUIRE_TRUE(bridge.registered_action_count() == 16);
@@ -2107,6 +2347,24 @@ void TestStubApplicationBridgePatch() {
     REQUIRE_TRUE(dialog.has_value() && dialog->dialog_request.has_value());
     REQUIRE_TRUE(dialog->dialog_request->action == ui::application::DialogRequestAction::Open);
     REQUIRE_TRUE(dialog->dialog_request->dialog_id == "save-discard-dialog");
+    ui::application::UiEvent save_event{"dialog-save", {}};
+    save_event.source.window_instance_id = 10;
+    save_event.source.screen_instance_id = 20;
+    save_event.source.component_instance_id = 30;
+    save_event.source.window_id = "main";
+    save_event.source.route_id = "terminal";
+    save_event.source.component_id = "save-dialog-save";
+    save_event.config_generation = 40;
+    const auto save = bridge.Dispatch(save_event);
+    REQUIRE_TRUE(save.has_value() && save->close_save_result.has_value());
+    REQUIRE_TRUE(save->close_save_result->success);
+    REQUIRE_TRUE(save->close_save_result->config_generation == 40);
+    REQUIRE_TRUE(save->close_save_result->source.window_instance_id == 10);
+    REQUIRE_TRUE(save->close_save_result->source.screen_instance_id == 20);
+    REQUIRE_TRUE(save->close_save_result->source.component_instance_id == 30);
+    REQUIRE_TRUE(save->close_save_result->source.window_id == "main");
+    REQUIRE_TRUE(save->close_save_result->source.route_id == "terminal");
+    REQUIRE_TRUE(save->close_save_result->source.component_id == "save-dialog-save");
     REQUIRE_TRUE(!bridge.Dispatch({"unknown-action", {}}).has_value());
 
     ui::config::EventPayloadValue route;
@@ -2145,6 +2403,8 @@ std::vector<TestCase> DiscoverTests() {
     std::vector<TestCase> tests = {
         {"AppIdentity.Contract", TestAppIdentityContract, __FILE__, __LINE__},
         {"ApplicationContainer.RegistryAndRouting", TestApplicationContainerRegistryAndRouting, __FILE__, __LINE__},
+        {"ApplicationContainer.PrepareCloseAll", TestApplicationContainerPrepareCloseAll, __FILE__, __LINE__},
+        {"ApplicationContainer.RetainedLifecycle", TestApplicationContainerRetainedLifecycle, __FILE__, __LINE__},
         {"ApplicationContainer.RouteReusePolicy", TestApplicationContainerRouteReusePolicy, __FILE__, __LINE__},
         {"ApplicationInfrastructureWindow.Contract", TestApplicationInfrastructureWindowContract, __FILE__, __LINE__},
         {"AppPaths.Contract", TestAppPathsContract, __FILE__, __LINE__},
@@ -2192,6 +2452,7 @@ std::vector<TestCase> DiscoverTests() {
         {"WindowRenderContext.RoundedSourceOver", TestWindowRenderContextRoundedSourceOver, __FILE__, __LINE__},
         {"WindowContainer.RouteStateDirtyAndReload", TestWindowContainerRouteStateDirtyAndReload, __FILE__, __LINE__},
         {"WindowContainer.DpiTransition", TestWindowContainerDpiTransition, __FILE__, __LINE__},
+        {"WindowContainer.CloseTransaction", TestWindowContainerCloseTransaction, __FILE__, __LINE__},
         {"WindowsRuntime.MinimumBuild", TestWindowsRuntimeMinimumBuild, __FILE__, __LINE__},
     };
     std::sort(tests.begin(), tests.end(),

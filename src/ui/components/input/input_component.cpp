@@ -220,6 +220,13 @@ bool InputComponent::PrepareResources(COLORREF parent_background) {
     return !scrollbar_ || scrollbar_->PrepareResources(parent_background);
 }
 
+void InputComponent::ReleaseResources() noexcept {
+    Component::ReleaseResources();
+    if (scrollbar_) scrollbar_->ReleaseResources();
+    font_lease_.Reset();
+    brush_lease_.Reset();
+}
+
 bool InputComponent::SuspendNativePeers(std::wstring& diagnostic) {
     if (suspended_ || !edit_ || !IsWindow(edit_)) {
         diagnostic.clear();

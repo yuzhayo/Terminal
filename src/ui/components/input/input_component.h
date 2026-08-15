@@ -23,6 +23,7 @@ public:
     void SetLogicalFocus(bool focused, bool window_active) override;
     void OnDpiChanged() override;
     bool PrepareResources(COLORREF parent_background) override;
+    void ReleaseResources() noexcept override;
     bool SuspendNativePeers(std::wstring& diagnostic) override;
     void ResumeNativePeers() override;
     bool RequiresNativePeerSuppression() const noexcept override;

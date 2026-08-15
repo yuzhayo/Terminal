@@ -305,6 +305,10 @@ bool Component::PrepareResources(COLORREF parent_background) {
     return true;
 }
 
+void Component::ReleaseResources() noexcept {
+    for (const auto& child : children_) child->ReleaseResources();
+}
+
 void Component::AddChild(std::unique_ptr<Component> child) {
     if (child) {
         child->parent_ = this;

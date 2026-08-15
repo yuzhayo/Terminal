@@ -69,6 +69,17 @@ private:
         std::unique_ptr<ui::containers::WindowContainer> container;
     };
 
+    enum class CloseOperationKind { None, CloseOne, ReplaceRetained, ExitAll };
+    struct CloseOperation {
+        CloseOperationKind kind = CloseOperationKind::None;
+        std::uint64_t primary_id = 0;
+        std::uint64_t secondary_id = 0;
+        std::vector<std::uint64_t> window_ids;
+        std::vector<std::uint64_t> prepared_ids;
+        std::size_t next_index = 0;
+        std::optional<std::uint64_t> original_retained_id;
+    };
+
     ui::containers::WindowContainer* CreateRouteWindow(std::string_view route_id,
                                                         bool prepare_and_show,
                                                          int show_command,
@@ -84,6 +95,23 @@ private:
     std::optional<std::uint64_t> FindRouteWindowId(
         std::string_view route_id) const noexcept;
     void AssertRouteRegistryInvariant() const noexcept;
+    std::size_t reachable_window_count() const noexcept;
+    void RequestCloseWindow(ui::containers::WindowContainer& target);
+    void BeginCloseOne(std::uint64_t registry_id);
+    void CompleteCloseOne(std::uint64_t registry_id,
+                          ui::containers::ClosePreparation preparation);
+    void BeginRetainedReplacement(std::uint64_t retained_id,
+                                  std::uint64_t replacement_id);
+    void CompleteRetainedReplacement(
+        std::uint64_t retained_id, std::uint64_t replacement_id,
+        ui::containers::ClosePreparation preparation);
+    void BeginCloseAll();
+    void ContinuePrepareCloseAll();
+    void CompletePrepareCloseAllWindow(
+        std::uint64_t registry_id, ui::containers::ClosePreparation preparation);
+    void CancelCloseAll();
+    void CommitCloseAll();
+    void ClearCloseOperation() noexcept;
     void OnWindowDestroyed(std::uint64_t registry_id) noexcept;
     void DrainApplicationWork();
     void HandleProcessSignals(std::uint32_t signals);
@@ -92,7 +120,7 @@ private:
     void ShowTrayMenu(POINT point);
     bool InstallTrayIcon(std::wstring& diagnostic) noexcept;
     void RemoveTrayIcon() noexcept;
-    void RequestExit() noexcept;
+    void RequestExit();
     std::string DefaultRoute() const;
     bool IsConfiguredRoute(std::string_view route_id) const noexcept;
 
@@ -111,6 +139,8 @@ private:
     std::uint64_t next_window_id_ = 1;
     bool tray_icon_added_ = false;
     bool shutdown_in_progress_ = false;
+    bool shutdown_after_drain_ = false;
+    CloseOperation close_operation_;
     std::wstring nonfatal_diagnostic_;
 };
 

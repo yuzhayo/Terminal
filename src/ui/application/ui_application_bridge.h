@@ -39,12 +39,19 @@ struct DialogRequest {
     std::string dialog_id;
 };
 
+struct CloseSaveResult {
+    UiAddress source;
+    std::uint64_t config_generation = 0;
+    bool success = false;
+};
+
 struct UiPatch {
     std::uint64_t generation = 0;
     std::map<std::string, std::string, std::less<>> view_state;
     std::optional<std::wstring> window_title;
     std::optional<std::string> route_id;
     std::optional<DialogRequest> dialog_request;
+    std::optional<CloseSaveResult> close_save_result;
     bool request_repaint = false;
 };
 

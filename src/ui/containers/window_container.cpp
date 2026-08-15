@@ -60,6 +60,18 @@ std::size_t CountDirtySnapshot(
         }));
 }
 
+const config::ResolvedComponent* FindComponentDefinition(
+    const config::ResolvedComponent& component, std::string_view component_id) noexcept {
+    if (component.id == component_id) return &component;
+    for (const config::ResolvedComponent& child : component.children) {
+        if (const config::ResolvedComponent* found =
+                FindComponentDefinition(child, component_id)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
 }  // namespace
 
 WindowContainer::WindowContainer(HINSTANCE instance, rendering::RenderRuntime& render_runtime,
@@ -298,6 +310,7 @@ bool WindowContainer::ActivateRoute(std::string_view route_id, std::wstring& dia
         if (inserted) {
             entry->second.instance_id = NextRuntimeInstanceId();
             entry->second.root = registry_.CreateTree(definition->second, *component_host_);
+            AttachCloseConfirmationIfMissing(*entry->second.root);
         }
         activated_entry = &entry->second;
         root_ = entry->second.root.get();
@@ -489,6 +502,11 @@ bool WindowContainer::ReloadDocument(
 }
 
 bool WindowContainer::PrepareFirstFrame(std::wstring& diagnostic) {
+    return PrepareFrameForShow(false, diagnostic);
+}
+
+bool WindowContainer::PrepareFrameForShow(bool resume_native_peers,
+                                          std::wstring& diagnostic) {
     if (!window_ || !root_) {
         diagnostic = L"Main window belum siap dirender.";
         return false;
@@ -497,12 +515,17 @@ bool WindowContainer::PrepareFirstFrame(std::wstring& diagnostic) {
     RECT client{};
     GetClientRect(window_, &client);
     const bool sized = dc && render_context_.EnsureSize(dc, client.right - client.left,
-                                                        client.bottom - client.top);
+                                                         client.bottom - client.top);
     if (sized) Layout();
+    if (sized && resume_native_peers) ResumeNativePeers();
     const bool prepared = sized && PrepareRenderResources();
     const bool rendered = prepared && RenderCompleteFrame(dc);
     if (dc) ReleaseDC(window_, dc);
     if (!rendered) {
+        if (resume_native_peers) {
+            std::wstring ignored;
+            SuspendNativePeers(ignored);
+        }
         diagnostic = L"Persistent DIB untuk first frame tidak dapat dibuat.";
         return false;
     }
@@ -539,15 +562,19 @@ bool WindowContainer::RestoreAndShow(int show_command, std::wstring& diagnostic)
         resources_prepared_ = false;
         frame_ready_ = false;
     }
-    ResumeNativePeers();
-    if (!PrepareFirstFrame(diagnostic)) {
-        std::wstring ignored;
-        SuspendNativePeers(ignored);
-        return false;
-    }
+    if (!PrepareFrameForShow(true, diagnostic)) return false;
+    retained_resources_released_ = false;
     Show(show_command);
     diagnostic.clear();
     return true;
+}
+
+void WindowContainer::ReleaseRetainedResources() noexcept {
+    if (root_) root_->ReleaseResources();
+    render_context_.Reset();
+    resources_prepared_ = false;
+    frame_ready_ = false;
+    retained_resources_released_ = true;
 }
 
 void WindowContainer::Show(int show_command) {
@@ -611,6 +638,10 @@ void WindowContainer::SetRouteRequestHandler(RouteRequestHandler handler) {
     route_request_handler_ = std::move(handler);
 }
 
+void WindowContainer::SetCloseRequestedHandler(CloseRequestedHandler handler) {
+    close_requested_handler_ = std::move(handler);
+}
+
 HWND WindowContainer::hwnd() const noexcept {
     return window_;
 }
@@ -640,11 +671,146 @@ std::size_t WindowContainer::dirty_participant_count() const {
     return count;
 }
 
+ClosePreparation WindowContainer::PrepareClose(ClosePreparedHandler handler,
+                                               std::wstring& diagnostic) {
+    if (close_prepared_) {
+        diagnostic.clear();
+        return ClosePreparation::Ready;
+    }
+    if (close_decision_pending_) {
+        diagnostic = L"Close confirmation sudah aktif.";
+        return ClosePreparation::AwaitingDecision;
+    }
+    if (!IsDirty()) {
+        close_prepared_ = true;
+        diagnostic.clear();
+        return ClosePreparation::Ready;
+    }
+
+    close_prepared_handler_ = std::move(handler);
+    close_decision_pending_ = true;
+    pending_close_save_result_.reset();
+    if (!OpenCloseConfirmation(diagnostic)) {
+        close_decision_pending_ = false;
+        close_prepared_handler_ = {};
+        return ClosePreparation::Failed;
+    }
+    diagnostic.clear();
+    return ClosePreparation::AwaitingDecision;
+}
+
+bool WindowContainer::CommitClose(std::wstring& diagnostic) {
+    if (!close_prepared_ || close_decision_pending_ || !window_) {
+        diagnostic = L"Window belum melewati PrepareClose.";
+        return false;
+    }
+    if (!DestroyWindow(window_)) {
+        diagnostic = L"Route window tidak dapat dihancurkan setelah CommitClose.";
+        return false;
+    }
+    CommitDiscardTransaction();
+    close_prepared_ = false;
+    diagnostic.clear();
+    return true;
+}
+
+void WindowContainer::RollbackPreparedClose() noexcept {
+    RollbackDiscardTransaction();
+    close_prepared_ = false;
+    pending_close_save_result_.reset();
+}
+
+std::vector<components::EditableParticipant*>
+WindowContainer::CollectEditableParticipants() {
+    std::vector<components::EditableParticipant*> participants;
+    for (auto& [route_id, entry] : screen_cache_) {
+        (void)route_id;
+        if (entry.root) entry.root->CollectEditableParticipants(participants);
+    }
+    return participants;
+}
+
+bool WindowContainer::StageDiscardTransaction(std::wstring& diagnostic) {
+    staged_discard_participants_.clear();
+    staged_snapshot_backup_.reset();
+    for (components::EditableParticipant* participant : CollectEditableParticipants()) {
+        if (!participant || !participant->IsDirty()) continue;
+        if (!participant->StageDiscard()) {
+            RollbackDiscardTransaction();
+            diagnostic = L"Dirty participant menolak staged Discard.";
+            return false;
+        }
+        staged_discard_participants_.push_back(participant);
+    }
+
+    bool snapshot_staged = false;
+    for (auto& [route_id, snapshot] : pending_screen_snapshots_) {
+        (void)route_id;
+        for (auto& [component_id, state] : snapshot.component_states) {
+            (void)component_id;
+            if (!state.draft_baseline || !state.draft_value ||
+                *state.draft_baseline == *state.draft_value) {
+                continue;
+            }
+            if (!snapshot_staged) {
+                staged_snapshot_backup_ = pending_screen_snapshots_;
+                snapshot_staged = true;
+            }
+            state.draft_value = state.draft_baseline;
+        }
+    }
+    diagnostic.clear();
+    return true;
+}
+
+void WindowContainer::ApplySaveSuccess() noexcept {
+    for (components::EditableParticipant* participant : CollectEditableParticipants()) {
+        if (participant && participant->IsDirty()) participant->ApplySaveResult(true);
+    }
+    for (auto& [route_id, snapshot] : pending_screen_snapshots_) {
+        (void)route_id;
+        for (auto& [component_id, state] : snapshot.component_states) {
+            (void)component_id;
+            if (state.draft_baseline && state.draft_value) {
+                state.draft_baseline = state.draft_value;
+            }
+        }
+    }
+}
+
+void WindowContainer::CommitDiscardTransaction() noexcept {
+    // A successful DestroyWindow has already destroyed the component tree. The
+    // staged participant pointers are intentionally not dereferenced here; only
+    // their rollback bookkeeping needs to be forgotten at commit.
+    staged_discard_participants_.clear();
+    staged_snapshot_backup_.reset();
+}
+
+void WindowContainer::RollbackDiscardTransaction() noexcept {
+    for (auto participant = staged_discard_participants_.rbegin();
+         participant != staged_discard_participants_.rend(); ++participant) {
+        if (*participant) (*participant)->RollbackDiscard();
+    }
+    staged_discard_participants_.clear();
+    if (staged_snapshot_backup_) {
+        pending_screen_snapshots_ = std::move(*staged_snapshot_backup_);
+        staged_snapshot_backup_.reset();
+    }
+}
+
 std::uint64_t WindowContainer::document_generation() const noexcept {
     return document_ ? document_->generation : 0;
 }
 
 UINT WindowContainer::dpi() const noexcept { return dpi_; }
+
+bool WindowContainer::close_decision_pending() const noexcept {
+    return close_decision_pending_;
+}
+
+bool WindowContainer::retained_resources_released() const noexcept {
+    return retained_resources_released_;
+}
 
 LRESULT CALLBACK WindowContainer::WindowProcedure(HWND window, UINT message, WPARAM wparam,
                                                    LPARAM lparam) {
@@ -882,6 +1048,12 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                 }
             }
             break;
+        case WM_CLOSE:
+            if (close_requested_handler_) {
+                close_requested_handler_(*this);
+                return 0;
+            }
+            break;
         case WM_DESTROY:
             if (active_popup_owner_) active_popup_owner_->DismissOwnedPopup();
             active_popup_owner_ = nullptr;
@@ -988,6 +1160,20 @@ void WindowContainer::DispatchUiEvent(components::Component& source,
     ui_event.config_generation = document_->generation;
     const auto patch = application_bridge_->Dispatch(ui_event);
     if (!patch) return;
+    if (patch->close_save_result && close_decision_pending_) {
+        const application::CloseSaveResult& result = *patch->close_save_result;
+        if (result.source.window_instance_id == ui_event.source.window_instance_id &&
+            result.source.screen_instance_id == ui_event.source.screen_instance_id &&
+            result.source.component_instance_id ==
+                ui_event.source.component_instance_id &&
+            result.source.window_id == ui_event.source.window_id &&
+            result.source.route_id == ui_event.source.route_id &&
+            result.source.component_id == ui_event.source.component_id &&
+            result.config_generation == ui_event.config_generation &&
+            result.config_generation == document_->generation) {
+            pending_close_save_result_ = result;
+        }
+    }
     if (patch->window_title) SetWindowTextW(window_, patch->window_title->c_str());
     if (patch->route_id) {
         std::wstring diagnostic;
@@ -1044,6 +1230,7 @@ bool WindowContainer::CloseModal(components::ModalResult result, std::wstring& d
         diagnostic = L"Tidak ada Dialog aktif.";
         return false;
     }
+    if (close_decision_pending_) return ResolveCloseDecision(result, diagnostic);
     if (GetCapture()) ReleaseCapture();
     pointer_target_ = nullptr;
     if (!modal_stack_.Pop(result, *root_, focus_coordinator_, diagnostic)) return false;
@@ -1052,6 +1239,76 @@ bool WindowContainer::CloseModal(components::ModalResult result, std::wstring& d
     render_context_.InvalidateAll();
     InvalidateRect(window_, nullptr, FALSE);
     return true;
+}
+
+bool WindowContainer::ResolveCloseDecision(components::ModalResult result,
+                                           std::wstring& diagnostic) {
+    if (!close_decision_pending_ || !root_ || !modal_stack_.active()) {
+        diagnostic = L"Close confirmation tidak aktif.";
+        return false;
+    }
+    if (result == components::ModalResult::Accept &&
+        (!pending_close_save_result_ || !pending_close_save_result_->success)) {
+        diagnostic = L"Save belum menghasilkan success patch yang cocok.";
+        return false;
+    }
+    if (result == components::ModalResult::Discard &&
+        !StageDiscardTransaction(diagnostic)) {
+        return false;
+    }
+
+    if (GetCapture()) ReleaseCapture();
+    pointer_target_ = nullptr;
+    if (!modal_stack_.Pop(result, *root_, focus_coordinator_, diagnostic)) {
+        if (result == components::ModalResult::Discard) RollbackDiscardTransaction();
+        return false;
+    }
+    if (automation_provider_) automation_provider_->SetActiveScope(modal_stack_.top());
+
+    const bool accepted = result == components::ModalResult::Accept ||
+                          result == components::ModalResult::Discard;
+    if (result == components::ModalResult::Accept) ApplySaveSuccess();
+    close_prepared_ = accepted;
+    close_decision_pending_ = false;
+    pending_close_save_result_.reset();
+    frame_ready_ = false;
+    render_context_.InvalidateAll();
+    InvalidateRect(window_, nullptr, FALSE);
+
+    if (!accepted) {
+        RollbackDiscardTransaction();
+    }
+    ClosePreparedHandler handler = std::move(close_prepared_handler_);
+    close_prepared_handler_ = {};
+    diagnostic.clear();
+    if (handler) {
+        handler(*this, accepted ? ClosePreparation::Ready
+                                : ClosePreparation::Cancelled);
+    }
+    return true;
+}
+
+bool WindowContainer::OpenCloseConfirmation(std::wstring& diagnostic) {
+    constexpr std::string_view kDialogId = "save-discard-dialog";
+    if (!root_ || !root_->FindById(kDialogId)) {
+        diagnostic = L"Dialog konfirmasi close tidak ditemukan pada resolved UI document.";
+        return false;
+    }
+    return OpenModal(kDialogId, diagnostic);
+}
+
+void WindowContainer::AttachCloseConfirmationIfMissing(
+    components::Component& screen) {
+    constexpr std::string_view kDialogId = "save-discard-dialog";
+    if (screen.FindById(kDialogId) || !document_ || !component_host_) return;
+    for (const auto& [route_id, definition] : document_->screens) {
+        (void)route_id;
+        const config::ResolvedComponent* dialog =
+            FindComponentDefinition(definition, kDialogId);
+        if (!dialog || dialog->type != config::ComponentType::Dialog) continue;
+        screen.AddChild(registry_.CreateTree(*dialog, *component_host_));
+        return;
+    }
 }
 
 components::Component* WindowContainer::HitTestInteractive(POINT point) const {

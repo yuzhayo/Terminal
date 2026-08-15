@@ -112,6 +112,10 @@ bool ApplicationContainer::StartThemeMonitoring(std::wstring& diagnostic) noexce
 bool ApplicationContainer::OpenExternalRoute(std::string_view route_id,
                                              std::wstring& diagnostic) {
     DrainApplicationWork();
+    if (close_operation_.kind != CloseOperationKind::None) {
+        diagnostic = L"Route intent ditunda karena close transaction sedang aktif.";
+        return false;
+    }
     if (!IsConfiguredRoute(route_id)) {
         diagnostic = L"External route tidak tersedia pada resolved UI document.";
         return false;
@@ -180,11 +184,16 @@ void ApplicationContainer::BeginShutdown() noexcept {
     RemoveTrayIcon();
     for (auto& [id, record] : windows_) {
         (void)id;
-        if (record.container) record.container->SetDestroyedHandler({});
+        if (record.container) {
+            record.container->SetDestroyedHandler({});
+            record.container->SetCloseRequestedHandler({});
+        }
     }
     windows_.clear();
     destroyed_window_ids_.clear();
     retained_window_id_.reset();
+    shutdown_after_drain_ = false;
+    ClearCloseOperation();
 }
 
 ui::containers::WindowContainer* ApplicationContainer::initial_window() noexcept {
@@ -285,6 +294,8 @@ ui::containers::WindowContainer* ApplicationContainer::CreateRouteWindow(
                std::wstring& route_diagnostic) {
             return HandleSameWindowRoute(source, target_route, route_diagnostic);
         });
+    container->SetCloseRequestedHandler(
+        [this](ui::containers::WindowContainer& target) { RequestCloseWindow(target); });
     ui::containers::WindowContainer* result = container.get();
     windows_.emplace(registry_id, WindowRecord{std::move(container)});
     if (initial_window_id_ == 0) initial_window_id_ = registry_id;
@@ -298,6 +309,10 @@ bool ApplicationContainer::HandleSameWindowRoute(
     ui::containers::WindowContainer& source, std::string_view route_id,
     std::wstring& diagnostic) {
     DrainApplicationWork();
+    if (close_operation_.kind != CloseOperationKind::None) {
+        diagnostic = L"Navigation ditunda karena close transaction sedang aktif.";
+        return false;
+    }
     if (!FindWindowId(source)) {
         diagnostic = L"Route source tidak terdaftar pada process window registry.";
         return false;
@@ -343,6 +358,7 @@ bool ApplicationContainer::RetainRouteWindow(
     }
     if (!target.SuspendNativePeers(diagnostic)) return false;
     ShowWindow(target.hwnd(), SW_HIDE);
+    target.ReleaseRetainedResources();
     retained_window_id_ = *target_id;
     AssertRouteRegistryInvariant();
     diagnostic.clear();
@@ -397,21 +413,286 @@ void ApplicationContainer::AssertRouteRegistryInvariant() const noexcept {
     assert(route_registry_is_unique() && "Application route registry invariant violated");
 }
 
+std::size_t ApplicationContainer::reachable_window_count() const noexcept {
+    return static_cast<std::size_t>(std::count_if(
+        windows_.begin(), windows_.end(), [this](const auto& item) {
+            return item.second.container && item.second.container->hwnd() &&
+                   retained_window_id_ != item.first;
+        }));
+}
+
+void ApplicationContainer::RequestCloseWindow(
+    ui::containers::WindowContainer& target) {
+    DrainApplicationWork();
+    if (shutdown_in_progress_ || close_operation_.kind != CloseOperationKind::None) return;
+    const auto target_id = FindWindowId(target);
+    if (!target_id || retained_window_id_ == target_id) return;
+
+    if (reachable_window_count() > 1) {
+        BeginCloseOne(*target_id);
+        return;
+    }
+    if (tray_icon_added_) {
+        if (!retained_window_id_) {
+            std::wstring diagnostic;
+            if (!RetainRouteWindow(target, diagnostic)) {
+                nonfatal_diagnostic_ = std::move(diagnostic);
+            }
+            return;
+        }
+        BeginRetainedReplacement(*retained_window_id_, *target_id);
+        return;
+    }
+    BeginCloseAll();
+}
+
+void ApplicationContainer::BeginCloseOne(std::uint64_t registry_id) {
+    const auto found = windows_.find(registry_id);
+    if (found == windows_.end() || !found->second.container) return;
+    close_operation_.kind = CloseOperationKind::CloseOne;
+    close_operation_.primary_id = registry_id;
+    std::wstring diagnostic;
+    const ui::containers::ClosePreparation preparation =
+        found->second.container->PrepareClose(
+            [this, registry_id](ui::containers::WindowContainer&,
+                                ui::containers::ClosePreparation result) {
+                CompleteCloseOne(registry_id, result);
+            },
+            diagnostic);
+    if (preparation == ui::containers::ClosePreparation::Ready ||
+        preparation == ui::containers::ClosePreparation::Failed) {
+        CompleteCloseOne(registry_id, preparation);
+    }
+    if (!diagnostic.empty()) nonfatal_diagnostic_ = std::move(diagnostic);
+}
+
+void ApplicationContainer::CompleteCloseOne(
+    std::uint64_t registry_id, ui::containers::ClosePreparation preparation) {
+    if (close_operation_.kind != CloseOperationKind::CloseOne ||
+        close_operation_.primary_id != registry_id) {
+        return;
+    }
+    const auto found = windows_.find(registry_id);
+    if (preparation == ui::containers::ClosePreparation::Ready &&
+        found != windows_.end() && found->second.container) {
+        std::wstring diagnostic;
+        if (!found->second.container->CommitClose(diagnostic)) {
+            found->second.container->RollbackPreparedClose();
+            nonfatal_diagnostic_ = std::move(diagnostic);
+        }
+    }
+    ClearCloseOperation();
+}
+
+void ApplicationContainer::BeginRetainedReplacement(
+    std::uint64_t retained_id, std::uint64_t replacement_id) {
+    close_operation_.kind = CloseOperationKind::ReplaceRetained;
+    close_operation_.primary_id = retained_id;
+    close_operation_.secondary_id = replacement_id;
+    std::wstring diagnostic;
+    if (!RestoreRetainedWindow(retained_id, options_.created_window_show_command,
+                               diagnostic)) {
+        nonfatal_diagnostic_ = std::move(diagnostic);
+        ClearCloseOperation();
+        return;
+    }
+    const auto retained = windows_.find(retained_id);
+    if (retained == windows_.end() || !retained->second.container) {
+        ClearCloseOperation();
+        return;
+    }
+    const ui::containers::ClosePreparation preparation =
+        retained->second.container->PrepareClose(
+            [this, retained_id, replacement_id](
+                ui::containers::WindowContainer&,
+                ui::containers::ClosePreparation result) {
+                CompleteRetainedReplacement(retained_id, replacement_id, result);
+            },
+            diagnostic);
+    if (preparation == ui::containers::ClosePreparation::Ready ||
+        preparation == ui::containers::ClosePreparation::Failed) {
+        CompleteRetainedReplacement(retained_id, replacement_id, preparation);
+    }
+    if (!diagnostic.empty()) nonfatal_diagnostic_ = std::move(diagnostic);
+}
+
+void ApplicationContainer::CompleteRetainedReplacement(
+    std::uint64_t retained_id, std::uint64_t replacement_id,
+    ui::containers::ClosePreparation preparation) {
+    if (close_operation_.kind != CloseOperationKind::ReplaceRetained ||
+        close_operation_.primary_id != retained_id ||
+        close_operation_.secondary_id != replacement_id) {
+        return;
+    }
+    auto retained = windows_.find(retained_id);
+    auto replacement = windows_.find(replacement_id);
+    std::wstring diagnostic;
+    if (preparation == ui::containers::ClosePreparation::Ready &&
+        retained != windows_.end() && retained->second.container &&
+        replacement != windows_.end() && replacement->second.container) {
+        if (retained->second.container->CommitClose(diagnostic)) {
+            if (!RetainRouteWindow(*replacement->second.container, diagnostic)) {
+                nonfatal_diagnostic_ = diagnostic;
+            }
+        } else if (retained->second.container->hwnd()) {
+            retained->second.container->RollbackPreparedClose();
+            if (!RetainRouteWindow(*retained->second.container, diagnostic)) {
+                nonfatal_diagnostic_ = diagnostic;
+            }
+        }
+    } else if (retained != windows_.end() && retained->second.container &&
+               retained->second.container->hwnd()) {
+        retained->second.container->RollbackPreparedClose();
+        if (!RetainRouteWindow(*retained->second.container, diagnostic)) {
+            nonfatal_diagnostic_ = diagnostic;
+        }
+    }
+    if (!diagnostic.empty()) nonfatal_diagnostic_ = std::move(diagnostic);
+    ClearCloseOperation();
+}
+
+void ApplicationContainer::BeginCloseAll() {
+    if (shutdown_in_progress_ || close_operation_.kind != CloseOperationKind::None) return;
+    close_operation_.kind = CloseOperationKind::ExitAll;
+    close_operation_.original_retained_id = retained_window_id_;
+    if (retained_window_id_) {
+        std::wstring diagnostic;
+        if (!RestoreRetainedWindow(*retained_window_id_,
+                                   options_.created_window_show_command, diagnostic)) {
+            nonfatal_diagnostic_ = std::move(diagnostic);
+            ClearCloseOperation();
+            return;
+        }
+    }
+    for (const auto& [id, record] : windows_) {
+        if (record.container && record.container->hwnd()) {
+            close_operation_.window_ids.push_back(id);
+        }
+    }
+    ContinuePrepareCloseAll();
+}
+
+void ApplicationContainer::ContinuePrepareCloseAll() {
+    while (close_operation_.kind == CloseOperationKind::ExitAll &&
+           close_operation_.next_index < close_operation_.window_ids.size()) {
+        const std::uint64_t id =
+            close_operation_.window_ids[close_operation_.next_index];
+        const auto found = windows_.find(id);
+        if (found == windows_.end() || !found->second.container ||
+            !found->second.container->hwnd()) {
+            ++close_operation_.next_index;
+            continue;
+        }
+        std::wstring diagnostic;
+        const ui::containers::ClosePreparation preparation =
+            found->second.container->PrepareClose(
+                [this, id](ui::containers::WindowContainer&,
+                           ui::containers::ClosePreparation result) {
+                    CompletePrepareCloseAllWindow(id, result);
+                },
+                diagnostic);
+        if (!diagnostic.empty()) nonfatal_diagnostic_ = std::move(diagnostic);
+        if (preparation == ui::containers::ClosePreparation::AwaitingDecision) return;
+        if (preparation != ui::containers::ClosePreparation::Ready) {
+            CancelCloseAll();
+            return;
+        }
+        close_operation_.prepared_ids.push_back(id);
+        ++close_operation_.next_index;
+    }
+    if (close_operation_.kind == CloseOperationKind::ExitAll) CommitCloseAll();
+}
+
+void ApplicationContainer::CompletePrepareCloseAllWindow(
+    std::uint64_t registry_id, ui::containers::ClosePreparation preparation) {
+    if (close_operation_.kind != CloseOperationKind::ExitAll ||
+        close_operation_.next_index >= close_operation_.window_ids.size() ||
+        close_operation_.window_ids[close_operation_.next_index] != registry_id) {
+        return;
+    }
+    if (preparation != ui::containers::ClosePreparation::Ready) {
+        CancelCloseAll();
+        return;
+    }
+    close_operation_.prepared_ids.push_back(registry_id);
+    ++close_operation_.next_index;
+    ContinuePrepareCloseAll();
+}
+
+void ApplicationContainer::CancelCloseAll() {
+    if (close_operation_.kind != CloseOperationKind::ExitAll) return;
+    const std::optional<std::uint64_t> original_retained =
+        close_operation_.original_retained_id;
+    for (const std::uint64_t id : close_operation_.prepared_ids) {
+        const auto found = windows_.find(id);
+        if (found != windows_.end() && found->second.container) {
+            found->second.container->RollbackPreparedClose();
+        }
+    }
+    ClearCloseOperation();
+    if (original_retained) {
+        const auto found = windows_.find(*original_retained);
+        if (found != windows_.end() && found->second.container &&
+            found->second.container->hwnd()) {
+            std::wstring diagnostic;
+            if (!RetainRouteWindow(*found->second.container, diagnostic)) {
+                nonfatal_diagnostic_ = std::move(diagnostic);
+            }
+        }
+    }
+}
+
+void ApplicationContainer::CommitCloseAll() {
+    if (close_operation_.kind != CloseOperationKind::ExitAll) return;
+    const std::vector<std::uint64_t> prepared = close_operation_.prepared_ids;
+    bool all_committed = true;
+    for (const std::uint64_t id : prepared) {
+        const auto found = windows_.find(id);
+        if (found == windows_.end() || !found->second.container ||
+            !found->second.container->hwnd()) {
+            continue;
+        }
+        std::wstring diagnostic;
+        if (!found->second.container->CommitClose(diagnostic)) {
+            all_committed = false;
+            if (nonfatal_diagnostic_.empty()) {
+                nonfatal_diagnostic_ = std::move(diagnostic);
+            }
+        }
+    }
+    ClearCloseOperation();
+    if (all_committed) {
+        shutdown_after_drain_ = true;
+        infrastructure_window_.PostApplicationWork();
+    }
+}
+
+void ApplicationContainer::ClearCloseOperation() noexcept {
+    close_operation_ = {};
+}
+
 void ApplicationContainer::OnWindowDestroyed(std::uint64_t registry_id) noexcept {
     destroyed_window_ids_.push_back(registry_id);
     infrastructure_window_.PostApplicationWork();
 }
 
 void ApplicationContainer::DrainApplicationWork() {
-    if (destroyed_window_ids_.empty()) return;
-    std::vector<std::uint64_t> destroyed = std::move(destroyed_window_ids_);
-    destroyed_window_ids_.clear();
-    for (const std::uint64_t id : destroyed) {
-        if (id == initial_window_id_) initial_window_id_ = 0;
-        if (retained_window_id_ == id) retained_window_id_.reset();
-        windows_.erase(id);
+    if (!destroyed_window_ids_.empty()) {
+        std::vector<std::uint64_t> destroyed = std::move(destroyed_window_ids_);
+        destroyed_window_ids_.clear();
+        for (const std::uint64_t id : destroyed) {
+            if (id == initial_window_id_) initial_window_id_ = 0;
+            if (retained_window_id_ == id) retained_window_id_.reset();
+            windows_.erase(id);
+        }
     }
     AssertRouteRegistryInvariant();
+    if (shutdown_after_drain_ && !shutdown_in_progress_) {
+        shutdown_after_drain_ = false;
+        BeginShutdown();
+        PostQuitMessage(0);
+        return;
+    }
     if (windows_.empty() && !tray_icon_added_ && !shutdown_in_progress_) {
         PostQuitMessage(0);
     }
@@ -448,7 +729,16 @@ void ApplicationContainer::HandleTaskbarCreated() {
     std::wstring diagnostic;
     if (!InstallTrayIcon(diagnostic)) {
         nonfatal_diagnostic_ = std::move(diagnostic);
-        if (visible_window_count() == 0) ActivateDefault();
+        if (retained_window_id_) {
+            std::wstring restore_diagnostic;
+            if (!RestoreRetainedWindow(*retained_window_id_,
+                                       options_.created_window_show_command,
+                                       restore_diagnostic)) {
+                nonfatal_diagnostic_ = std::move(restore_diagnostic);
+            }
+        } else if (reachable_window_count() == 0) {
+            ActivateDefault();
+        }
     }
 }
 
@@ -529,10 +819,9 @@ void ApplicationContainer::RemoveTrayIcon() noexcept {
     tray_icon_added_ = false;
 }
 
-void ApplicationContainer::RequestExit() noexcept {
+void ApplicationContainer::RequestExit() {
     if (shutdown_in_progress_) return;
-    BeginShutdown();
-    PostQuitMessage(0);
+    BeginCloseAll();
 }
 
 std::string ApplicationContainer::DefaultRoute() const {

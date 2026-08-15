@@ -66,9 +66,13 @@ void StubApplicationBridge::RegisterTerminalFeature() {
 
 void StubApplicationBridge::RegisterDialogFeature() {
     const auto register_dialog = [this](const char* action, DialogRequestAction request_action) {
-        if (!RegisterAction(action, [request_action](const UiEvent&) {
+        if (!RegisterAction(action, [request_action](const UiEvent& event) {
                 UiPatch patch;
                 patch.dialog_request = DialogRequest{request_action, "save-discard-dialog"};
+                if (request_action == DialogRequestAction::Save) {
+                    patch.close_save_result =
+                        CloseSaveResult{event.source, event.config_generation, true};
+                }
                 patch.request_repaint = true;
                 return std::optional<UiPatch>(std::move(patch));
             })) {

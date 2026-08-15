@@ -212,6 +212,7 @@ public:
     virtual bool automation_is_password() const noexcept;
     virtual void OnDpiChanged();
     virtual bool PrepareResources(COLORREF parent_background);
+    virtual void ReleaseResources() noexcept;
     virtual void AddChild(std::unique_ptr<Component> child);
     virtual void CollectComponents(std::vector<Component*>& components);
 
