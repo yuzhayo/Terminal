@@ -21,6 +21,8 @@
 
 namespace application {
 
+struct ApplicationContainerTestAccess;
+
 struct ApplicationContainerOptions {
     bool enable_tray = true;
     int created_window_show_command = SW_SHOWNORMAL;
@@ -53,20 +55,35 @@ public:
     ui::containers::WindowContainer* FindRouteWindow(std::string_view route_id) noexcept;
     std::size_t window_count() const noexcept;
     std::size_t visible_window_count() const noexcept;
+    ui::containers::WindowContainer* retained_window() noexcept;
+    bool route_registry_is_unique() const noexcept;
     bool tray_available() const noexcept;
     HWND infrastructure_hwnd() const noexcept;
     UINT taskbar_created_message() const noexcept;
     const std::wstring& nonfatal_diagnostic() const noexcept;
 
 private:
+    friend struct ApplicationContainerTestAccess;
+
     struct WindowRecord {
         std::unique_ptr<ui::containers::WindowContainer> container;
     };
 
     ui::containers::WindowContainer* CreateRouteWindow(std::string_view route_id,
                                                         bool prepare_and_show,
-                                                        int show_command,
-                                                        std::wstring& diagnostic);
+                                                         int show_command,
+                                                         std::wstring& diagnostic);
+    bool HandleSameWindowRoute(ui::containers::WindowContainer& source,
+                               std::string_view route_id, std::wstring& diagnostic);
+    bool RetainRouteWindow(ui::containers::WindowContainer& target,
+                           std::wstring& diagnostic);
+    bool RestoreRetainedWindow(std::uint64_t registry_id, int show_command,
+                               std::wstring& diagnostic);
+    std::optional<std::uint64_t> FindWindowId(
+        const ui::containers::WindowContainer& target) const noexcept;
+    std::optional<std::uint64_t> FindRouteWindowId(
+        std::string_view route_id) const noexcept;
+    void AssertRouteRegistryInvariant() const noexcept;
     void OnWindowDestroyed(std::uint64_t registry_id) noexcept;
     void DrainApplicationWork();
     void HandleProcessSignals(std::uint32_t signals);
@@ -90,6 +107,7 @@ private:
     std::vector<std::uint64_t> destroyed_window_ids_;
     std::string window_definition_id_;
     std::uint64_t initial_window_id_ = 0;
+    std::optional<std::uint64_t> retained_window_id_;
     std::uint64_t next_window_id_ = 1;
     bool tray_icon_added_ = false;
     bool shutdown_in_progress_ = false;

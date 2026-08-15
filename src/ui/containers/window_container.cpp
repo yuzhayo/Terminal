@@ -524,6 +524,32 @@ void WindowContainer::ResumeNativePeers() {
     if (root_) root_->ResumeNativePeers();
 }
 
+bool WindowContainer::RestoreAndShow(int show_command, std::wstring& diagnostic) {
+    if (!window_ || !root_) {
+        diagnostic = L"Route window tidak tersedia untuk dipulihkan.";
+        return false;
+    }
+    const UINT active_dpi = GetDpiForWindow(window_);
+    if (active_dpi != 0 && active_dpi != dpi_) {
+        dpi_ = active_dpi;
+        if (component_host_) component_host_->dpi = dpi_;
+        UpdateMinimumTrackSize();
+        root_->OnDpiChanged();
+        render_runtime_.AdvanceResourceEpoch();
+        resources_prepared_ = false;
+        frame_ready_ = false;
+    }
+    ResumeNativePeers();
+    if (!PrepareFirstFrame(diagnostic)) {
+        std::wstring ignored;
+        SuspendNativePeers(ignored);
+        return false;
+    }
+    Show(show_command);
+    diagnostic.clear();
+    return true;
+}
+
 void WindowContainer::Show(int show_command) {
     if (!window_ || !frame_ready_) return;
     ShowWindow(window_, show_command == 0 ? SW_SHOWNORMAL : show_command);
@@ -573,11 +599,16 @@ void WindowContainer::UpdateMinimumTrackSize() noexcept {
 }
 
 bool WindowContainer::Navigate(std::string_view route_id, std::wstring& diagnostic) {
+    if (route_request_handler_) return route_request_handler_(*this, route_id, diagnostic);
     return ActivateRoute(route_id, diagnostic);
 }
 
 void WindowContainer::SetDestroyedHandler(DestroyedHandler handler) {
     destroyed_handler_ = std::move(handler);
+}
+
+void WindowContainer::SetRouteRequestHandler(RouteRequestHandler handler) {
+    route_request_handler_ = std::move(handler);
 }
 
 HWND WindowContainer::hwnd() const noexcept {
@@ -960,7 +991,7 @@ void WindowContainer::DispatchUiEvent(components::Component& source,
     if (patch->window_title) SetWindowTextW(window_, patch->window_title->c_str());
     if (patch->route_id) {
         std::wstring diagnostic;
-        ActivateRoute(*patch->route_id, diagnostic);
+        Navigate(*patch->route_id, diagnostic);
     }
     if (patch->dialog_request) {
         std::wstring diagnostic;

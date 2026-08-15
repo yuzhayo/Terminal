@@ -414,11 +414,15 @@ Jika feature menambah binding baru, bridge harus mengeksposnya melalui `ResolveS
 
 ### Process-level route intent
 
-Navigation dari `UiPatch.route_id` tetap same-window. Intent dari second launch, tray, atau taskbar
-masuk melalui `ApplicationContainer::OpenExternalRoute`. Route harus sudah ada di object `screens`;
-route invalid ditolak sebelum masuk IPC queue. Matching route window diaktifkan kembali, sedangkan
-route yang belum mempunyai window dibuat sebagai top-level `WindowContainer` baru. Jangan memanggil
-`CreateWindowEx`, `Shell_NotifyIcon`, atau mencari HWND route dari feature/action handler.
+Navigation dari `UiPatch.route_id` dimulai sebagai same-window intent, tetapi tetap diteruskan ke
+`ApplicationContainer` untuk menjaga `reuse-per-route`: target yang sama pada window pemanggil adalah
+no-op, matching visible window lain diaktifkan, dan matching retained window dipulihkan tanpa mengganti
+route pemanggil. Hanya target yang belum dimiliki window lain yang mengganti route window pemanggil.
+Intent dari second launch, tray, atau taskbar masuk melalui `ApplicationContainer::OpenExternalRoute`;
+matching visible/retained window direuse dan hanya route tanpa match yang membuat top-level
+`WindowContainer` baru. Route harus sudah ada di object `screens`; route invalid ditolak sebelum masuk
+IPC queue. Jangan memanggil `CreateWindowEx`, `Shell_NotifyIcon`, atau mencari HWND route dari
+feature/action handler.
 
 `ApplicationInfrastructureWindow` adalah hidden top-level tool window, bukan `HWND_MESSAGE`, agar satu
 receiver yang sama dapat menerima `WM_COPYDATA`, tray callback, process-global theme/settings signal,

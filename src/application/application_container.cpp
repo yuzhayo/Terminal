@@ -3,7 +3,9 @@
 #include <shellapi.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cwchar>
+#include <set>
 #include <utility>
 
 #include "app/app_identity.h"
@@ -114,8 +116,12 @@ bool ApplicationContainer::OpenExternalRoute(std::string_view route_id,
         diagnostic = L"External route tidak tersedia pada resolved UI document.";
         return false;
     }
-    if (ui::containers::WindowContainer* existing = FindRouteWindow(route_id)) {
-        platform::ActivateMainWindow(existing->hwnd());
+    if (const auto existing_id = FindRouteWindowId(route_id)) {
+        if (retained_window_id_ == existing_id) {
+            return RestoreRetainedWindow(*existing_id, options_.created_window_show_command,
+                                         diagnostic);
+        }
+        platform::ActivateMainWindow(windows_.at(*existing_id).container->hwnd());
         diagnostic.clear();
         return true;
     }
@@ -125,6 +131,14 @@ bool ApplicationContainer::OpenExternalRoute(std::string_view route_id,
 
 void ApplicationContainer::ActivateDefault() {
     DrainApplicationWork();
+    if (retained_window_id_) {
+        std::wstring diagnostic;
+        if (!RestoreRetainedWindow(*retained_window_id_,
+                                   options_.created_window_show_command, diagnostic)) {
+            nonfatal_diagnostic_ = std::move(diagnostic);
+        }
+        return;
+    }
     if (ui::containers::WindowContainer* initial = initial_window()) {
         platform::ActivateMainWindow(initial->hwnd());
         return;
@@ -170,6 +184,7 @@ void ApplicationContainer::BeginShutdown() noexcept {
     }
     windows_.clear();
     destroyed_window_ids_.clear();
+    retained_window_id_.reset();
 }
 
 ui::containers::WindowContainer* ApplicationContainer::initial_window() noexcept {
@@ -179,14 +194,8 @@ ui::containers::WindowContainer* ApplicationContainer::initial_window() noexcept
 
 ui::containers::WindowContainer* ApplicationContainer::FindRouteWindow(
     std::string_view route_id) noexcept {
-    for (auto& [id, record] : windows_) {
-        (void)id;
-        if (record.container && record.container->hwnd() &&
-            record.container->active_route() == route_id) {
-            return record.container.get();
-        }
-    }
-    return nullptr;
+    const auto id = FindRouteWindowId(route_id);
+    return id ? windows_.at(*id).container.get() : nullptr;
 }
 
 std::size_t ApplicationContainer::window_count() const noexcept {
@@ -202,6 +211,33 @@ std::size_t ApplicationContainer::visible_window_count() const noexcept {
             return item.second.container && item.second.container->hwnd() &&
                    IsWindowVisible(item.second.container->hwnd());
         }));
+}
+
+ui::containers::WindowContainer* ApplicationContainer::retained_window() noexcept {
+    if (!retained_window_id_) return nullptr;
+    const auto found = windows_.find(*retained_window_id_);
+    return found == windows_.end() ? nullptr : found->second.container.get();
+}
+
+bool ApplicationContainer::route_registry_is_unique() const noexcept {
+    std::set<std::string_view, std::less<>> routes;
+    for (const auto& [id, record] : windows_) {
+        (void)id;
+        if (!record.container || !record.container->hwnd() ||
+            record.container->active_route().empty()) {
+            continue;
+        }
+        if (!routes.insert(record.container->active_route()).second) return false;
+    }
+    if (retained_window_id_) {
+        const auto retained = windows_.find(*retained_window_id_);
+        if (retained == windows_.end() || !retained->second.container ||
+            !retained->second.container->hwnd() ||
+            IsWindowVisible(retained->second.container->hwnd())) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool ApplicationContainer::tray_available() const noexcept { return tray_icon_added_; }
@@ -225,6 +261,10 @@ ui::containers::WindowContainer* ApplicationContainer::CreateRouteWindow(
         diagnostic = L"Route window tidak dapat dibuat karena route tidak terdaftar.";
         return nullptr;
     }
+    if (FindRouteWindowId(route_id)) {
+        diagnostic = L"Route window duplikat ditolak oleh process registry.";
+        return nullptr;
+    }
 
     const std::uint64_t registry_id = next_window_id_++;
     auto container = std::make_unique<ui::containers::WindowContainer>(
@@ -240,12 +280,121 @@ ui::containers::WindowContainer* ApplicationContainer::CreateRouteWindow(
         [this, registry_id](ui::containers::WindowContainer&) {
             OnWindowDestroyed(registry_id);
         });
+    container->SetRouteRequestHandler(
+        [this](ui::containers::WindowContainer& source, std::string_view target_route,
+               std::wstring& route_diagnostic) {
+            return HandleSameWindowRoute(source, target_route, route_diagnostic);
+        });
     ui::containers::WindowContainer* result = container.get();
     windows_.emplace(registry_id, WindowRecord{std::move(container)});
     if (initial_window_id_ == 0) initial_window_id_ = registry_id;
     if (prepare_and_show) result->Show(show_command);
+    AssertRouteRegistryInvariant();
     diagnostic.clear();
     return result;
+}
+
+bool ApplicationContainer::HandleSameWindowRoute(
+    ui::containers::WindowContainer& source, std::string_view route_id,
+    std::wstring& diagnostic) {
+    DrainApplicationWork();
+    if (!FindWindowId(source)) {
+        diagnostic = L"Route source tidak terdaftar pada process window registry.";
+        return false;
+    }
+    if (!IsConfiguredRoute(route_id)) {
+        diagnostic = L"Same-window route tidak tersedia pada resolved UI document.";
+        return false;
+    }
+    if (source.active_route() == route_id) {
+        diagnostic.clear();
+        AssertRouteRegistryInvariant();
+        return true;
+    }
+    if (const auto existing_id = FindRouteWindowId(route_id)) {
+        if (retained_window_id_ == existing_id) {
+            return RestoreRetainedWindow(*existing_id, options_.created_window_show_command,
+                                         diagnostic);
+        }
+        platform::ActivateMainWindow(windows_.at(*existing_id).container->hwnd());
+        diagnostic.clear();
+        AssertRouteRegistryInvariant();
+        return true;
+    }
+    const bool navigated = source.ActivateRoute(route_id, diagnostic);
+    AssertRouteRegistryInvariant();
+    return navigated;
+}
+
+bool ApplicationContainer::RetainRouteWindow(
+    ui::containers::WindowContainer& target, std::wstring& diagnostic) {
+    const auto target_id = FindWindowId(target);
+    if (!target_id || !target.hwnd()) {
+        diagnostic = L"Route window yang akan disimpan tidak terdaftar.";
+        return false;
+    }
+    if (retained_window_id_) {
+        if (*retained_window_id_ == *target_id) {
+            diagnostic.clear();
+            return true;
+        }
+        diagnostic = L"V1 hanya mengizinkan satu retained hidden route window.";
+        return false;
+    }
+    if (!target.SuspendNativePeers(diagnostic)) return false;
+    ShowWindow(target.hwnd(), SW_HIDE);
+    retained_window_id_ = *target_id;
+    AssertRouteRegistryInvariant();
+    diagnostic.clear();
+    return true;
+}
+
+bool ApplicationContainer::RestoreRetainedWindow(
+    std::uint64_t registry_id, int show_command, std::wstring& diagnostic) {
+    if (!retained_window_id_ || *retained_window_id_ != registry_id) {
+        diagnostic = L"Retained route window tidak cocok dengan registry slot.";
+        return false;
+    }
+    const auto found = windows_.find(registry_id);
+    if (found == windows_.end() || !found->second.container ||
+        !found->second.container->hwnd()) {
+        diagnostic = L"Retained route window tidak lagi tersedia.";
+        retained_window_id_.reset();
+        return false;
+    }
+    ui::containers::WindowContainer& target = *found->second.container;
+    if (!target.RestoreAndShow(show_command, diagnostic)) return false;
+    retained_window_id_.reset();
+    platform::ActivateMainWindow(target.hwnd());
+    AssertRouteRegistryInvariant();
+    diagnostic.clear();
+    return true;
+}
+
+std::optional<std::uint64_t> ApplicationContainer::FindWindowId(
+    const ui::containers::WindowContainer& target) const noexcept {
+    for (const auto& [id, record] : windows_) {
+        if (record.container.get() == &target && record.container->hwnd()) return id;
+    }
+    return std::nullopt;
+}
+
+std::optional<std::uint64_t> ApplicationContainer::FindRouteWindowId(
+    std::string_view route_id) const noexcept {
+    std::optional<std::uint64_t> result;
+    for (const auto& [id, record] : windows_) {
+        if (!record.container || !record.container->hwnd() ||
+            record.container->active_route() != route_id) {
+            continue;
+        }
+        assert(!result.has_value() && "Duplicate route window in process registry");
+        if (!result) result = id;
+    }
+    return result;
+}
+
+void ApplicationContainer::AssertRouteRegistryInvariant() const noexcept {
+    assert(route_registry_is_unique() && "Application route registry invariant violated");
 }
 
 void ApplicationContainer::OnWindowDestroyed(std::uint64_t registry_id) noexcept {
@@ -259,8 +408,10 @@ void ApplicationContainer::DrainApplicationWork() {
     destroyed_window_ids_.clear();
     for (const std::uint64_t id : destroyed) {
         if (id == initial_window_id_) initial_window_id_ = 0;
+        if (retained_window_id_ == id) retained_window_id_.reset();
         windows_.erase(id);
     }
+    AssertRouteRegistryInvariant();
     if (windows_.empty() && !tray_icon_added_ && !shutdown_in_progress_) {
         PostQuitMessage(0);
     }

@@ -20,11 +20,17 @@
 #include "ui/containers/modal_overlay_stack.h"
 #include "ui/containers/overlay_plane.h"
 
+namespace application {
+class ApplicationContainer;
+}
+
 namespace ui::containers {
 
 class WindowContainer final {
 public:
     using DestroyedHandler = std::function<void(WindowContainer&)>;
+    using RouteRequestHandler =
+        std::function<bool(WindowContainer&, std::string_view, std::wstring&)>;
 
     WindowContainer(HINSTANCE instance, rendering::RenderRuntime& render_runtime,
                     std::shared_ptr<const config::ResolvedUiDocument> document,
@@ -39,6 +45,7 @@ public:
     bool PrepareFirstFrame(std::wstring& diagnostic);
     bool SuspendNativePeers(std::wstring& diagnostic);
     void ResumeNativePeers();
+    bool RestoreAndShow(int show_command, std::wstring& diagnostic);
     void Show(int show_command);
     void ApplyTheme(config::ThemeKind theme_kind);
     void ApplySharedTheme(config::ThemeKind theme_kind);
@@ -46,6 +53,7 @@ public:
     bool ReloadDocument(std::shared_ptr<const config::ResolvedUiDocument> document,
                         std::wstring& diagnostic);
     void SetDestroyedHandler(DestroyedHandler handler);
+    void SetRouteRequestHandler(RouteRequestHandler handler);
     HWND hwnd() const noexcept;
     std::string_view active_route() const noexcept;
     std::size_t cached_screen_count() const noexcept;
@@ -55,6 +63,8 @@ public:
     UINT dpi() const noexcept;
 
 private:
+    friend class ::application::ApplicationContainer;
+
     static LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
     LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
 
@@ -121,6 +131,7 @@ private:
     bool resources_prepared_ = false;
     bool frame_ready_ = false;
     DestroyedHandler destroyed_handler_;
+    RouteRequestHandler route_request_handler_;
 };
 
 }  // namespace ui::containers

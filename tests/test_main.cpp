@@ -47,6 +47,18 @@
 #include "ui/containers/window_container.h"
 #include "ui/theme/theme_platform_adapter.h"
 
+namespace application {
+
+struct ApplicationContainerTestAccess {
+    static bool RetainRouteWindow(ApplicationContainer& application,
+                                  ui::containers::WindowContainer& window,
+                                  std::wstring& diagnostic) {
+        return application.RetainRouteWindow(window, diagnostic);
+    }
+};
+
+}  // namespace application
+
 namespace {
 
 using Clock = std::chrono::steady_clock;
@@ -1984,6 +1996,97 @@ void TestApplicationContainerRegistryAndRouting() {
     REQUIRE_TRUE(container.window_count() == 0);
 }
 
+void TestApplicationContainerRouteReusePolicy() {
+    const auto resolved = ui::config::detail::ResolveDocuments(
+        ReadEmbeddedDefaultJson(), std::nullopt, 1);
+    rendering::RenderRuntime runtime;
+    ui::theme::ThemePlatformAdapter theme_adapter(
+        {false, ui::theme::PlatformAppTheme::Light, false});
+    auto bridge = std::make_shared<ui::application::StubApplicationBridge>();
+    application::ApplicationContainerOptions options;
+    options.enable_tray = false;
+    options.created_window_show_command = SW_HIDE;
+    application::ApplicationContainer container(
+        GetModuleHandleW(nullptr), runtime, resolved.document, theme_adapter, bridge,
+        options);
+    std::wstring diagnostic;
+    REQUIRE_TRUE(container.Initialize("main", std::nullopt, diagnostic));
+    REQUIRE_TRUE(container.PrepareAndShowInitialWindow(SW_HIDE, diagnostic));
+    ui::containers::WindowContainer* terminal = container.initial_window();
+    REQUIRE_TRUE(terminal != nullptr);
+    REQUIRE_TRUE(container.route_registry_is_unique());
+
+    const std::size_t terminal_cache_size = terminal->cached_screen_count();
+    REQUIRE_TRUE(terminal->Navigate("terminal", diagnostic));
+    REQUIRE_TRUE(terminal->active_route() == "terminal");
+    REQUIRE_TRUE(terminal->cached_screen_count() == terminal_cache_size);
+
+    REQUIRE_TRUE(container.OpenExternalRoute("chrome-launcher", diagnostic));
+    ui::containers::WindowContainer* chrome =
+        container.FindRouteWindow("chrome-launcher");
+    REQUIRE_TRUE(chrome != nullptr);
+    REQUIRE_TRUE(container.window_count() == 2);
+    REQUIRE_TRUE(terminal->Navigate("chrome-launcher", diagnostic));
+    REQUIRE_TRUE(terminal->active_route() == "terminal");
+    REQUIRE_TRUE(container.FindRouteWindow("chrome-launcher") == chrome);
+    REQUIRE_TRUE(container.window_count() == 2);
+
+    REQUIRE_TRUE(application::ApplicationContainerTestAccess::RetainRouteWindow(
+        container, *chrome, diagnostic));
+    REQUIRE_TRUE(container.retained_window() == chrome);
+    REQUIRE_TRUE(!IsWindowVisible(chrome->hwnd()));
+    REQUIRE_TRUE(container.route_registry_is_unique());
+    REQUIRE_TRUE(terminal->Navigate("chrome-launcher", diagnostic));
+    REQUIRE_TRUE(container.retained_window() == nullptr);
+    REQUIRE_TRUE(terminal->active_route() == "terminal");
+    REQUIRE_TRUE(container.FindRouteWindow("chrome-launcher") == chrome);
+    REQUIRE_TRUE(container.window_count() == 2);
+
+    REQUIRE_TRUE(application::ApplicationContainerTestAccess::RetainRouteWindow(
+        container, *chrome, diagnostic));
+    REQUIRE_TRUE(container.OpenExternalRoute("chrome-launcher", diagnostic));
+    REQUIRE_TRUE(container.retained_window() == nullptr);
+    REQUIRE_TRUE(container.FindRouteWindow("chrome-launcher") == chrome);
+    REQUIRE_TRUE(container.window_count() == 2);
+
+    REQUIRE_TRUE(application::ApplicationContainerTestAccess::RetainRouteWindow(
+        container, *chrome, diagnostic));
+    container.ActivateDefault();
+    REQUIRE_TRUE(container.retained_window() == nullptr);
+    REQUIRE_TRUE(container.FindRouteWindow("chrome-launcher") == chrome);
+
+    REQUIRE_TRUE(terminal->Navigate("json-editor", diagnostic));
+    REQUIRE_TRUE(terminal->active_route() == "json-editor");
+    REQUIRE_TRUE(container.window_count() == 2);
+    const std::size_t json_editor_cache_size = terminal->cached_screen_count();
+    REQUIRE_TRUE(terminal->Navigate("json-editor", diagnostic));
+    REQUIRE_TRUE(terminal->cached_screen_count() == json_editor_cache_size);
+
+    REQUIRE_TRUE(container.OpenExternalRoute("settings", diagnostic));
+    ui::containers::WindowContainer* settings = container.FindRouteWindow("settings");
+    REQUIRE_TRUE(settings != nullptr);
+    REQUIRE_TRUE(container.window_count() == 3);
+    REQUIRE_TRUE(terminal->Navigate("settings", diagnostic));
+    REQUIRE_TRUE(terminal->active_route() == "json-editor");
+    REQUIRE_TRUE(container.FindRouteWindow("settings") == settings);
+    REQUIRE_TRUE(container.window_count() == 3);
+    REQUIRE_TRUE(container.route_registry_is_unique());
+
+    REQUIRE_TRUE(application::ApplicationContainerTestAccess::RetainRouteWindow(
+        container, *chrome, diagnostic));
+    REQUIRE_TRUE(!application::ApplicationContainerTestAccess::RetainRouteWindow(
+        container, *settings, diagnostic));
+    REQUIRE_TRUE(container.retained_window() == chrome);
+    REQUIRE_TRUE(container.OpenExternalRoute("chrome-launcher", diagnostic));
+    REQUIRE_TRUE(container.retained_window() == nullptr);
+    REQUIRE_TRUE(!terminal->Navigate("not-configured", diagnostic));
+    REQUIRE_TRUE(terminal->active_route() == "json-editor");
+    REQUIRE_TRUE(container.route_registry_is_unique());
+
+    container.BeginShutdown();
+    REQUIRE_TRUE(container.window_count() == 0);
+}
+
 void TestStubApplicationBridgePatch() {
     ui::application::StubApplicationBridge bridge;
     REQUIRE_TRUE(bridge.registered_action_count() == 16);
@@ -2042,6 +2145,7 @@ std::vector<TestCase> DiscoverTests() {
     std::vector<TestCase> tests = {
         {"AppIdentity.Contract", TestAppIdentityContract, __FILE__, __LINE__},
         {"ApplicationContainer.RegistryAndRouting", TestApplicationContainerRegistryAndRouting, __FILE__, __LINE__},
+        {"ApplicationContainer.RouteReusePolicy", TestApplicationContainerRouteReusePolicy, __FILE__, __LINE__},
         {"ApplicationInfrastructureWindow.Contract", TestApplicationInfrastructureWindowContract, __FILE__, __LINE__},
         {"AppPaths.Contract", TestAppPathsContract, __FILE__, __LINE__},
         {"ComponentRegistry.VerticalSlice", TestComponentRegistryVerticalSlice, __FILE__, __LINE__},
