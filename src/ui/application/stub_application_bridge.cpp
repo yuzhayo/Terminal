@@ -143,7 +143,7 @@ void StubApplicationBridge::InitializeDeterministicState() {
         {"viewState.terminalProfiles", {L"PowerShell Admin", L"PowerShell", L"Ubuntu (WSL)"}},
         {"viewState.recentFolders", {L"C:\\Work\\Terminal", L"C:\\Projects", L"\\\\wsl.localhost\\Ubuntu\\home\\yuzha"}},
         {"viewState.injectProviders", {L"Anthropic Compatible", L"OpenAI Compatible", L"Local Stub"}},
-        {"viewState.injectApiKeys", {}},
+        {"viewState.injectApiKeys", {L"stub-api-key"}},
         {"viewState.injectTargets", {L"Windows", L"Ubuntu (WSL)"}},
         {"viewState.jsonEditorTargets", {L"Windows settings.json", L"Ubuntu settings.json"}},
         {"viewState.chromeProfiles", {L"Personal — Windows", L"Work — Windows", L"Research — Ubuntu (WSL)"}},
@@ -244,8 +244,6 @@ void StubApplicationBridge::RegisterTerminalFeature() {
 }
 
 void StubApplicationBridge::RegisterJsonInjectFeature() {
-    RegisterPayloadStateAction("update-inject-config", "value", "viewState.injectConfig",
-                               "viewState.injectStatus", "Draft konfigurasi contoh diperbarui.");
     RegisterPayloadStateAction("select-inject-provider", "selectedValue",
                                "viewState.selectedInjectProvider", "viewState.injectStatus",
                                "Provider contoh dipilih.");
@@ -307,9 +305,6 @@ void StubApplicationBridge::RegisterChromeProfileManagerFeature() {
     RegisterPayloadStateAction("select-managed-chrome-profile", "selectedValue",
                                "viewState.selectedManagedProfile", "viewState.profileStatus",
                                "Metadata profile contoh dipilih.");
-    RegisterPayloadStateAction("update-chrome-profile-name", "value",
-                               "viewState.profileName", "viewState.profileStatus",
-                               "Nama profile draft diperbarui.");
     RegisterPayloadStateAction("toggle-chrome-profile-enabled", "checked",
                                "viewState.profileEnabled", "viewState.profileStatus",
                                "Status profile draft diperbarui.");
@@ -363,7 +358,6 @@ void StubApplicationBridge::RegisterDialogFeature() {
             throw std::logic_error("Duplicate dialog action registration.");
         }
     };
-    register_dialog("open-save-discard-dialog", DialogRequestAction::Open);
     register_dialog("dialog-save", DialogRequestAction::Save);
     register_dialog("dialog-discard", DialogRequestAction::Discard);
     register_dialog("dialog-cancel", DialogRequestAction::Cancel);

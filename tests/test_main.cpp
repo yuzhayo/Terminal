@@ -680,10 +680,10 @@ void TestUiConfigGateEmbeddedDefault() {
     REQUIRE_TRUE(std::get<ui::config::WindowProperties>(main_window.properties).initial_route ==
                  "terminal");
     const auto& terminal_screen = gate.document()->screens.at("terminal");
-    REQUIRE_TRUE(terminal_screen.children.size() == 2);
+    REQUIRE_TRUE(terminal_screen.children.size() == 3);
     const auto& shell = terminal_screen.children.front();
     REQUIRE_TRUE(shell.type == ui::config::ComponentType::Container);
-    REQUIRE_TRUE(shell.children.size() == 12);
+    REQUIRE_TRUE(shell.children.size() == 11);
     REQUIRE_TRUE(shell.children[0].type == ui::config::ComponentType::Text);
     REQUIRE_TRUE(shell.children[2].type == ui::config::ComponentType::Input);
     REQUIRE_TRUE(shell.children[3].type == ui::config::ComponentType::Combo);
@@ -697,7 +697,6 @@ void TestUiConfigGateEmbeddedDefault() {
     REQUIRE_TRUE(shell.children[8].type == ui::config::ComponentType::Button);
     REQUIRE_TRUE(shell.children[9].type == ui::config::ComponentType::Button);
     REQUIRE_TRUE(shell.children[10].type == ui::config::ComponentType::Button);
-    REQUIRE_TRUE(shell.children[11].type == ui::config::ComponentType::Button);
     for (const std::string_view route : {"json-inject", "json-editor", "chrome-launcher",
                                         "chrome-profile-manager", "settings", "ui-editor"}) {
         const auto& screen = gate.document()->screens.at(std::string(route));
@@ -708,6 +707,9 @@ void TestUiConfigGateEmbeddedDefault() {
     const auto& dialog = terminal_screen.children[1];
     REQUIRE_TRUE(dialog.type == ui::config::ComponentType::Dialog);
     REQUIRE_TRUE(dialog.children.size() == 2);
+    const auto& run_dialog = terminal_screen.children[2];
+    REQUIRE_TRUE(run_dialog.type == ui::config::ComponentType::Dialog);
+    REQUIRE_TRUE(run_dialog.children.size() == 2);
 }
 
 void TestUiConfigDynamicScreenInventory() {
@@ -1698,14 +1700,16 @@ void TestWindowContainerStubFeatureRoutes() {
 
     REQUIRE_TRUE(input_text("terminal-input") == L"C:\\Work\\Terminal");
     REQUIRE_TRUE(require_component("terminal-confirm")->automation_toggle_state() == true);
-    REQUIRE_TRUE(require_component("terminal-active")->automation_toggle_state() == true);
+    REQUIRE_TRUE(require_component("terminal-venv-enabled")->automation_toggle_state() == false);
     ui::components::ComponentRuntimeStateMap terminal_profile_state;
     require_component("terminal-profile")->CaptureRuntimeState(terminal_profile_state);
-    REQUIRE_TRUE(terminal_profile_state.at("terminal-profile").selected_index == 0);
+    REQUIRE_TRUE(terminal_profile_state.at("terminal-profile").selected_index == 1);
     REQUIRE_TRUE(!window.IsDirty());
 
     REQUIRE_TRUE(window.Navigate("json-inject", diagnostic));
-    REQUIRE_TRUE(input_text("json-inject-config").starts_with(L"provider=Anthropic"));
+    REQUIRE_TRUE(input_text("json-inject-base-url").empty());
+    REQUIRE_TRUE(input_text("json-inject-model") == L"stub-model");
+    REQUIRE_TRUE(input_text("json-inject-api-key-draft").empty());
     REQUIRE_TRUE(window.Navigate("json-editor", diagnostic));
     REQUIRE_TRUE(input_text("json-editor-draft").starts_with(L"{\r\n"));
     REQUIRE_TRUE(window.Navigate("chrome-launcher", diagnostic));
@@ -1849,7 +1853,7 @@ void TestUiConfigOverrideRejectedAsWhole() {
     REQUIRE_TRUE(result.override_diagnostic.has_value());
     REQUIRE_TRUE(result.override_diagnostic->code == "unknown-field");
     REQUIRE_TRUE(result.document->generation == 5);
-    REQUIRE_TRUE(result.document->screens.at("terminal").children.size() == 2);
+    REQUIRE_TRUE(result.document->screens.at("terminal").children.size() == 3);
 }
 
 void TestUiConfigRollbackIncompatibleOverridePreserved() {
@@ -1906,7 +1910,7 @@ void TestUiConfigAllComponentSchemasResolve() {
 
     const auto result = ui::config::detail::ResolveDocuments(bytes, std::nullopt, 1);
     REQUIRE_TRUE(result.document != nullptr);
-    REQUIRE_TRUE(result.document->screens.at("terminal").children.size() == 12);
+    REQUIRE_TRUE(result.document->screens.at("terminal").children.size() == 13);
 }
 
 void TestUiConfigNativeSurfaceAlphaRejected() {
@@ -2546,16 +2550,16 @@ void TestApplicationContainerPrepareCloseAll() {
 
 void TestStubApplicationBridgePatch() {
     ui::application::StubApplicationBridge bridge;
-    REQUIRE_TRUE(bridge.registered_action_count() == 44);
+    REQUIRE_TRUE(bridge.registered_action_count() == 51);
     const auto profiles = bridge.ResolveStringItems("terminalProfiles");
     REQUIRE_TRUE(profiles.size() == 3);
-    REQUIRE_TRUE(profiles.front() == L"PowerShell");
-    const auto sessions = bridge.ResolveStringItems("viewState.terminalSessions");
-    REQUIRE_TRUE(sessions.size() == 80);
-    REQUIRE_TRUE(sessions.front() == L"Session 01 - PowerShell");
-    REQUIRE_TRUE(sessions.back() == L"Session 80 - Command Prompt");
+    REQUIRE_TRUE(profiles[0] == L"PowerShell Admin");
+    REQUIRE_TRUE(profiles[1] == L"PowerShell");
+    REQUIRE_TRUE(profiles[2] == L"Ubuntu (WSL)");
+    const auto folders = bridge.ResolveStringItems("viewState.recentFolders");
+    REQUIRE_TRUE(folders.size() == 3);
     const ui::application::UiEvent run_event =
-        MakeUiEvent("run-terminal-stub", "click", "terminal", "terminal-stub-action");
+        MakeUiEvent("run-terminal", "click", "terminal", "terminal-run-action");
     const auto patch = bridge.Dispatch(run_event);
     REQUIRE_TRUE(patch.has_value());
     REQUIRE_TRUE(patch->generation == 1);
@@ -2565,9 +2569,9 @@ void TestStubApplicationBridgePatch() {
     REQUIRE_TRUE(patch->window_title.has_value());
     REQUIRE_TRUE(patch->request_repaint);
     const auto dialog = bridge.Dispatch(MakeUiEvent(
-        "open-save-discard-dialog", "click", "terminal", "terminal-dialog-action"));
+        "dialog-discard", "click", "terminal", "save-dialog-discard"));
     REQUIRE_TRUE(dialog.has_value() && dialog->dialog_request.has_value());
-    REQUIRE_TRUE(dialog->dialog_request->action == ui::application::DialogRequestAction::Open);
+    REQUIRE_TRUE(dialog->dialog_request->action == ui::application::DialogRequestAction::Discard);
     REQUIRE_TRUE(dialog->dialog_request->dialog_id == "save-discard-dialog");
     ui::application::UiEvent save_event =
         MakeUiEvent("dialog-save", "click", "terminal", "save-dialog-save");
@@ -2583,7 +2587,7 @@ void TestStubApplicationBridgePatch() {
     REQUIRE_TRUE(save->close_save_result->source.route_id == "terminal");
     REQUIRE_TRUE(save->close_save_result->source.component_id == "save-dialog-save");
     REQUIRE_TRUE(!bridge.Dispatch(MakeUiEvent("unknown-action")).has_value());
-    REQUIRE_TRUE(!bridge.Dispatch({"run-terminal-stub", {}}).has_value());
+    REQUIRE_TRUE(!bridge.Dispatch({"run-terminal", {}}).has_value());
 
     ui::config::EventPayloadValue route;
     route.value = std::string("settings");

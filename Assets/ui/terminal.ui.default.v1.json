@@ -3023,6 +3023,7 @@
               "layout": {
                 "width": "fill"
               },
+              "placeholder": "Pilih runtime Chrome",
               "itemsBinding": {
                 "$bind": "viewState.chromeRuntimes"
               },
