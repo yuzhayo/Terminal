@@ -1,19 +1,19 @@
 // Smoke harness — verifies core business logic without any UI.
-// Build: cl /std:c++17 /W3 /EHsc /I<root> tools/core_smoke.cpp platform/*.cpp storage/*.cpp features/*.cpp /link /out:core_smoke.exe
+// Build: cl /std:c++20 /W4 /EHsc /I<root> tools/core_smoke.cpp platform/*.cpp storage/*.cpp features/*.cpp /link /out:core_smoke.exe
 // Usage: core_smoke.exe <subcommand> [args]
 //   terminal   <folder>           -- plan + run a PowerShell launch
 //   inject     <target>           -- apply claude config to windows|wsl
 //   editor     <target>           -- save/restore cycle on a temp file
 //   chrome                        -- load cache, scan Windows, apply
-//   shell      <command_line>     -- tokenise + route a command line
 //   settings                      -- theme set/get, start-with-windows read
-//   uiconfig                      -- validate field table, draft round-trip
 #include <cstdio>
 #include <string>
 #include <vector>
 
 #include "core_gate.h"
 #include "platform/strings.h"
+#include "platform/wsl.h"
+#include "storage/settings.h"
 
 namespace {
 
@@ -123,31 +123,6 @@ int smoke_chrome(const std::vector<std::wstring>&) {
     return 0;
 }
 
-int smoke_shell(const std::vector<std::wstring>& args) {
-    const std::wstring cmdline = args.empty() ? L"OpenTerminalNative.exe --terminal" : args[0];
-    wprintf(L"=== shell: cmd=%ls\n", cmdline.c_str());
-
-    const auto tokens = features::TokenizeCommandLine(cmdline);
-    wprintf(L"  Tokens (%zu):\n", tokens.size());
-    for (const auto& t : tokens) wprintf(L"    %ls\n", t.c_str());
-
-    features::ShellState state;
-    auto effect = features::ApplyCommand(&state, cmdline);
-    wprintf(L"  Effect: exit=%d show=%d nav=%d\n",
-            effect.should_exit, effect.should_show,
-            effect.navigate_to.has_value() ? static_cast<int>(*effect.navigate_to) : -1);
-
-    // Test the substring-bug fix: "--terminal" must NOT match inside another token.
-    const std::wstring tricky = L"myapp.exe --json-inject";
-    auto tokens2 = features::TokenizeCommandLine(tricky);
-    features::ShellState state2;
-    auto effect2 = features::ApplyCommand(&state2, tricky);
-    wprintf(L"  Tricky '%ls': nav=%d (want JsonInject=1)\n",
-            tricky.c_str(),
-            effect2.navigate_to.has_value() ? static_cast<int>(*effect2.navigate_to) : -1);
-    return 0;
-}
-
 int smoke_settings(const std::vector<std::wstring>&) {
     println(L"=== settings");
     wprintf(L"  Theme: %ls\n", features::CurrentThemeToken().c_str());
@@ -164,45 +139,13 @@ int smoke_settings(const std::vector<std::wstring>&) {
     return 0;
 }
 
-int smoke_uiconfig(const std::vector<std::wstring>&) {
-    println(L"=== uiconfig");
-    features::UiEditorState state;
-    std::wstring error;
-
-    const bool loaded = features::LoadDraft(&state.draft, &error);
-    wprintf(L"  LoadDraft: %d error=%ls\n", loaded, error.c_str());
-
-    auto schema = features::BuildFieldSchema(false);
-    wprintf(L"  Schema fields: %zu\n", schema.size());
-
-    features::PopulateFields(&schema, state.draft);
-    state.opened = state.draft;
-
-    // Test a valid integer field (first Integer field in schema).
-    for (auto& field : schema) {
-        if (field.kind == features::UiFieldKind::Integer) {
-            field.current_text = std::to_wstring(field.min_value - 1);  // out of range
-            std::wstring ferr;
-            bool ok = features::ValidateField(&field, &state.draft, &ferr);
-            wprintf(L"  ValidateField out-of-range '%ls': ok=%d err=%ls\n",
-                    field.label.c_str(), ok, ferr.c_str());
-            field.current_text = std::to_wstring(field.min_value);       // in range
-            ferr.clear();
-            ok = features::ValidateField(&field, &state.draft, &ferr);
-            wprintf(L"  ValidateField in-range '%ls': ok=%d\n", field.label.c_str(), ok);
-            break;
-        }
-    }
-    return 0;
-}
-
 }  // namespace
 
 int wmain(int argc, wchar_t* argv[]) {
-    core::Load();
+    storage::Load();
 
     if (argc < 2) {
-        wprintf(L"Usage: core_smoke <terminal|inject|editor|chrome|shell|settings|uiconfig> [args]\n");
+        wprintf(L"Usage: core_smoke <terminal|inject|editor|chrome|settings> [args]\n");
         return 1;
     }
 
@@ -214,9 +157,7 @@ int wmain(int argc, wchar_t* argv[]) {
     if (cmd == L"inject")    return smoke_inject(args);
     if (cmd == L"editor")    return smoke_editor(args);
     if (cmd == L"chrome")    return smoke_chrome(args);
-    if (cmd == L"shell")     return smoke_shell(args);
     if (cmd == L"settings")  return smoke_settings(args);
-    if (cmd == L"uiconfig")  return smoke_uiconfig(args);
 
     wprintf(L"Unknown subcommand: %ls\n", cmd.c_str());
     return 1;

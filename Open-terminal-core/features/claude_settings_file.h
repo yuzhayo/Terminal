@@ -38,6 +38,7 @@ struct EditorLoadResult {
     bool read_ok     = false;
     bool has_backup  = false;
     bool wanted_text = false;
+    bool created     = false;  // true when the file was missing and text was seeded
 };
 
 // --- service ---
@@ -54,8 +55,11 @@ core::Status ApplyLoad(const EditorLoadResult& result, EditorDraft* draft);
 // returned status explains why; the caller may start a background probe.
 bool ReadyForFileAction(EditorTarget target, core::Status* status);
 
-// Saves the draft text. Appends a trailing newline when missing. Validates JSON,
-// backs up, atomically replaces. Sets draft.dirty = false on success.
+// Saves the draft text. The draft holds edit-control text (CRLF); Save is the
+// single owner that converts CRLF -> LF (canonical on disk) before validating and
+// writing, then stores the CRLF form back into the draft. Appends a trailing
+// newline when missing. Validates JSON, backs up, atomically replaces. Sets
+// draft.dirty = false on success.
 core::Status Save(EditorTarget target, EditorDraft* draft);
 
 // Restores the backup file.

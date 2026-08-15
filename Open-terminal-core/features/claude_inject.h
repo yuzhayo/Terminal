@@ -54,6 +54,7 @@ std::vector<ParsedKey> ParseBulkKeys(const std::wstring& text);
 struct BulkAddResult {
     int added = 0;
     int skipped = 0;
+    bool persist_failed = false;  // added keys but the save to disk failed
 };
 BulkAddResult BulkAddApiKeys(const std::vector<ParsedKey>& keys);
 
@@ -69,6 +70,11 @@ core::Status Inject(InjectTarget target);
 // Display helpers (no persistence, no side effects).
 std::wstring BaseUrlDisplayText(const storage::BaseUrl& base);
 std::wstring ApiKeyDisplayText(const storage::ApiKey& key);
+
+// Display lists for the facade: one string per entry.
+std::vector<std::wstring> BaseUrlDisplayList();
+// API keys of the currently selected base URL.
+std::vector<std::wstring> ApiKeyDisplayList();
 
 // Selection auto-heal: if the stored selected_base_url_id is not in the list,
 // select the first entry and save. Call on screen enter and after any list change.

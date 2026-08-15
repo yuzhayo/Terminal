@@ -113,7 +113,9 @@ std::wstring UtcNow() {
 
 void ReadCachedRuntime(const json::Value* block, ChromeRuntime runtime, CachedRuntime* out) {
     if (!block || !block->is_object()) return;
-    out->scanned        = true;
+    // Cache files written before the "scanned" flag existed default to true: a
+    // present block meant something was scanned.
+    out->scanned        = block->BoolField(L"scanned", true);
     out->scanned_at_utc = block->StringField(L"scannedAtUtc");
     out->distro         = block->StringField(L"distro");
     if (const json::Value* list = block->ArrayField(L"profiles")) {
@@ -133,6 +135,7 @@ void ReadCachedRuntime(const json::Value* block, ChromeRuntime runtime, CachedRu
 
 json::Value WriteCachedRuntime(const CachedRuntime& section, ChromeRuntime runtime) {
     json::Value block = json::Value::Object();
+    block.Set(L"scanned", json::Value::Bool(section.scanned));
     block.Set(L"scannedAtUtc", json::Value::String(section.scanned_at_utc));
     if (runtime == ChromeRuntime::Wsl)
         block.Set(L"distro", json::Value::String(section.distro));
@@ -177,6 +180,11 @@ std::wstring NormalizeUrl(const std::wstring& input) {
     if (trimmed.empty()) return {};
     if (str::StartsWith(trimmed, L"http://") || str::StartsWith(trimmed, L"https://"))
         return trimmed;
+    // Allow the localhost literal (with optional :port / path) even though it has
+    // no dot.
+    if (trimmed == L"localhost" || str::StartsWith(trimmed, L"localhost:") ||
+        str::StartsWith(trimmed, L"localhost/"))
+        return L"https://" + trimmed;
     // Reject strings without a dot — garbage like "foobar" is not a URL.
     if (trimmed.find(L'.') == std::wstring::npos &&
         trimmed.find(L'/') == std::wstring::npos) return {};
@@ -355,8 +363,12 @@ CardLaunchResult LaunchCard(size_t index, const std::wstring& typed_url) {
 
     if (!launch_ok) { out.status = core::Error(core::ErrorCode::LaunchFailed, launch_error); return out; }
 
-    if (!url.empty()) storage::RememberUrl(url);
-    storage::SaveSettings();
+    // Only persist when a URL was actually opened; a bare profile launch changes
+    // nothing worth a disk write.
+    if (!url.empty()) {
+        storage::RememberUrl(url);
+        storage::SaveSettings();
+    }
 
     out.url_opened   = url;
     out.clear_input  = from_input;
@@ -374,7 +386,8 @@ ChromeRuntime ActiveRuntime() {
 core::Status SwitchRuntime(ChromeRuntime runtime) {
     if (runtime == ActiveRuntime()) return core::NoStatus();
     storage::CurrentSettings().chrome_runtime = ChromeRuntimeName(runtime);
-    storage::SaveSettings();
+    if (!storage::SaveSettings())
+        return core::Error(core::ErrorCode::PersistenceFailed, L"Could not save the runtime choice.");
     return core::NoStatus();
 }
 
@@ -382,12 +395,18 @@ core::Status AddBookmark(const std::wstring& label, const std::wstring& url) {
     const std::wstring normalized = NormalizeUrl(url);
     if (normalized.empty())
         return core::Error(core::ErrorCode::ValidationFailed, L"That URL could not be understood: " + str::Trim(url));
+    for (const storage::Bookmark& existing : storage::CurrentSettings().bookmarks) {
+        if (str::IEquals(existing.url, normalized))
+            return core::Error(core::ErrorCode::BookmarkAlreadyExists,
+                               L"That bookmark already exists.");
+    }
     storage::Bookmark bm;
     bm.id    = storage::NewId();
     bm.label = str::Trim(label);
     bm.url   = normalized;
     storage::CurrentSettings().bookmarks.push_back(std::move(bm));
-    storage::SaveSettings();
+    if (!storage::SaveSettings())
+        return core::Error(core::ErrorCode::PersistenceFailed, L"Could not save the bookmark.");
     return core::Success(L"Bookmark added.");
 }
 
@@ -401,7 +420,8 @@ core::Status RemoveBookmark() {
             s.bookmarks[i].label.empty() ? s.bookmarks[i].url : s.bookmarks[i].label;
         s.bookmarks.erase(s.bookmarks.begin() + static_cast<ptrdiff_t>(i));
         s.selected_bookmark_id.clear();
-        storage::SaveSettings();
+        if (!storage::SaveSettings())
+            return core::Error(core::ErrorCode::PersistenceFailed, L"Could not save after removing the bookmark.");
         return core::Success(L"Removed " + label + L".");
     }
     return core::Error(core::ErrorCode::BookmarkNotFound, L"Bookmark not found.");
@@ -420,7 +440,8 @@ core::Status SavePreset() {
     storage::ChromeRuntimeState& state =
         storage::ChromeStateFor(storage::CurrentSettings().chrome_runtime);
     state.preset = state.visible;
-    storage::SaveSettings();
+    if (!storage::SaveSettings())
+        return core::Error(core::ErrorCode::PersistenceFailed, L"Could not save the preset.");
     return state.preset.empty()
         ? core::Success(L"Preset saved as empty for this runtime.")
         : core::Success(L"Preset saved: " + std::to_wstring(state.preset.size()) + L" profile(s).");
@@ -432,7 +453,8 @@ core::Status LoadPreset() {
     if (state.preset.empty())
         return core::Error(core::ErrorCode::PresetNotFound, L"No preset saved for this runtime yet.");
     state.visible = state.preset;
-    storage::SaveSettings();
+    if (!storage::SaveSettings())
+        return core::Error(core::ErrorCode::PersistenceFailed, L"Could not save the loaded preset.");
     return core::Success(L"Preset loaded: " + std::to_wstring(state.visible.size()) + L" profile(s).");
 }
 
@@ -442,13 +464,18 @@ core::Status ClearVisible() {
     if (state.visible.empty())
         return core::Info(L"No profiles are shown for this runtime.");
     state.visible.clear();
-    storage::SaveSettings();
+    if (!storage::SaveSettings())
+        return core::Error(core::ErrorCode::PersistenceFailed, L"Could not save after clearing.");
     return core::Success(state.preset.empty()
         ? L"Cleared."
         : L"Cleared. Load Preset restores the saved set.");
 }
 
 core::Status ReorderCards(size_t from_index, size_t to_index) {
+    // Convention: to_index is the destination slot in the CURRENT list (erase
+    // the item, then insert before what is now at to_index). The UI's drag-drop
+    // payload must match this — for a forward drag it is the post-removal index,
+    // not the original target index.
     std::vector<storage::VisibleProfile>& visible = VisibleList();
     if (from_index >= visible.size() || to_index >= visible.size())
         return core::Error(core::ErrorCode::ValidationFailed, L"Index out of range.");
@@ -456,7 +483,8 @@ core::Status ReorderCards(size_t from_index, size_t to_index) {
     storage::VisibleProfile moved = visible[from_index];
     visible.erase(visible.begin() + static_cast<ptrdiff_t>(from_index));
     visible.insert(visible.begin() + static_cast<ptrdiff_t>(to_index), std::move(moved));
-    storage::SaveSettings();
+    if (!storage::SaveSettings())
+        return core::Error(core::ErrorCode::PersistenceFailed, L"Could not save the new order.");
     return core::Success(L"Profile order saved.");
 }
 

@@ -23,8 +23,6 @@ enum class ErrorCode {
     None = 0,
     // Terminal
     FolderNotFound,
-    VenvActivationFailed,
-    PowerShellNotFound,
     WslNotReady,
     LaunchFailed,
     // Inject
@@ -44,7 +42,6 @@ enum class ErrorCode {
     ChromeNotFound,
     BookmarkAlreadyExists,
     BookmarkNotFound,
-    PresetAlreadyExists,
     PresetNotFound,
     // Settings
     InvalidTheme,
@@ -52,7 +49,6 @@ enum class ErrorCode {
     // General
     ValidationFailed,
     PersistenceFailed,
-    PlatformFailed,
 };
 
 struct Status {
@@ -68,5 +64,13 @@ inline Status NoStatus() { return {}; }
 inline Status Info(std::wstring text) { return {StatusKind::Info, ErrorCode::None, std::move(text)}; }
 inline Status Success(std::wstring text) { return {StatusKind::Success, ErrorCode::None, std::move(text)}; }
 inline Status Error(ErrorCode code, std::wstring text) { return {StatusKind::Error, code, std::move(text)}; }
+
+// Convenience for mutations whose only outcome is "saved or not": returns
+// NoStatus on success, PersistenceFailed otherwise. Call sites that carry their
+// own success text should check the bool directly instead.
+inline Status PersistOr(bool ok, std::wstring what) {
+    return ok ? NoStatus()
+              : Error(ErrorCode::PersistenceFailed, L"Could not save " + std::move(what) + L".");
+}
 
 }  // namespace core

@@ -15,10 +15,12 @@ const std::wstring& CurrentThemeToken() {
 core::Status SetTheme(const std::wstring& token) {
     const std::wstring& current = CurrentThemeToken();
     if (token == current) return core::NoStatus();
-    const std::wstring normalized = (token == L"light") ? L"light" : L"dark";
-    storage::CurrentSettings().theme = normalized;
-    storage::SaveSettings();
-    return core::Success(L"Theme changed to " + normalized + L".");
+    if (token != L"light" && token != L"dark")
+        return core::Error(core::ErrorCode::InvalidTheme, L"Unknown theme: " + token);
+    storage::CurrentSettings().theme = token;
+    if (!storage::SaveSettings())
+        return core::Error(core::ErrorCode::PersistenceFailed, L"Could not save the theme.");
+    return core::Success(L"Theme changed to " + token + L".");
 }
 
 bool IsStartWithWindowsEnabled() {
@@ -28,7 +30,8 @@ bool IsStartWithWindowsEnabled() {
 core::Status SetStartWithWindows(bool enabled) {
     std::wstring error;
     if (!platform::SetStartWithWindows(enabled, &error))
-        return core::Error(L"Cannot change the startup entry: " + error);
+        return core::Error(core::ErrorCode::RegistryWriteFailed,
+                           L"Cannot change the startup entry: " + error);
     storage::CurrentSettings().start_with_windows = enabled;
     storage::SaveSettings();
     return core::Success(enabled

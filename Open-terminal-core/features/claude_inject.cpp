@@ -78,6 +78,23 @@ std::wstring ApiKeyDisplayText(const storage::ApiKey& key) {
     return key.label + L"  —  " + key.key;
 }
 
+std::vector<std::wstring> BaseUrlDisplayList() {
+    std::vector<std::wstring> out;
+    for (const storage::BaseUrl& base : storage::CurrentProviders().base_urls)
+        out.push_back(BaseUrlDisplayText(base));
+    return out;
+}
+
+std::vector<std::wstring> ApiKeyDisplayList() {
+    std::vector<std::wstring> out;
+    const storage::BaseUrl* base =
+        storage::FindBaseUrl(storage::CurrentProviders().selected_base_url_id);
+    if (!base) return out;
+    for (const storage::ApiKey& key : base->keys)
+        out.push_back(ApiKeyDisplayText(key));
+    return out;
+}
+
 // --- selection auto-heal ---
 
 void HealBaseUrlSelection() {
@@ -120,15 +137,17 @@ core::Status AddBaseUrl(const std::wstring& url, const std::wstring& label,
     base.model = str::Trim(model);
     providers.base_urls.push_back(std::move(base));
     providers.selected_base_url_id = providers.base_urls.back().id;
-    storage::SaveProviders();
+    if (!storage::SaveProviders())
+        return core::Error(core::ErrorCode::PersistenceFailed, L"Could not save the base URL.");
     return core::Success(L"Base URL added.");
 }
 
 core::Status SelectBaseUrl(const std::wstring& id) {
     if (!storage::FindBaseUrl(id)) return core::Error(core::ErrorCode::ValidationFailed, L"Base URL not found.");
     storage::CurrentProviders().selected_base_url_id = id;
-    storage::SaveProviders();
+    const bool saved = storage::SaveProviders();
     HealApiKeySelection();
+    if (!saved) return core::Error(core::ErrorCode::PersistenceFailed, L"Could not save the selection.");
     return core::NoStatus();
 }
 
@@ -184,7 +203,7 @@ BulkAddResult BulkAddApiKeys(const std::vector<ParsedKey>& keys) {
     if (result.added > 0) {
         if (base->selected_key_id.empty())
             base->selected_key_id = base->keys.front().id;
-        storage::SaveProviders();
+        result.persist_failed = !storage::SaveProviders();
     }
     return result;
 }
@@ -194,7 +213,8 @@ core::Status SelectApiKey(const std::wstring& id) {
     if (!base) return core::Error(core::ErrorCode::ValidationFailed, L"No base URL selected.");
     if (!storage::FindApiKey(base, id)) return core::Error(core::ErrorCode::ValidationFailed, L"API key not found.");
     base->selected_key_id = id;
-    storage::SaveProviders();
+    if (!storage::SaveProviders())
+        return core::Error(core::ErrorCode::PersistenceFailed, L"Could not save the selection.");
     return core::NoStatus();
 }
 

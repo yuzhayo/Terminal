@@ -224,18 +224,21 @@ class Parser {
 
     bool ParseNumber(Value* out) {
         const size_t start = pos_;
-        if (pos_ < text_.size() && (text_[pos_] == L'-' || text_[pos_] == L'+')) ++pos_;
+        if (pos_ < text_.size() && text_[pos_] == L'-') ++pos_;
         bool any_digit = false;
         while (pos_ < text_.size() && text_[pos_] >= L'0' && text_[pos_] <= L'9') {
             ++pos_;
             any_digit = true;
         }
-        if (pos_ < text_.size() && text_[pos_] == L'.') {
+        // A fraction is only valid after an integer digit, and must have digits.
+        if (any_digit && pos_ < text_.size() && text_[pos_] == L'.') {
             ++pos_;
+            bool frac_digit = false;
             while (pos_ < text_.size() && text_[pos_] >= L'0' && text_[pos_] <= L'9') {
                 ++pos_;
-                any_digit = true;
+                frac_digit = true;
             }
+            if (!frac_digit) { pos_ = start; return Fail(L"Missing digits after decimal point"); }
         }
         if (any_digit && pos_ < text_.size() && (text_[pos_] == L'e' || text_[pos_] == L'E')) {
             ++pos_;

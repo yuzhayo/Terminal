@@ -89,6 +89,9 @@ bool WriteTextAtomic(std::wstring_view path, std::wstring_view text, std::wstrin
         return false;
     }
 
+    // Fixed temp name is safe under the single-owner-thread contract: only one
+    // thread writes app files, so two concurrent saves to the same target cannot
+    // race on <target>.tmp. Revisit (random suffix) if that ever changes.
     const std::wstring temp = target + L".tmp";
     const std::string utf8 = str::ToUtf8(text);
 

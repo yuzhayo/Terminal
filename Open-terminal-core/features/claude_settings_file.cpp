@@ -76,6 +76,7 @@ EditorLoadResult StartLoad(EditorTarget target, bool force, const EditorDraft& d
         // Missing file — seed with empty object so Save always writes valid JSON.
         result.text    = L"{\n}\n";
         result.read_ok = true;
+        result.created = true;
         return result;
     }
     if (!files::ReadText(result.path, &text, &read_error)) {
@@ -94,16 +95,17 @@ EditorLoadResult StartLoad(EditorTarget target, bool force, const EditorDraft& d
 
 core::Status ApplyLoad(const EditorLoadResult& result, EditorDraft* draft) {
     if (!result.resolved)
-        return core::Error(result.error);
+        return core::Error(core::ErrorCode::SettingsFileNotFound, result.error);
     if (!result.wanted_text)
         return core::NoStatus();
     if (!result.read_ok) {
-        draft->loaded = true;
-        draft->text.clear();
-        draft->dirty = false;
+        // Leave the draft unloaded so the next non-forced load retries the read;
+        // preserve any existing text rather than blanking it.
+        draft->loaded = false;
+        draft->dirty  = false;
         return core::Error(core::ErrorCode::FileReadFailed, result.error);
     }
-    const bool created = (result.text == L"{\n}\n" && !paths::FileExists(result.path));
+    const bool created = result.created;
     draft->text   = result.text;
     draft->loaded = true;
     draft->dirty  = false;
@@ -125,7 +127,9 @@ core::Status Save(EditorTarget target, EditorDraft* draft) {
     core::Status gate;
     if (!ReadyForFileAction(target, &gate)) return gate;
 
-    std::wstring text = draft->text;
+    // The draft holds edit-control text (CRLF). LF is canonical on disk, so Save
+    // is the single owner of the conversion — see the header contract.
+    std::wstring text = FromEditorText(draft->text);
     if (!text.empty() && text.back() != L'\n') text.push_back(L'\n');
 
     std::wstring path;
@@ -144,7 +148,8 @@ core::Status Save(EditorTarget target, EditorDraft* draft) {
     if (!files::WriteTextAtomic(path, text, &io_error))
         return core::Error(core::ErrorCode::FileWriteFailed, io_error);
 
-    draft->text  = text;
+    // Keep the in-memory draft consistent with the edit control (CRLF form).
+    draft->text  = ToEditorText(text);
     draft->dirty = false;
     return core::Success(L"Saved " + path);
 }

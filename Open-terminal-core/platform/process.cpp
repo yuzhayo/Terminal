@@ -157,15 +157,46 @@ bool RunCapture(std::wstring_view command_line, std::wstring_view working_dir, u
     }
     CloseHandle(pi.hThread);
 
+    // Deadline-bounded drain: a child that keeps the write end open (e.g. a stuck
+    // WSL probe) must not hang us past timeout_ms. PeekNamedPipe lets us poll for
+    // data without blocking in ReadFile, and check the deadline between polls.
+    const ULONGLONG deadline = GetTickCount64() + timeout_ms;
     std::string raw;
     char buffer[4096];
+    bool timed_out = false;
     for (;;) {
-        DWORD read = 0;
-        if (!ReadFile(read_end, buffer, sizeof(buffer), &read, nullptr) || read == 0) break;
-        raw.append(buffer, read);
-        if (raw.size() > 4u * 1024 * 1024) break;
+        DWORD available = 0;
+        if (!PeekNamedPipe(read_end, nullptr, 0, nullptr, &available, nullptr)) {
+            // Pipe closed (write end gone / child exited) — no more data.
+            break;
+        }
+        if (available > 0) {
+            DWORD read = 0;
+            if (!ReadFile(read_end, buffer, sizeof(buffer), &read, nullptr) || read == 0) break;
+            raw.append(buffer, read);
+            if (raw.size() > 4u * 1024 * 1024) break;
+            continue;  // drain fast while data is flowing
+        }
+        // No data right now: has the child exited, or have we run out of time?
+        if (WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0) {
+            // Child gone; do one last non-blocking drain then stop.
+            DWORD remaining = 0;
+            if (PeekNamedPipe(read_end, nullptr, 0, nullptr, &remaining, nullptr) && remaining > 0)
+                continue;
+            break;
+        }
+        if (GetTickCount64() >= deadline) { timed_out = true; break; }
+        Sleep(15);
     }
     CloseHandle(read_end);
+
+    if (timed_out) {
+        TerminateProcess(pi.hProcess, 1);
+        WaitForSingleObject(pi.hProcess, 2000);
+        CloseHandle(pi.hProcess);
+        if (error) *error = L"The command did not finish in time.";
+        return false;
+    }
 
     const DWORD wait = WaitForSingleObject(pi.hProcess, timeout_ms);
     if (wait == WAIT_TIMEOUT) {

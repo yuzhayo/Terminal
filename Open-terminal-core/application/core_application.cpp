@@ -19,9 +19,8 @@ CoreApplication::~CoreApplication() = default;
 
 void CoreApplication::Initialize() {
     if (impl_->initialized) return;
-    storage::LoadSettings();
-    features::LoadProviders();
-    features::LoadChromeCache();
+    storage::Load();             // loads settings.json and providers.json
+    features::LoadProfileCache();
     impl_->initialized = true;
 }
 
@@ -29,11 +28,13 @@ void CoreApplication::Initialize() {
 
 core::Status CoreApplication::PlanTerminalLaunch(
     const features::TerminalRequest& req, features::TerminalPlan* out_plan) {
-    return features::PlanTerminalLaunch(req, out_plan);
+    *out_plan = features::Plan(req);
+    if (out_plan->ok) return core::NoStatus();
+    return core::Error(core::ErrorCode::FolderNotFound, out_plan->error);
 }
 
 core::Status CoreApplication::LaunchTerminal(const features::TerminalRequest& req) {
-    return features::RunTerminalLaunch(req);
+    return features::Run(req);
 }
 
 std::vector<std::wstring> CoreApplication::RecentFolders() const {
@@ -48,26 +49,41 @@ void CoreApplication::ClearRecentFolders() {
 // --- Claude Inject ---
 
 core::Status CoreApplication::AddBaseUrl(const std::wstring& url) {
-    return features::AddBaseUrl(url);
+    return features::AddBaseUrl(url, L"", L"");
 }
 
 core::Status CoreApplication::BulkAddApiKeys(
     const std::vector<std::wstring>& keys) {
-    return features::BulkAddApiKeys(keys);
+    std::vector<features::ParsedKey> parsed;
+    parsed.reserve(keys.size());
+    for (const std::wstring& raw : keys) {
+        for (const features::ParsedKey& k : features::ParseBulkKeys(raw))
+            parsed.push_back(k);
+    }
+    const features::BulkAddResult result = features::BulkAddApiKeys(parsed);
+    if (result.persist_failed)
+        return core::Error(core::ErrorCode::PersistenceFailed, L"Could not save the API keys.");
+    return result.added > 0
+        ? core::Success(L"Added " + std::to_wstring(result.added) + L" API key(s).")
+        : core::Info(L"No new API keys to add.");
 }
 
 core::Status CoreApplication::InjectClaude(bool target_wsl) {
-    return features::InjectClaude(target_wsl
-        ? features::ClaudeTarget::UbuntuWsl
-        : features::ClaudeTarget::Windows);
+    const features::InjectTarget target = target_wsl
+        ? features::InjectTarget::UbuntuWsl
+        : features::InjectTarget::Windows;
+    if (features::InjectNeedsWslProbe(target))
+        return core::Info(
+            L"Still looking for the Ubuntu WSL home directory — try again in a moment.");
+    return features::Inject(target);
 }
 
 std::vector<std::wstring> CoreApplication::BaseUrls() const {
-    return features::GetBaseUrls();
+    return features::BaseUrlDisplayList();
 }
 
 std::vector<std::wstring> CoreApplication::ApiKeys() const {
-    return features::GetApiKeys();
+    return features::ApiKeyDisplayList();
 }
 
 // --- Claude Settings File Editor ---

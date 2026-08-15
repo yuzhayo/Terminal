@@ -41,8 +41,7 @@ struct TerminalPlan {
 // --- stateless helpers ---
 
 // Validates folder (and venv file when activate_venv is set) without launching
-// anything and without touching WSL. normalized receives the resolved path on
-// success.
+// anything and without touching WSL.
 TerminalPlan Plan(const TerminalRequest& request);
 
 // Launches the terminal, then persists the folder in settings.

@@ -12,7 +12,9 @@ if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
 if not exist "%OBJ_DIR%" mkdir "%OBJ_DIR%"
 if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
 
-set CXX_FLAGS=/std:c++20 /W4 /WX /EHsc /nologo /Zi /MDd /I"%SRC_DIR%"
+REM The "." avoids a trailing backslash inside the quoted /I path — cl parses
+REM \" as an escaped quote and then reports D8003 (missing source filename).
+set CXX_FLAGS=/std:c++20 /W4 /WX /EHsc /nologo /Zi /MDd /I"%SRC_DIR%."
 set LINK_FLAGS=/nologo /DEBUG
 
 echo Building Open-terminal-core...
@@ -107,7 +109,7 @@ if errorlevel 1 goto :error
 link %LINK_FLAGS% /out:"%BIN_DIR%\core_application_test.exe" ^
     "%OBJ_DIR%\core_application_test.obj" ^
     "%BIN_DIR%\open_terminal_core.lib" ^
-    shell32.lib ole32.lib shlwapi.lib
+    shell32.lib ole32.lib shlwapi.lib advapi32.lib user32.lib
 
 if errorlevel 1 goto :error
 
