@@ -16,7 +16,7 @@ namespace {
 
 constexpr std::uintmax_t kMaximumDocumentBytes = 4U * 1024U * 1024U;
 constexpr std::uintmax_t kMaximumLogBytes = 1024U * 1024U;
-constexpr wchar_t kEmbeddedSource[] = L"Assets\\ui\\terminal.ui.default.v1.json";
+constexpr wchar_t kEmbeddedSource[] = L"Assets\\ui\\core.json + Assets\\ui\\screens\\*.json";
 
 std::wstring Utf8ToWide(std::string_view value) {
     if (value.empty()) return {};

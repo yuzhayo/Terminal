@@ -43,6 +43,7 @@ bool RegisterJsonEditorAdapter(
     bridge.SetStringItems("viewState.jsonEditorTargets",
                           {L"Windows settings.json", L"Ubuntu settings.json"});
     bridge.SetStringValue("viewState.selectedJsonEditorTarget", "Windows settings.json");
+    bridge.SetStringValue("viewState.jsonEditorDraft", "");
     const ui::application::UiPatch initial = Load(bridge, *logic, *state, false);
     (void)initial;
 

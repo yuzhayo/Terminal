@@ -53,6 +53,7 @@ void Refresh(ui::application::StubApplicationBridge& bridge,
     bookmarks.reserve(state.bookmarks.size());
     for (const auto& bookmark : state.bookmarks) bookmarks.push_back(BookmarkLabel(bookmark));
     bridge.SetStringItems("viewState.chromeBookmarks", bookmarks);
+    bridge.SetStringValue("viewState.selectedChromeBookmark", "");
     const std::wstring selected_bookmark = logic.SelectedChromeBookmarkId();
     for (std::size_t index = 0; index < state.bookmarks.size(); ++index) {
         if (state.bookmarks[index].id == selected_bookmark) {
@@ -98,7 +99,18 @@ bool RegisterChromeAdapter(ui::application::StubApplicationBridge& bridge,
                           state->runtime == logic::features::ChromeRuntime::Windows
                               ? "Windows"
                               : "Ubuntu (WSL)");
+    bridge.SetStringValue("viewState.chromeUrl", "");
     Refresh(bridge, *logic, *state);
+    bridge.SetStringValue(
+        "viewState.chromeStatus",
+        state->visible_profiles.empty()
+            ? "Belum ada profile Chrome yang terlihat. Buka Profile Manager untuk memilih profile."
+            : "Profile Chrome siap digunakan.");
+    bridge.SetStringValue(
+        "viewState.profileStatus",
+        state->rows.empty()
+            ? "Belum ada cache profile. Tekan Refresh profiles untuk memindai."
+            : "Profile Chrome dimuat dari cache.");
 
     bool ok = true;
     ok = bridge.ReplaceAction(

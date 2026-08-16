@@ -26,7 +26,16 @@ logic::features::TerminalRequest RequestFrom(
 
 void RefreshRecentFolders(ui::application::StubApplicationBridge& bridge,
                           const logic::CoreApplication& logic) {
-    bridge.SetStringItems("viewState.recentFolders", logic.RecentFolders());
+    const std::vector<std::wstring> folders = logic.RecentFolders();
+    bridge.SetStringItems("viewState.recentFolders", folders);
+    const std::wstring current = logic.TerminalFolder();
+    if (std::find(folders.begin(), folders.end(), current) != folders.end()) {
+        bridge.SetStringValue("viewState.selectedRecentFolder", ToUtf8(current));
+    } else if (!folders.empty()) {
+        bridge.SetStringValue("viewState.selectedRecentFolder", ToUtf8(folders.front()));
+    } else {
+        bridge.SetStringValue("viewState.selectedRecentFolder", "");
+    }
 }
 
 ui::application::UiPatch Execute(ui::application::StubApplicationBridge& bridge,
@@ -51,6 +60,8 @@ bool RegisterTerminalAdapter(ui::application::StubApplicationBridge& bridge,
                           logic->TerminalVenvEnabled(logic::features::TerminalTarget::PowerShell)
                               ? "true" : "false");
     RefreshRecentFolders(bridge, *logic);
+    bridge.SetStringValue("viewState.terminalStatus",
+                          "Terminal siap. Pilih folder dan target untuk menjalankan.");
 
     bool ok = true;
     ok = bridge.ReplaceAction(

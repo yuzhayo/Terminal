@@ -1,0 +1,273 @@
+{
+  "id": "json-inject-screen",
+  "type": "Screen",
+  "style": {
+    "$ref": "styles.surface"
+  },
+  "routeId": "json-inject",
+  "children": [
+    {
+      "id": "json-inject-shell",
+      "type": "Container",
+      "style": {
+        "$ref": "styles.surface"
+      },
+      "layout": {
+        "width": "fill",
+        "height": "fill"
+      },
+      "direction": "column",
+      "gap": 10,
+      "overflow": "scroll",
+      "padding": {
+        "left": 24,
+        "top": 24,
+        "right": 24,
+        "bottom": 24
+      },
+      "children": [
+        {
+          "id": "json-inject-title",
+          "type": "Text",
+          "style": {
+            "$ref": "styles.text-title"
+          },
+          "text": "JSON INJECT",
+          "variant": "title"
+        },
+        {
+          "id": "json-inject-description",
+          "type": "Text",
+          "style": {
+            "$ref": "styles.text-body"
+          },
+          "text": "Kelola provider Claude lalu terapkan ke settings Windows atau Ubuntu WSL.",
+          "variant": "body"
+        },
+        {
+          "id": "json-inject-provider",
+          "type": "Combo",
+          "style": {
+            "$ref": "styles.combo"
+          },
+          "layout": {
+            "width": "fill"
+          },
+          "itemsBinding": {
+            "$bind": "viewState.injectProviders"
+          },
+          "selectedValueBinding": {
+            "$bind": "viewState.selectedInjectProvider"
+          },
+          "placeholder": "Pilih provider",
+          "events": {
+            "changed": {
+              "action": "select-inject-provider",
+              "payload": {}
+            }
+          }
+        },
+        {
+          "id": "json-inject-target",
+          "type": "Combo",
+          "style": {
+            "$ref": "styles.combo"
+          },
+          "layout": {
+            "width": "fill"
+          },
+          "itemsBinding": {
+            "$bind": "viewState.injectTargets"
+          },
+          "selectedValueBinding": {
+            "$bind": "viewState.selectedInjectTarget"
+          },
+          "placeholder": "Pilih target",
+          "events": {
+            "changed": {
+              "action": "select-inject-target",
+              "payload": {}
+            }
+          }
+        },
+        {
+          "id": "json-inject-base-url",
+          "type": "Input",
+          "style": {
+            "$ref": "styles.input"
+          },
+          "layout": {
+            "width": "fill"
+          },
+          "valueBinding": {
+            "$bind": "viewState.injectBaseUrl"
+          },
+          "placeholder": "https://api.example.com",
+          "events": {
+            "changed": {
+              "action": "update-inject-base-url",
+              "payload": {}
+            }
+          }
+        },
+        {
+          "id": "json-inject-model",
+          "type": "Input",
+          "style": {
+            "$ref": "styles.input"
+          },
+          "layout": {
+            "width": "fill"
+          },
+          "valueBinding": {
+            "$bind": "viewState.injectModel"
+          },
+          "placeholder": "Model ID",
+          "events": {
+            "changed": {
+              "action": "update-inject-model",
+              "payload": {}
+            }
+          }
+        },
+        {
+          "id": "json-inject-api-key",
+          "type": "Combo",
+          "style": {
+            "$ref": "styles.combo"
+          },
+          "layout": {
+            "width": "fill"
+          },
+          "itemsBinding": {
+            "$bind": "viewState.injectApiKeys"
+          },
+          "selectedValueBinding": {
+            "$bind": "viewState.selectedInjectApiKey"
+          },
+          "placeholder": "Pilih API key",
+          "events": {
+            "changed": {
+              "action": "select-inject-api-key",
+              "payload": {}
+            }
+          }
+        },
+        {
+          "id": "json-inject-api-key-draft",
+          "type": "Input",
+          "style": {
+            "$ref": "styles.input"
+          },
+          "layout": {
+            "width": "fill",
+            "height": 96
+          },
+          "valueBinding": {
+            "$bind": "viewState.injectApiKeyDraft"
+          },
+          "mode": "multiline",
+          "placeholder": "Label | API key (satu per baris)",
+          "events": {
+            "changed": {
+              "action": "update-inject-api-keys",
+              "payload": {}
+            }
+          }
+        },
+        {
+          "id": "json-inject-status",
+          "type": "Text",
+          "style": {
+            "$ref": "styles.text-body"
+          },
+          "textBinding": {
+            "$bind": "viewState.injectStatus"
+          },
+          "variant": "caption",
+          "automation": {
+            "name": "Status JSON Inject",
+            "live": "polite"
+          }
+        },
+        {
+          "id": "json-inject-actions",
+          "type": "Container",
+          "style": {
+            "$ref": "styles.surface"
+          },
+          "layout": {
+            "width": "fill"
+          },
+          "direction": "row",
+          "gap": 8,
+          "children": [
+            {
+              "id": "json-inject-validate",
+              "type": "Button",
+              "style": {
+                "$ref": "styles.button-default"
+              },
+              "label": "Simpan provider",
+              "events": {
+                "click": {
+                  "action": "save-inject-provider",
+                  "payload": {}
+                }
+              }
+            },
+            {
+              "id": "json-inject-apply",
+              "type": "Button",
+              "style": {
+                "$ref": "styles.button-primary"
+              },
+              "label": "Terapkan konfigurasi",
+              "variant": "primary",
+              "events": {
+                "click": {
+                  "action": "apply-inject",
+                  "payload": {}
+                }
+              }
+            },
+            {
+              "id": "json-inject-open-editor",
+              "type": "Button",
+              "style": {
+                "$ref": "styles.button-navigation"
+              },
+              "label": "Buka JSON Editor",
+              "variant": "navigation",
+              "events": {
+                "click": {
+                  "action": "navigate-route",
+                  "payload": {
+                    "routeId": "json-editor"
+                  }
+                }
+              }
+            },
+            {
+              "id": "json-inject-back-terminal",
+              "type": "Button",
+              "style": {
+                "$ref": "styles.button-subtle"
+              },
+              "label": "Terminal",
+              "variant": "subtle",
+              "events": {
+                "click": {
+                  "action": "navigate-route",
+                  "payload": {
+                    "routeId": "terminal"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

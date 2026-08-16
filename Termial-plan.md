@@ -179,7 +179,12 @@ Rumus atau algoritma boleh berada di C++; input visual dan hasil desainnya beras
 
 - Schema mempunyai identity baru dan `version: 1`.
 - Schema minimal mengikuti kebutuhan nyata V1 dan harus dapat ditambah tanpa merusak component lama.
-- Dokumen default lengkap di-embed ke executable.
+- Dokumen default lengkap di-embed ke executable. Source authoring dipecah menjadi
+  `Assets\ui\core.json` (envelope, tokens, styles, windows) dan satu file per screen di
+  `Assets\ui\screens\<routeId>.json`. `tools\Merge-UiConfig.ps1` menggabungkannya menjadi satu dokumen
+  default di `build\generated\ui\terminal.ui.default.v1.json` sebelum `ResourceCompile`; runtime tetap
+  menerima tepat satu embedded default dan satu override. Pemecahan ini adalah build-time authoring
+  concern, bukan perubahan runtime config contract.
 - Optional user override baru diterapkan di atas default baru hanya setelah seluruh override lolos
   parse, schema validation, dan reference validation. Override tidak pernah diterapkan sebagian.
 - Override membawa metadata minimum binary/config-contract version memakai version convention §25.4.
@@ -1229,7 +1234,7 @@ Struktur target:
 ```text
 C:\VSCODE\Teminal\
 ├── Assets\
-│   └── ui\                         # new schema/default documents only
+│   └── ui\                         # core.json + screens\<routeId>.json (build-time merged)
 ├── packaging\                     # Velopack manifests and release inputs
 ├── src\
 │   ├── main.cpp                    # minimal process bootstrap
@@ -2004,8 +2009,13 @@ pilihan.
 ### 25.4 Exact config identity, metadata, resource, path, dan diagnostic
 
 - schema identity exact: `yuzha.terminal.ui`; schema `version: 1`;
-- embedded source: `Assets\ui\terminal.ui.default.v1.json`; resource type `RT_RCDATA`,
-  symbolic ID `IDR_UI_DEFAULT_JSON`, numeric ID `201`;
+- embedded source authoring: `Assets\ui\core.json` + `Assets\ui\screens\<routeId>.json` (satu file per
+  screen, nama file adalah route ID, tanpa manifest). Build-time merge oleh
+  `tools\Merge-UiConfig.ps1` menghasilkan `build\generated\ui\terminal.ui.default.v1.json` yang di-embed
+  dengan resource type `RT_RCDATA`, symbolic ID `IDR_UI_DEFAULT_JSON`, numeric ID `201`. File hasil
+  merge adalah build artifact yang tidak tracked Git. Merge menggagalkan build bila JSON invalid,
+  `routeId` tidak sama dengan nama file, `core.json` memuat `screens`, nama file bukan lower-kebab-case,
+  atau hasil gabungan melewati batas 4 MiB/64 level §7.2;
 - optional override exact:
   `%LOCALAPPDATA%\Yuzha\Terminal\ui\override.v1.json`;
 - legacy filename/path tidak dicoba. Runtime tidak mencari `ui.json`, sibling executable config, nested

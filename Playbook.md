@@ -7,7 +7,8 @@ cara memakai kontrak tersebut tanpa memilih ulang stack.
 ## 1. Model kerja
 
 ```text
-terminal.ui.default.v1.json
+Assets/ui/core.json + Assets/ui/screens/*.json
+  -> tools/Merge-UiConfig.ps1 (saat build) -> build/generated/ui/terminal.ui.default.v1.json
   -> UiConfigGate + ResolvedUiDocument
   -> ApplicationContainer memiliki process/window registry
   -> WindowContainer memilih route aktif
@@ -23,7 +24,8 @@ second launch / tray / taskbar
   -> ApplicationContainer mengaktifkan route window yang ada atau membuat WindowContainer baru
 ```
 
-Route tidak memiliki inventory hardcoded. Semua key di object `screens` menjadi route yang valid.
+Route tidak memiliki inventory hardcoded. Setiap file `Assets/ui/screens/<routeId>.json` menjadi satu
+route yang valid; nama file adalah route ID. Tidak ada manifest — file baru otomatis ikut saat build.
 Screen baru dibuat ketika pertama dibuka, lalu disimpan di cache window. Screen yang tidak aktif tidak
 ikut layout atau paint.
 
@@ -43,8 +45,14 @@ dari component terdaftar dan logic dapat dipasang melalui action registry tanpa 
 
 ## 2. File utama
 
-- `Assets/ui/terminal.ui.default.v1.json`: window, screen, component tree, style reference, binding,
-  event, action, dan payload.
+- `Assets/ui/core.json`: envelope schema, token dark/light/highContrast, style, dan definisi window.
+  Tidak boleh memuat `screens`.
+- `Assets/ui/screens/<routeId>.json`: satu file per screen — component tree, style reference, binding,
+  event, action, dan payload. Nama file adalah route ID dan wajib sama dengan field `routeId` di dalam.
+- `tools/Merge-UiConfig.ps1`: menggabungkan `core.json` + seluruh `screens/*.json` menjadi
+  `build/generated/ui/terminal.ui.default.v1.json` sebelum `ResourceCompile`. Dipanggil otomatis oleh
+  `src/Terminal.vcxproj` dan `tests/TerminalTests.vcxproj`; jangan menjalankannya manual sebagai syarat
+  build. File hasil gabungan adalah build artifact — tidak tracked Git dan tidak boleh diedit.
 - `src/ui/config/resolved_ui_document.h/.cpp`: schema, validation, dan resolved object graph.
 - `src/ui/components/component_registry.cpp`: factory component yang tersedia untuk JSON.
 - `src/ui/application/ui_application_bridge.h`: envelope `UiEvent` dan hasil `UiPatch`.
@@ -69,12 +77,13 @@ dimigrasikan; business logic canonical yang dibangun aplikasi berada di `src/log
 
 Contoh berikut membuat route `profile-manager`.
 
-### Langkah 1 — Tambahkan screen ke JSON
+### Langkah 1 — Buat file screen baru
 
-Tambahkan entry langsung di dalam object `screens`:
+Buat file `Assets/ui/screens/profile-manager.json`. Nama file adalah route ID. Isi file adalah object
+screen itu sendiri (bukan dibungkus object `screens`):
 
 ```json
-"profile-manager": {
+{
   "id": "profile-manager-screen",
   "type": "Screen",
   "style": {
@@ -155,8 +164,10 @@ Tambahkan entry langsung di dalam object `screens`:
 
 Aturan penting:
 
-- key screen, `routeId`, component `id`, dan action ID memakai lower-kebab-case;
-- `routeId` wajib sama dengan key screen;
+- nama file screen, `routeId`, component `id`, dan action ID memakai lower-kebab-case;
+- `routeId` wajib sama dengan nama file tanpa ekstensi — build gagal bila tidak cocok;
+- satu file berisi tepat satu screen; screen tidak boleh ditulis di `core.json`;
+- tidak ada manifest untuk diperbarui — file baru di `Assets/ui/screens/` otomatis ikut saat build;
 - component `id` wajib unik di dalam satu screen tree;
 - setiap component wajib mempunyai `type` dan style `$ref` yang sudah tersedia;
 - field yang tidak dikenal ditolak sebagai config invalid;
@@ -188,10 +199,13 @@ Button navigation dapat ditempatkan di screen mana pun:
 
 `navigate-route` sudah terdaftar. `WindowContainer` memeriksa bahwa target memang ada di resolved
 `screens`, membuat screen saat akses pertama, lalu memakai instance cache pada akses berikutnya.
+Tombol dan screen tujuan boleh berada di file yang berbeda — validasi route dilakukan setelah seluruh
+file digabungkan, bukan per file.
 
 ### Langkah 3 — Opsional: jadikan initial route
 
-Setiap Window wajib mempunyai `initialRoute` yang menunjuk screen valid:
+Setiap Window wajib mempunyai `initialRoute` yang menunjuk screen valid. Window didefinisikan di
+`Assets/ui/core.json`:
 
 ```json
 "windows": {
@@ -208,7 +222,36 @@ Setiap Window wajib mempunyai `initialRoute` yang menunjuk screen valid:
 }
 ```
 
-Window adalah metadata/top-level host. Isi route berada di `screens`, bukan di `windows.*.children`.
+Window adalah metadata/top-level host. Isi route berada di file `Assets/ui/screens/<routeId>.json`,
+bukan di `windows.*.children`. `initialRoute` di `core.json` boleh menunjuk screen dari file mana pun.
+
+### Batas navigasi yang perlu diketahui sebelum mendesain ulang
+
+Fakta berikut sudah diverifikasi terhadap kode; jangan mencari ulang.
+
+**`windows.*.children` tidak pernah dirender.** `WindowContainer::ActivateRoute`
+(`src/ui/containers/window_container.cpp`) mengambil root component tree dari `document_->screens`,
+bukan dari `document_->windows`. `WindowComponent` memang punya `Measure`/`Arrange`/`Paint` yang
+mengiterasi children, tetapi tidak ada jalur yang menjadikannya root aktif. Konsekuensinya: chrome
+window persisten — tab bar, header, status bar global — belum didukung runtime. Menambahkannya berarti
+mengubah `WindowContainer` agar merender window sebagai frame dengan screen aktif di dalamnya, dan itu
+perubahan container (validation level 4), bukan perubahan JSON.
+
+**Tidak ada state route aktif.** Tidak ada `viewState` yang membawa route yang sedang tampil
+(`activeRoute`/`currentRoute` tidak ada di `src/`). `WindowContainer` mengetahuinya secara internal
+tetapi tidak pernah mempublikasikannya sebagai binding. Jadi penanda "tab aktif" lewat
+`Button.selected` belum bisa dilakukan dari JSON saja, meskipun `BooleanValue` sudah mendukung binding
+(`std::variant<bool, ValueBinding>` di `resolved_ui_document.h`).
+
+**Navigasi berantai adalah desain warisan, bukan kekeliruan.** Bentuk sekarang mengikuti hierarchy
+referensi §10 `Termial-plan.md` dan pola `Open-terminal-native/src/shell/main_window.*`, di mana nav
+dimiliki main window (`nav_[3]` + tombol Settings), hanya 3 route mendapat tab, dan sub-screen
+(JSON Editor, Chrome Profile Manager, UI Editor) dibuka dari induknya sambil mempertahankan highlight
+tab induk. Terminal saat ini mewarisi hierarchy-nya tanpa mewarisi chrome window-nya.
+
+**Konsekuensi praktis.** Tab bar hari ini hanya bisa ditulis sebagai Container + Button di dalam setiap
+file screen, yang berarti satu blok yang sama diduplikasi ke tiap file. Tidak ada mekanisme include atau
+partial di schema — gate hanya menerima satu dokumen utuh.
 
 ## 4. Menambahkan component ke screen
 
@@ -514,7 +557,10 @@ Lakukan ini hanya jika screen tidak dapat disusun dari component yang sudah ters
 
 ## 8. Build dan verification
 
-Jalankan dari root repository:
+Jalankan dari root repository. `tools\Merge-UiConfig.ps1` dipanggil otomatis oleh kedua project
+sebelum `ResourceCompile`, jadi mengedit `Assets/ui/**` cukup diikuti build biasa. Kesalahan JSON,
+`routeId` yang tidak cocok dengan nama file, atau `screens` di `core.json` menggagalkan build dengan
+menyebut nama file yang salah:
 
 ```powershell
 .\tools\Build.ps1 -Configuration Debug
@@ -522,6 +568,12 @@ Jalankan dari root repository:
 
 .\tools\Build.ps1 -Configuration Release
 .\build\x64\Release\TerminalTests.exe
+```
+
+Untuk memeriksa hasil gabungan tanpa build penuh:
+
+```powershell
+.\tools\Merge-UiConfig.ps1
 ```
 
 Atau build dan test dua configuration:
@@ -558,6 +610,7 @@ git status --short
 
 ### Checklist selesai
 
+- `tools\Merge-UiConfig.ps1` lulus dan nama file screen cocok dengan `routeId`-nya;
 - config embedded dapat di-resolve;
 - screen route baru ada di `ResolvedUiDocument.screens`;
 - startup `--route <route>` membuka screen yang benar;
@@ -573,14 +626,16 @@ git status --short
 
 | Error | Penyebab umum | Perbaikan |
 | --- | --- | --- |
-| `invalid-route` | route ID bukan lower-kebab atau `initialRoute` tidak ada di `screens` | Samakan screen key, `routeId`, navigation payload, dan `initialRoute` |
-| `route-mismatch` | `screens.<key>` berbeda dari `routeId` | Gunakan nilai yang sama |
+| build gagal di `Merge-UiConfig` | `routeId` tidak cocok nama file, `screens` ada di `core.json`, nama file bukan lower-kebab, atau JSON rusak | Baca nama file yang disebut pesan error lalu perbaiki file itu |
+| screen tidak muncul sama sekali | file tidak berada di `Assets/ui/screens/` atau ekstensinya bukan `.json` | Pindahkan file ke folder yang benar |
+| `invalid-route` | route ID bukan lower-kebab atau `initialRoute` tidak ada di `screens` | Samakan nama file screen, `routeId`, navigation payload, dan `initialRoute` |
+| `route-mismatch` | `routeId` berbeda dari nama file screen | Gunakan nilai yang sama |
 | `duplicate-component-id` | dua component dalam satu tree memakai ID sama | Beri ID stabil dan unik |
-| `missing-reference` | style/token `$ref` tidak tersedia | Gunakan ref yang sudah ada atau definisikan pada semua theme |
+| `missing-reference` | style/token `$ref` tidak tersedia | Gunakan ref yang sudah ada atau definisikan pada semua theme di `core.json` |
 | `unsupported-event` | event tidak didukung component type | Gunakan event pada tabel atau implementasikan contract baru |
 | `invalid-action` | action bukan lower-kebab-case | Gunakan format seperti `save-profile` |
 | action tidak bereaksi | handler belum diregistrasikan | Tambahkan feature registration dan test |
-| screen kosong | content masih diletakkan di `windows.*.children` | Pindahkan component tree ke `screens.<route>.children` |
+| screen kosong | content masih diletakkan di `windows.*.children` | Pindahkan component tree ke file screen-nya |
 
 ## 10. Menjaga playbook tetap benar
 

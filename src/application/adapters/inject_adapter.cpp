@@ -29,6 +29,7 @@ void Refresh(ui::application::StubApplicationBridge& bridge,
     std::vector<std::wstring> provider_labels;
     for (const auto& provider : state.providers) provider_labels.push_back(provider.label);
     bridge.SetStringItems("viewState.injectProviders", provider_labels);
+    bridge.SetStringValue("viewState.selectedInjectProvider", "");
     const std::wstring selected_provider = logic.SelectedBaseUrlId();
     for (const auto& provider : state.providers) {
         if (provider.id == selected_provider) {
@@ -42,6 +43,7 @@ void Refresh(ui::application::StubApplicationBridge& bridge,
     std::vector<std::wstring> key_labels;
     for (const auto& key : state.keys) key_labels.push_back(key.label);
     bridge.SetStringItems("viewState.injectApiKeys", key_labels);
+    bridge.SetStringValue("viewState.selectedInjectApiKey", "");
     const std::wstring selected_key = logic.SelectedApiKeyId();
     for (const auto& key : state.keys) {
         if (key.id == selected_key) {
@@ -62,6 +64,13 @@ bool RegisterInjectAdapter(ui::application::StubApplicationBridge& bridge,
     bridge.SetStringValue("viewState.injectBaseUrl", "");
     bridge.SetStringValue("viewState.injectApiKeyDraft", "");
     Refresh(bridge, *logic, *state);
+    bridge.SetStringValue(
+        "viewState.injectStatus",
+        state->providers.empty()
+            ? "Belum ada provider. Isi Base URL dan model, lalu simpan provider."
+            : state->keys.empty()
+                  ? "Provider dimuat. Tambahkan API key untuk menerapkan konfigurasi."
+                  : "Konfigurasi provider siap diterapkan.");
 
     bool ok = true;
     ok = bridge.ReplaceAction(

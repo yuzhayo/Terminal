@@ -231,9 +231,21 @@
     <None Include="app.manifest" />
     <None Include="..\Assets\Terminal-Icon.png" />
     <None Include="..\Assets\terminal.ico" />
-    <None Include="..\Assets\ui\terminal.ui.default.v1.json" />
+    <None Include="..\Assets\ui\core.json" />
+    <None Include="..\Assets\ui\screens\chrome-launcher.json" />
+    <None Include="..\Assets\ui\screens\chrome-profile-manager.json" />
+    <None Include="..\Assets\ui\screens\json-editor.json" />
+    <None Include="..\Assets\ui\screens\json-inject.json" />
+    <None Include="..\Assets\ui\screens\settings.json" />
+    <None Include="..\Assets\ui\screens\terminal.json" />
+    <None Include="..\Assets\ui\screens\ui-editor.json" />
+    <None Include="..\tools\Merge-UiConfig.ps1" />
     <ResourceCompile Include="app.rc" />
   </ItemGroup>
+  <Target Name="MergeUiConfig" BeforeTargets="PrepareForBuild;ResourceCompile">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)..\tools\Merge-UiConfig.ps1&quot;"
+          WorkingDirectory="$(ProjectDir).." />
+  </Target>
   <Target Name="CopyVelopackRuntime" AfterTargets="Build">
     <Copy SourceFiles="$(VelopackDir)lib\velopack_libc_win_x64_msvc.dll"
           DestinationFiles="$(OutDir)velopack_libc.dll" />

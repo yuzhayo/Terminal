@@ -133,5 +133,9 @@
     <ClCompile Include="..\src\platform\windows_runtime.cpp" />
     <ResourceCompile Include="test_resources.rc" />
   </ItemGroup>
+  <Target Name="MergeUiConfig" BeforeTargets="PrepareForBuild;ResourceCompile">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)..\tools\Merge-UiConfig.ps1&quot;"
+          WorkingDirectory="$(ProjectDir).." />
+  </Target>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

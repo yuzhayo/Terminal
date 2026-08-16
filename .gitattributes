@@ -1,0 +1,35 @@
+# Repository line-ending policy.
+#
+# Every tracked text file in this repository is LF in Git. Without this file a
+# CRLF-flipping editor produces diffs that are hundreds of lines long but contain
+# no real change, and `git diff --check` then fails on trailing whitespace for
+# every one of them.
+#
+# rc.exe embeds RCDATA payloads byte-for-byte, so JSON line endings are part of
+# the shipped executable. Keeping them LF makes the embedded bytes reproducible
+# across machines and CI.
+
+* text=auto eol=lf
+
+*.ps1     text eol=lf
+*.psm1    text eol=lf
+*.cmd     text eol=lf
+*.cpp     text eol=lf
+*.h       text eol=lf
+*.rc      text eol=lf
+*.vcxproj text eol=lf
+*.props   text eol=lf
+*.sln     text eol=lf
+*.json    text eol=lf
+*.yml     text eol=lf
+*.md      text eol=lf
+*.manifest text eol=lf
+
+*.png  binary
+*.ico  binary
+*.exe  binary
+*.dll  binary
+*.lib  binary
+*.pdb  binary
+*.zip  binary
+*.nupkg binary

@@ -31,6 +31,8 @@ bool RegisterSettingsAdapter(ui::application::StubApplicationBridge& bridge,
     bridge.SetStringValue("viewState.settingsConfirmBeforeRun",
                           logic->ConfirmBeforeRun() ? "true" : "false");
     bridge.SetStringItems("viewState.recentFolders", logic->RecentFolders());
+    bridge.SetStringValue("viewState.settingsStatus",
+                          "Settings dimuat dari penyimpanan user.");
 
     bool ok = true;
     ok = bridge.ReplaceAction(
