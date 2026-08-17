@@ -12,6 +12,7 @@
 #include "ui/components/list/list_component.h"
 #include "ui/components/screen/screen_component.h"
 #include "ui/components/scrollbar/scrollbar_component.h"
+#include "ui/components/tabs/tabs_component.h"
 #include "ui/components/text/text_component.h"
 #include "ui/components/toggle/toggle_component.h"
 #include "ui/components/window/window_component.h"
@@ -70,6 +71,10 @@ ComponentRegistry::ComponentRegistry() {
     Register(config::ComponentType::Scrollbar,
              [](const config::ResolvedComponent& definition, ComponentHost& host) {
                  return std::make_unique<ScrollbarComponent>(definition, host);
+             });
+    Register(config::ComponentType::Tabs,
+             [](const config::ResolvedComponent& definition, ComponentHost& host) {
+                 return std::make_unique<TabsComponent>(definition, host);
              });
 }
 

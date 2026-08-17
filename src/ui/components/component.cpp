@@ -316,6 +316,18 @@ void Component::AddChild(std::unique_ptr<Component> child) {
     }
 }
 
+std::unique_ptr<Component> Component::DetachChild(Component* child) {
+    const auto found = std::find_if(children_.begin(), children_.end(),
+                                    [child](const auto& candidate) {
+                                        return candidate.get() == child;
+                                    });
+    if (found == children_.end()) return {};
+    std::unique_ptr<Component> detached = std::move(*found);
+    children_.erase(found);
+    detached->parent_ = nullptr;
+    return detached;
+}
+
 void Component::CollectComponents(std::vector<Component*>& components) {
     components.push_back(this);
     for (const auto& child : children_) child->CollectComponents(components);

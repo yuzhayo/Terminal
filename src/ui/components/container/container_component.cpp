@@ -65,8 +65,24 @@ MeasuredSize ContainerComponent::Measure(HDC dc, int available_width, int availa
             else height += gap;
         }
     }
-    return ApplyConstraints({width + horizontal_padding, height + vertical_padding}, available_width,
-                            available_height);
+    MeasuredSize measured =
+        ApplyConstraints({width + horizontal_padding, height + vertical_padding}, available_width,
+                         available_height);
+
+    // A scrollable container is also a fluid viewport: with an auto dimension it
+    // grows to its content, but never beyond the space offered by its parent.
+    // Arrange() still measures the full child extent, so the difference becomes
+    // the scroll range instead of allowing content to escape the window.
+    if (properties.overflow == config::OverflowMode::Scroll) {
+        if (properties.direction == config::ContainerDirection::Row &&
+            definition_.layout.width.kind == config::DimensionKind::Auto) {
+            measured.width = std::min(measured.width, std::max(0, available_width));
+        } else if (properties.direction != config::ContainerDirection::Row &&
+                   definition_.layout.height.kind == config::DimensionKind::Auto) {
+            measured.height = std::min(measured.height, std::max(0, available_height));
+        }
+    }
+    return measured;
 }
 
 void ContainerComponent::Arrange(const RECT& bounds) {

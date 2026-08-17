@@ -730,14 +730,15 @@ ComponentType ParseComponentType(std::string_view value, std::string_view path) 
          {"Combo", ComponentType::Combo}, {"Checkbox", ComponentType::Checkbox},
          {"Toggle", ComponentType::Toggle}, {"Card", ComponentType::Card},
          {"List", ComponentType::List}, {"Scrollbar", ComponentType::Scrollbar},
-         {"Dialog", ComponentType::Dialog}},
+         {"Dialog", ComponentType::Dialog}, {"Tabs", ComponentType::Tabs}},
         path);
 }
 
 std::set<std::string_view> SpecificKeys(ComponentType type) {
     switch (type) {
         case ComponentType::Window: return {"title", "initialRoute", "initialWidth", "initialHeight", "minWidth", "minHeight", "resizable", "children"};
-        case ComponentType::Screen: return {"routeId", "children"};
+        case ComponentType::Screen: return {"routeId", "tabLabel", "showInTabs", "children"};
+        case ComponentType::Tabs: return {};
         case ComponentType::Container: return {"direction", "gap", "padding", "align", "justify", "wrap", "overflow", "children"};
         case ComponentType::Text: return {"text", "textBinding", "variant", "wrap", "selectable", "align"};
         case ComponentType::Button: return {"label", "variant", "selected", "tabStop"};
@@ -854,13 +855,18 @@ private:
                 return properties;
             }
             case ComponentType::Screen: {
-                ScreenProperties properties{ReadString(value, "routeId", path)};
+                ScreenProperties properties;
+                properties.route_id = ReadString(value, "routeId", path);
                 if (!route_ids_.contains(properties.route_id)) {
                     Fail("invalid-route", ChildPath(path, "routeId"),
                          "routeId does not reference a configured screen.");
                 }
+                properties.tab_label =
+                    ReadStringOr(value, "tabLabel", properties.route_id, path);
+                properties.show_in_tabs = ReadBoolOr(value, "showInTabs", true, path);
                 return properties;
             }
+            case ComponentType::Tabs: return TabsProperties{};
             case ComponentType::Container: {
                 ContainerProperties properties;
                 properties.direction = ParseEnum<ContainerDirection>(ReadStringOr(value, "direction", "column", path),

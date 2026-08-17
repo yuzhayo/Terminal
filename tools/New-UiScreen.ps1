@@ -45,6 +45,8 @@ $screen = [ordered]@{
         '$ref' = 'styles.surface'
     }
     routeId = $RouteId
+    tabLabel = $Title
+    showInTabs = $true
     children = @(
         [ordered]@{
             id = "$RouteId-content"
@@ -53,8 +55,8 @@ $screen = [ordered]@{
                 '$ref' = 'styles.surface'
             }
             layout = [ordered]@{
-                width = 'fill'
-                height = 'fill'
+                width = 'auto'
+                height = 'auto'
             }
             direction = 'column'
             gap = 12
@@ -112,4 +114,3 @@ $navigationButton = [ordered]@{
 Write-Host "Screen dibuat: $screenPath"
 Write-Host 'Salin component berikut ke children screen sumber untuk navigation:'
 Write-Host ($navigationButton | ConvertTo-Json -Depth 16)
-

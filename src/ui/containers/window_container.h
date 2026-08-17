@@ -95,6 +95,7 @@ private:
     void ApplyNonClientTheme() noexcept;
     void ApplyWindowRegion() noexcept;
     void UpdateMinimumTrackSize() noexcept;
+    void FitWindowToContent() noexcept;
     UINT HitTestResize(POINT point) const noexcept;
     void BeginResize(UINT hit, POINT screen_point) noexcept;
     void UpdateResize(POINT screen_point) noexcept;
@@ -149,6 +150,10 @@ private:
     std::map<std::string, ScreenRuntimeSnapshot, std::less<>> pending_screen_snapshots_;
     std::unique_ptr<components::Component> window_root_;
     components::Component* root_ = nullptr;
+    components::Component* screen_host_ = nullptr;
+    int content_minimum_width_ = 0;
+    int content_minimum_height_ = 0;
+    components::Component* active_screen_ = nullptr;
     std::string window_id_;
     std::string active_route_;
     std::uint64_t window_instance_id_ = 0;

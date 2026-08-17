@@ -1,17 +1,15 @@
 # Terminal — Locked Architecture and Delivery Plan
 
-Status: **spesifikasi implementasi V1 final; scaffold dan implementasi boleh langsung dimulai**
+Status: **snapshot struktur aktual; shell kosong tersedia, named screen belum ditentukan**
 
 Repository canonical: `C:\VSCODE\Teminal`
 
 Tanggal konsolidasi: 2026-08-14
 
-Dokumen ini menggabungkan seluruh keputusan implementasi V1. Toolchain, dependency, renderer, config,
-IPC, component contract, feed/channel, packaging, release, uninstall-data UX, runner CI, dan urutan
-business integration tidak boleh dipilih ulang saat coding. Exact contract berada di §25. Implementasi
-memakai default yang sudah ditentukan; build/test/measurement yang gagal menghasilkan bug untuk
-diperbaiki pada implementasi. Measurement dipakai untuk regression dan optimasi, bukan gate untuk
-memilih stack atau menahan source pertama.
+Dokumen ini mencatat arsitektur dan source shape yang benar-benar tersedia di checkout canonical.
+Kontrak generic renderer, config, IPC, component, packaging, dan release tetap menjadi referensi untuk
+kode yang sudah ada. Named screen, tab navigation, dan business content tidak boleh diklaim tersedia
+sebelum file/config/component-nya benar-benar ditambahkan.
 
 ## 1. Tujuan
 
@@ -83,8 +81,8 @@ Keputusan final adalah membuat UI baru, bukan memigrasikan UI lama.
 - Backend paint final V1: GDI software rendering ke top-down 32-bit BGRA DIB, satu persistent backbuffer
   per top-level window, lalu `BitBlt` ke window DC. Ini mengadopsi pola `BufferedPaint`, cached
   antialiased-corner tiles, `/MT`, dan native Edit dari `Open-terminal-native` ke object model baru.
-- Shape, border, fill, clipping, text, focus, alpha/tint, dan state component dirender oleh primitives
-  repository-owned. Alpha/tint pada primary opaque surface dikomposisi ke pixel BGRA terhadap resolved
+- Shape, border, fill, clipping, text, focus, alpha/tint, dan state component dirender oleh
+  component/rendering code repository-owned. Alpha/tint pada primary opaque surface dikomposisi ke pixel BGRA terhadap resolved
   parent background sebelum present; tidak ada child-window transparency hack.
 - Setiap top-level window mempunyai satu primary app-owned render surface. Dialog V1 digambar sebagai
   modal overlay pada surface parent yang sama dan tidak membuat top-level/popup `HWND` sendiri.
@@ -126,14 +124,16 @@ new embedded UI JSON + new user override
       WindowContainer  WindowContainer
               │           │
               ▼           ▼
-       Screen/component trees from JSON
+       Window/Container shell from JSON
+       (screen-host saat ini kosong)
               │
               ▼
-        UiApplicationBridge
+        UiApplicationBridge (event only)
        UiEvent out · UiPatch in
               │
               ▼
-   Stub first, business integration later
+ Stub action registry + registered adapters
+   (tidak reachable tanpa screen/action)
 ```
 
 Dependency direction hanya boleh mengalir ke bawah melalui kontrak. Business layer tidak boleh
@@ -331,22 +331,22 @@ baru dipublikasikan.
 - V1 tidak membuat atau memelihara `last compatible snapshot` tambahan. Mengembalikan binary ke versi
   yang kompatibel membuat override asli dapat dipakai lagi.
 - Error override harus terlihat sekali secara langsung dan tetap tercatat sebagai config diagnostic
-  aktif pada Settings/UI Editor sampai reload berikutnya berhasil. Jangan menerapkan sebagian override
-  dan jangan menyamarkan kegagalan sebagai keberhasilan.
+  aktif sampai reload berikutnya berhasil. Checkout saat ini belum memiliki diagnostic screen.
 - Diagnostic minimal membawa file/source identity, schema path atau JSON location bila tersedia,
   error code/category, dan pesan yang dapat ditindaklanjuti tanpa membocorkan secret.
-- UI Editor menulis override secara atomik: tulis temporary sibling pada data volume yang sama, flush,
-  lalu replace/rename destination. File lama tetap utuh bila write/flush/replace gagal; temporary file
-  dibersihkan secara best effort dan candidate baru tetap harus melewati `UiConfigGate` sebelum publish.
+- Penulis override masa depan wajib bekerja atomik: tulis temporary sibling pada data volume yang
+  sama, flush, lalu replace/rename destination. File lama tetap utuh bila write/flush/replace gagal;
+  candidate baru tetap harus melewati `UiConfigGate` sebelum publish.
 - Config diagnostic log berada di
   `%LOCALAPPDATA%\Yuzha\Terminal\logs\ui-config.log`. Kegagalan membuat directory, membuka,
   menulis, atau merotasi log tidak boleh menahan first frame, menggagalkan UI yang valid, atau memicu
-  dialog berulang; diagnostic aktif di Settings/UI Editor tetap menjadi jalur user-facing canonical.
+  dialog berulang.
 
 ### 8.2 Reload V1
 
 - Reload V1 hanya manual dan eksplisit; tidak ada file watcher.
-- UI Editor menggunakan entry point reload `UiConfigGate` yang sama, bukan jalur parse khusus.
+- Setiap tooling reload masa depan menggunakan entry point `UiConfigGate` yang sama, bukan jalur
+  parse khusus.
 - Gate lebih dahulu menghasilkan candidate resolved generation tanpa mengganti document aktif.
 - Sebelum candidate generation di-commit, setiap `WindowContainer` menormalkan transient UI state
   secara generik: tutup owned Combo popup, selesaikan active IME composition sesuai kontrak Input,
@@ -693,36 +693,32 @@ mengubah surface/ownership model.
 
 ## 10. Screen dan composition V1
 
-Named screen bukan business implementation. Pada stub phase, semuanya adalah composition JSON dengan
-placeholder data dan action.
-
-Inventory screen V1 yang diambil sebagai referensi dari aplikasi native saat ini:
-
-- Terminal;
-- JSON INJECT;
-- JSON Editor;
-- Chrome Launcher;
-- Chrome Profile Manager;
-- Settings;
-- UI Editor.
-
-Hierarchy referensi:
+Named screen bukan business implementation. Pada checkout saat ini belum ada named screen; directory
+`Assets\ui\screens` sengaja kosong. UI yang benar-benar aktif hanya composition JSON berikut:
 
 ```text
-Top-level navigation
-├── Terminal
-├── JSON INJECT
-│   └── JSON Editor
-├── Chrome Launcher
-│   └── Chrome Profile Manager
-└── Settings
-    └── UI Editor
+Window
+└── Container window-frame
+    ├── Container window-chrome
+    │   └── Button window-close
+    └── Container screen-host (kosong)
 ```
+
+Screen route baru belum menjadi bagian dari runtime aktif. Saat screen ditambahkan nanti, screen tersebut
+harus menjadi composition JSON di `Assets\ui\screens\<routeId>.json` dan dipasang ke `screen-host`;
+plan ini tidak mengklaim screen atau navigation yang belum ada.
 
 Aturan:
 
 - structure, static copy, layout, component binding, dan navigation binding screen berasal dari JSON;
 - Screen adalah composite UI component dan hanya mengoordinasikan UI miliknya;
+- `screen-host` adalah Container layout yang menampung tepat satu active `Screen`; screen lain tidak
+  ditumpuk sebagai child Container yang semuanya hidup bersamaan;
+- navigasi visual berbentuk tab membutuhkan `Tabs`/`TabBarComponent` khusus yang memilih `routeId`,
+  lalu `screen-host` mengganti active `Screen`. Component tersebut belum ada pada checkout saat ini
+  dan baru boleh ditambahkan ketika tab diminta;
+- tab internal yang bukan route boleh berada di dalam satu `Screen` dan menampilkan panel `Container`
+  milik screen itu; tab internal tidak mengubah identity/lifecycle route;
 - `ResolvedUiDocument` boleh memuat seluruh definisi screen, tetapi `WindowContainer` hanya merakit
   component tree route aktif pada first frame;
 - route lain dirakit saat pertama kali dinavigasi lalu di-cache per window selama identity/config
@@ -730,9 +726,6 @@ Aturan:
 - dynamic List selalu virtualized dan hanya materialize data/view row yang diperlukan viewport;
 - draft/status/scroll/focus milik instance screen/window;
 - screen tidak membaca storage business dan tidak menjalankan business service pada stub phase;
-- JSON Editor V1 memakai native multiline Edit tanpa line number, gutter, atau syntax highlighting.
-  Custom text editor dengan selection/IME/undo/scroll/render/accessibility milik aplikasi adalah
-  arsitektur post-V1, bukan field tambahan kecil pada component V1;
 - penambahan screen baru dilakukan melalui config + component/action registration yang eksplisit,
   bukan menambah logic ke dispatcher global.
 
@@ -756,7 +749,9 @@ Tanggung jawab:
 
 - bootstrap UI shell setelah config berhasil di-resolve;
 - menerima initial route dan command dari second launch, Jump List, atau taskbar;
-- memakai Terminal sebagai default route ketika startup tidak membawa route valid;
+- memakai `initialRoute` hanya bila route tersebut benar-benar terdaftar pada resolved document;
+  `Assets\ui\core.json` saat ini tidak mendaftarkan screen, sehingga startup hanya membuat shell
+  dengan `screen-host` kosong dan `active_route` kosong;
 - memiliki registry seluruh top-level window;
 - memiliki satu process-lifetime hidden infrastructure top-level `HWND` yang tidak pernah ditampilkan
   atau masuk taskbar; window ini bukan `HWND_MESSAGE` karena wajib menerima broadcast `TaskbarCreated`;
@@ -787,7 +782,7 @@ Larangan:
   window di gabungan visible + retained-hidden set. Matching external route selalu activate/restore,
   tidak pernah membuat visible/hidden duplicate.
 - Klik kiri tray icon mengaktifkan retained hidden route window. Bila tidak ada retained window, klik
-  kiri membuat window baru dengan default route Terminal.
+  kiri membuat window shell baru; route hanya dipilih bila ada pada resolved document.
 - Klik kanan membuka native context menu yang minimal berisi daftar route yang boleh dibuka serta
   explicit Exit.
 - Tray icon selalu mengirim callback ke infrastructure window, bukan ke visible/hidden route window
@@ -887,23 +882,14 @@ Model final:
 
 ```text
 Terminal process
-├── top-level Window A → WindowContainer → Terminal
-└── top-level Window B → WindowContainer → Chrome Launcher
+├── infrastructure window
+└── top-level Window → WindowContainer → screen-host kosong
 ```
 
-Behavior contoh wajib:
-
-1. Terminal sudah terbuka di Window A.
-2. User memilih taskbar/Jump List `Open Chrome Launcher`.
-3. Second launch meneruskan route ke proses yang sudah hidup.
-4. `ApplicationContainer` tidak mengganti Terminal di Window A.
-5. Jika Chrome Launcher window belum ada, buat Window B.
-6. Jika sudah ada, activate Window B tanpa membuat duplikat accidental.
-7. Menutup Window B tidak menutup Window A.
-8. Menutup seluruh visible window tetap meninggalkan aplikasi hidup di tray.
-
-Ini bukan multi-instance dan bukan split view. Taskbar tetap melihat satu aplikasi/proses dengan
-beberapa top-level window.
+Route-aware multi-window infrastructure sudah bersifat generic, tetapi dormant selama
+`Assets\ui\screens` kosong. Tidak ada contoh named route yang dianggap bagian dari produk saat ini.
+Ketika route benar-benar ditambahkan, second launch boleh mengaktifkan matching window atau membuat
+satu window baru tanpa mengganti route window lain. Ini bukan multi-instance atau split view.
 
 `reuse-per-route` dipilih untuk V1 karena memenuhi tujuan window terpisah tanpa memperbanyak instance
 route yang sama, mempertahankan state window yang sudah ada, dan memakai resource lebih sedikit.
@@ -1002,12 +988,8 @@ Bridge hanya routing dan translation antara typed contracts.
 Ketika business integration dimulai, data berikut secara konsep shared untuk seluruh window:
 
 - UI theme/config generation;
-- persisted application settings;
-- terminal preferences dan recent folder history;
-- provider/Base URL/API key/model data;
-- bookmarks dan URL history;
-- Chrome profile cache, visible profile order, dan preset;
-- shared business service, cache, dan background operation state.
+- state business yang kelak memang perlu konsisten lintas-window;
+- shared business service, cache, dan background operation state setelah feature tersebut dipasang.
 
 ### Per-window/component state
 
@@ -1019,7 +1001,6 @@ Ketika business integration dimulai, data berikut secara konsep shared untuk sel
 - ordered `ModalOverlayStack` beserta top active scope dan prior-focus chain;
 - input atau editor draft yang belum disimpan;
 - saved/baseline identity serta derived `IsDirty` milik component yang mempunyai editable draft;
-- preview/draft UI Editor;
 - generation yang diperlukan untuk mengabaikan async result yang sudah stale bagi window tersebut.
 
 Prinsip penentu: data yang harus konsisten di semua window menjadi shared application state; data
@@ -1056,13 +1037,13 @@ Dirty/close ownership yang dikunci:
   application setting ketika persistence business sudah dipasang.
 - Theme switch adalah pointer/state selection + theme-dependent resource invalidation, bukan reload,
   re-parse, atau config generation baru.
-- Theme change harus memperbarui native control colors, non-client/client painting yang dimiliki app,
-  focus visuals, dialog, dan tray menu yang dapat dikontrol tanpa restart aplikasi.
-- Standard title bar memakai SDK `DWMWA_USE_IMMERSIVE_DARK_MODE` value 20 pada locked build-19045-or-newer
-  baseline. Runtime tidak mencoba undocumented value 19. Attribute diterapkan pada setiap top-level
-  window setelah create/recreate dan diterapkan ulang saat effective theme berubah; kegagalan selalu
-  non-fatal dan membiarkan non-client area pada default OS.
-- UI Editor preview boleh menjadi per-window draft, tetapi Apply mengubah shared theme/config state.
+- Theme change harus memperbarui native control colors, client painting yang dimiliki app, focus
+  visuals, dialog, dan tray menu yang dapat dikontrol tanpa restart aplikasi.
+- Runtime masih memanggil `DWMWA_USE_IMMERSIVE_DARK_MODE` value 20 secara best effort, tetapi shell
+  aktual adalah frameless `WS_POPUP`; tidak ada standard title bar atau non-client visual yang menjadi
+  bagian dari UI contract.
+- Tooling editor masa depan boleh memiliki draft per-window, tetapi apply terhadap shared theme/config
+  state harus tetap melalui boundary aplikasi.
 
 ## 17. Stub-first boundary
 
@@ -1192,8 +1173,8 @@ Kontrak yang dikunci:
   installed version dapat dijalankan.
 - Installer/update wajib mempertahankan single-process routing, taskbar/Jump List identity, tray icon,
   shortcut, dan multi-window behavior setelah update.
-- Uninstall membersihkan program files dan integration milik aplikasi. Kebijakan mempertahankan atau
-  menghapus user data harus menjadi pilihan eksplisit, bukan penghapusan diam-diam.
+- Uninstall package membersihkan program files/integration menurut Velopack. Checkout saat ini tidak
+  memiliki UI atau marker flow untuk menghapus user data.
 - Installer, package, update bundle, symbols, dan generated feed metadata adalah build/release artifact
   dan tidak dimasukkan ke source Git.
 - Workflow release harus dapat membangun versioned Release x64, installer, update artifact, checksums/
@@ -1201,79 +1182,91 @@ Kontrak yang dikunci:
 - Membangun serta menguji artifact berada dalam scope plan. Mempublikasikan release/update ke user
   tetap memerlukan permintaan eksplisit user pada turn pelaksanaan.
 
-Exact local/production feed, channel, preview/public integrity, artifact command, unsigned V1 policy,
-dan uninstall-user-data UX dikunci di §25.7-§25.9. Tidak ada secret/certificate blocker untuk V1.
+Exact local/production feed, channel, preview/public integrity, artifact command, dan unsigned V1
+policy berada di §25.7-§25.8. Uninstall-data UI tidak ada pada checkout saat ini.
 
 ## 20. Target source ownership dan nama final
 
-Konvensi nama dikunci: file memakai `snake_case`, class/type memakai `PascalCase`, dan setiap class
-boleh mempunyai header contract serta tepat satu `.cpp` implementation utama. Nama inti final:
+Konvensi nama aktual: file memakai `snake_case`, class/type memakai `PascalCase`; implementation class
+memakai header dan `.cpp`, sedangkan interface/header-only contract boleh hanya memiliki `.h`. Nama inti:
 
 | Tanggung jawab | File | Class/type |
 | --- | --- | --- |
 | process-level UI lifecycle | `src/application/application_container.{h,cpp}` | `ApplicationContainer` |
 | process-global hidden message receiver | `src/application/application_infrastructure_window.{h,cpp}` | `ApplicationInfrastructureWindow` |
-| UI/business boundary | `src/application/ui_application_bridge.{h,cpp}` | `UiApplicationBridge` |
-| deterministic test application | `src/application/stub_application_bridge.{h,cpp}` | `StubApplicationBridge` |
+| UI/business boundary | `src/ui/application/ui_application_bridge.h` | `UiApplicationBridge` |
+| deterministic test application | `src/ui/application/stub_application_bridge.{h,cpp}` | `StubApplicationBridge` |
 | satu-satunya JSON gate | `src/ui/config/ui_config_gate.{h,cpp}` | `UiConfigGate` |
 | immutable typed UI config | `src/ui/config/resolved_ui_document.{h,cpp}` | `ResolvedUiDocument` |
-| process GDI cache/context registry owner | `src/ui/rendering/render_runtime.{h,cpp}` | `RenderRuntime` |
-| process cache untuk physical native-peer GDI resource | `src/ui/rendering/native_peer_gdi_resource_cache.{h,cpp}` | `NativePeerGdiResourceCache` |
-| per-window/surface render context | `src/ui/rendering/window_render_context.{h,cpp}` | `WindowRenderContext` |
-| Combo layered-popup render/present path | `src/ui/rendering/layered_popup_render_context.{h,cpp}` | `LayeredPopupRenderContext` |
-| one top-level window owner | `src/ui/container/window_container.{h,cpp}` | `WindowContainer` |
-| component creation/registration | `src/ui/registry/component_registry.{h,cpp}` | `ComponentRegistry` |
+| process GDI cache/context registry owner | `src/rendering/render_runtime.{h,cpp}` | `RenderRuntime` |
+| process cache untuk physical native-peer GDI resource | `src/rendering/native_peer_gdi_resource_cache.{h,cpp}` | `NativePeerGdiResourceCache` |
+| per-window/surface render context | `src/rendering/window_render_context.{h,cpp}` | `WindowRenderContext` |
+| Combo layered-popup render/present path | `src/rendering/layered_popup_render_context.{h,cpp}` | `LayeredPopupRenderContext` |
+| one top-level window owner | `src/ui/containers/window_container.{h,cpp}` | `WindowContainer` |
+| component creation/registration | `src/ui/components/component_registry.{h,cpp}` | `ComponentRegistry` |
 
 Nama component final mengikuti pola `<name>_component.{h,cpp}` dan `<Name>Component`: `WindowComponent`,
 `ScreenComponent`, `ContainerComponent`, `TextComponent`, `ButtonComponent`, `InputComponent`,
 `ComboComponent`, `CheckboxComponent`, `ToggleComponent`, `CardComponent`, `ListComponent`,
 `ScrollbarComponent`, dan `DialogComponent`.
 
-Struktur target:
+Struktur aktual:
 
 ```text
 C:\VSCODE\Teminal\
+├── .github\workflows\              # ci.yml dan release.yml
 ├── Assets\
-│   └── ui\                         # core.json + screens\<routeId>.json (build-time merged)
-├── packaging\                     # Velopack manifests and release inputs
+│   └── ui\                         # core.json aktif; screens\ adalah slot route kosong
+├── Terminal.sln
+├── version.props
+├── Playbook.md
+├── Termial-plan.md
+├── tools\                          # merge, build/package, dan installed-update scripts
 ├── src\
 │   ├── main.cpp                    # minimal process bootstrap
+│   ├── app\                        # identity/version headers
 │   ├── application\
 │   │   ├── application_container.*
 │   │   ├── application_infrastructure_window.*
-│   │   ├── ui_application_bridge.*
-│   │   └── stub_application_bridge.*
+│   │   └── adapters\               # UI-to-logic adapters
+│   ├── logic\                      # application facade, features, platform, storage
+│   ├── platform\                   # updater, paths, single-instance, runtime
+│   ├── rendering\                  # GDI DIB/BitBlt and popup surfaces
 │   └── ui\
+│       ├── accessibility\
+│       ├── application\
+│       │   ├── ui_application_bridge.h
+│       │   ├── ui_action_registry.{h,cpp}
+│       │   └── stub_application_bridge.{h,cpp}
 │       ├── config\
 │       │   ├── ui_config_gate.*
 │       │   └── resolved_ui_document.*
-│       ├── rendering\
-│       │   ├── render_runtime.*
-│       │   ├── native_peer_gdi_resource_cache.*
-│       │   ├── window_render_context.*
-│       │   └── layered_popup_render_context.*
-│       ├── container\
+│       ├── containers\
+│       │   ├── logical_focus_coordinator.*
+│       │   ├── modal_overlay_stack.*
+│       │   ├── overlay_plane.*
 │       │   └── window_container.*
-│       ├── registry\
-│       │   └── component_registry.*
-│       ├── primitives\
-│       │   └── <technical primitive by responsibility>.*
-│       └── components\
-│           ├── window\window_component.*
-│           ├── screen\screen_component.*
-│           ├── container\container_component.*
-│           ├── text\text_component.*
-│           ├── button\button_component.*
-│           ├── input\input_component.*
-│           ├── combo\combo_component.*
-│           ├── checkbox\checkbox_component.*
-│           ├── toggle\toggle_component.*
-│           ├── card\card_component.*
-│           ├── list\list_component.*
-│           ├── scrollbar\scrollbar_component.*
-│           └── dialog\dialog_component.*
+│       ├── components\
+│       │   ├── component.*
+│       │   ├── component_registry.*
+│       │   └── editable_draft_state.*
+│       └── theme\
+│           └── theme_platform_adapter.*
 └── tests\
+    ├── test_main.cpp
+    └── performance\
 ```
+
+Component directories currently present under `src/ui/components` are:
+
+```text
+window, screen, container, text, button, input, combo, checkbox, toggle,
+card, list, scrollbar, dialog
+```
+
+Tidak ada directory `packaging`, `src/ui/rendering`, `src/ui/container`,
+`src/ui/registry`, atau `src/ui/primitives` pada checkout ini; build/package scripts
+berada di `tools` dan output berada di ignored `build`/`artifacts`.
 
 Ini menetapkan ownership dan penamaan final untuk V1. Nama interface/helper teknis tambahan ditentukan
 hanya ketika kontraknya nyata. Jangan membuat directory kosong sebelum phase yang benar-benar
@@ -1305,7 +1298,7 @@ memuat embedded config, menerima second launch, dan keluar orderly. Release work
 2. Implement exact local preview feed/channel, version flags, integrity gate, artifact command, dan
    installed-update automation §25.7-§25.8.
 3. Implement production GitHub Release unsigned-V1 contract §25.7-§25.8 dan SHA-256 release summary.
-4. Implement uninstall-data UX §25.9 serta locked manual-elevation behavior §19.
+4. Pertahankan locked manual-elevation behavior §19. Uninstall-data UI bukan bagian dari shell saat ini.
 
 Exit criteria Phase 0B: packaging route dan script `N → N+1` tersedia. Kegagalan preview dicatat dan
 diperbaiki tanpa membuka kembali pemilihan packaging stack.
@@ -1432,120 +1425,33 @@ Temuan diperbaiki iteratif; ia tidak membuka renderer atau component contract ba
    retained hidden route window, release/recreate hidden render resources, hidden-window route reuse,
    tray-failure restore/fallback Exit, dan explicit Exit. Confirmation wajib memakai Dialog Phase 3B.
 
-Exit criteria: Terminal dapat tetap terbuka ketika Chrome Launcher muncul di top-level window kedua;
-tidak ada accidental duplicate untuk external route; newest retained/Cancel/Exit behavior lulus tanpa
+Exit criteria: mekanisme multi-window/reuse tetap route-agnostic dan tidak mengklaim route yang belum
+terdaftar; pada konfigurasi sekarang hanya shell kosong yang dapat dibuat. Tidak ada accidental
+duplicate untuk external route yang valid; newest retained/Cancel/Exit behavior tidak boleh membuat
 data loss atau window yang tidak dapat dijangkau.
 
-### Phase 5 — Stub application dan installed-update validation gate
+### Phase 5 — UI shell current state
 
-1. **DONE 2026-08-15:** lengkapi semua placeholder screen dan deterministic data.
-2. **DONE 2026-08-15:** validasi setiap navigation binding, UiEvent, bridge route, dan
-   UiPatch/ViewState.
-3. **DONE 2026-08-15 (scope Phase 5: automated/current-machine smoke sebagai validation
-   gate):** `tools\Smoke-Runtime.ps1` 48 check PASS pada Windows 10 19045 / 100% DPI,
-   termasuk check theme/list/dialog yang benar-benar melakukan assertion: tujuh route
-   no-blank diukur pada client area (PrintWindow, kebal overlay aplikasi lain) + clean
-   exit; multi-window + second-launch IPC + no-duplicate-route; retained hidden window,
-   restore via matching route, infrastructure window; USER/GDI counter steady dan
-   idle-stable; resize repaint no-blank; Tab focus, Combo popup buka F4/tutup Escape
-   (deteksi popup via EnumWindows karena FindWindow/FindWindowEx terbukti tidak reliably
-   di mesin ini), popup tetap visible dan dirender ulang saat theme switch ketika terbuka,
-   popup open/close cycle tanpa USER/GDI growth; List keyboard scroll dibandingkan
-   setelah focus sudah berada pada List dan wajib mengubah lebih dari 500 sampled pixel
-   client; Dialog buka (overlay client berubah besar) dan tutup Escape (overlay
-   hilang) diverifikasi via diff client area; Dark/Light live switch default-run
-   (luminance client 243.3 vs 40.4) dengan restore theme terjamin try/finally (value
-   registry dihapus bila tadinya tidak ada). Harness memakai BringToFront
-   (AttachThreadInput) karena proses lain dapat memegang foreground. Headless contract
-   tests menambah DPI transition (window/popup), UIA patterns (Dialog/List/modal scope),
-   nested modal suppression, focus traversal, virtualization, reload reconciliation,
-   close transaction, dan ThemePlatformAdapter. Matrix manual/lingkungan berikut
-   **deferred to Phase 7** (bukan PASS): DPI 125/150/200% (butuh perubahan system
-   scale/sign-out atau monitor kedua), Windows 11 release-primary matrix (mesin saat ini
-   hanya Windows 10), Narrator audio (interaktif), IME composition interaktif termasuk
-   reload saat composition aktif (butuh IME live), klik tray icon sintetis (butuh
-   interaksi shell nyata), dan High Contrast live re-run berulang (toggle HC mematikan
-   console agent di mesin ini; jalur HC tetap tersedia via `-ThemeMatrix`).
-4. **DONE 2026-08-15 (scope Phase 5):** package preview `0.1.0` dan `0.1.1` dihasilkan
-   (`tools\Build-Package.ps1`, channel `win-preview`, delta + feed + SHA256SUMS lulus).
-   Clean install `0.1.0` dan first launch lulus (window terlihat, exit 0). Update installed
-   `0.1.0 → 0.1.1` lulus melalui local preview feed: `result.json`
-   `artifacts\installed-update-results\0.1.0-to-0.1.1` `passed=true`. Sandbox Windows
-   menolak run karena image 19041 < 19045 — penolakan itu sendiri membuktikan runtime
-   gate build; run final memakai CurrentUser dengan cleanup uninstall. Verifikasi literal
-   jaringan dimatikan (network-disabled clean install/first launch) **deferred to Phase 7**
-   karena membutuhkan admin/physical disconnect di luar privilege sesi ini; bukti pendukung
-   saat ini: Setup memakai embedded bundle penuh tanpa download (log Velopack) dan startup
-   path tidak memanggil network API apa pun. Bukti lama tidak boleh dikutip ulang bila
-   source final berubah tanpa re-run.
-5. **DONE 2026-08-15:** file/product version berubah `0.1.0.0 → 0.1.1.0`, aplikasi
-   launchable setelah update, sentinel data di `%LOCALAPPDATA%\Yuzha\Terminal` bertahan
-   (`dataPreserved=true`), single instance dan shortcut diverifikasi, uninstall menghapus
-   program files tetapi mempertahankan data root.
-6. **DEFERRED 2026-08-15 (non-blocking, moved to Phase 6 item 7):** yang sudah tervalidasi
-   dalam Phase 5: default uninstall preserve-data, shortcut/taskbar identity, update staging
-   Velopack, dan `--update-now` CLI. Sisa item — scheduled check 24 jam setelah frame+idle,
-   no-auto-download, consent download/restart UI, atomic `updater\state.json`, retained
-   package/staged-file cleanup, `PrepareCloseAll` sebelum apply, rollback previous package,
-   update-while-running end-to-end, dan tray setelah Explorer restart — bergantung pada updater
-   application service dan Deployment UI yang baru diimplementasikan pada Phase 6 item 7;
-   validasinya mengikuti Phase 6 item 7 lalu release validation Phase 7. Item ini tidak
-   dihitung DONE pada Phase 5.
-7. **DEFERRED 2026-08-15 (non-blocking, moved to Phase 7):** bukti pendahuluan
-   (development measurement, installed 0.1.0, 10 sample): cold
-   first visible frame p95 `64.3 ms` (target 250); layered popup full-surface p95
-   `10.8 ms` (target 33); first route visible `44 ms`; route assembly pertama `117 ms`
-   termasuk overhead process/IPC harness (target app-owned 100); idle private commit
-   `5.2 MiB` (target 64), working set diagnostic `18.5 MiB`; 100 cycle
-   close→retained→restore `0` failure dengan USER `89→89`, GDI `17→17`, satu top-level
-   (`tools\Smoke-Runtime.ps1 -CycleOnly`). Pengukuran berprivilege — ETL/`wpr.exe` trace,
-   input-to-paint live-app, resize frame timing, dan TraceLogging breakdown — **deferred
-   to Phase 7** karena membutuhkan admin pada mesin ini; harness dan marker sudah
-   tersedia. Release candidate tetap wajib 30 sample.
-8. **DONE 2026-08-15:** manifest `asInvoker`; token process installed terverifikasi
-   `elevated=False`; second-launch routing same-user lulus pada installed build;
-   tidak ada `ChangeWindowMessageFilterEx` di source; elevated business helper baru
-   relevan pada Phase 6 Terminal launcher.
-9. **DONE 2026-08-15 (untuk snapshot Phase 5):** build Phase 5 adalah stub murni — tidak
-   ada API process-launch/network/shell aktif di `src`, tidak ada business side effect,
-   dan tidak ada dependency ke nested reference repository pada source/project file; tidak
-   ada secret, binary, atau artifact ter-track; `.gitignore` mencakup build/package/log.
-   Pekerjaan Phase 6 (misalnya TerminalLauncher) tidak dihitung dalam audit item ini sampai
-   phase-nya sendiri. Temuan pre-existing: 42 file `Open-terminal-core` ter-track root
-   sejak commit sebelum plan ini; tetap hanya referensi tanpa dependency build; cleanup
-   menunggu otorisasi legacy.
+Phase 5 sekarang hanya mencatat struktur yang benar-benar ada setelah screen placeholder dibersihkan:
 
-Penutupan Phase 5: automated/current-machine smoke diterima sebagai validation gate Phase 5.
-Verdict Phase 5: **PASS untuk scope Phase 5** — exit criteria runtime (build Debug/Release,
-seluruh contract tests, visible runtime smoke current-machine, package preview, clean install,
-dan installed update `N → N+1`) benar-benar lulus pada snapshot ini. Item 6 dan 7 yang belum
-tersedia tanpa business integration/release environment berstatus DEFERRED non-blocking dan
-dipindahkan secara eksplisit ke Phase 6 item 7 (updater application service + Deployment UI)
-serta Phase 7 (pengukuran berprivilege dan release candidate 30 sample). Pemeriksaan yang
-dipindahkan tidak dihitung lulus di sini dan tetap wajib pada phase tujuan.
+1. `Assets\ui\core.json` adalah satu-satunya source UI aktif.
+2. `Assets\ui\screens` tetap ada sebagai slot route, tetapi kosong; tidak ada placeholder screen,
+   navigation route, deterministic screen data, atau screen content yang boleh diklaim tersedia.
+3. Runtime aktif merakit `Window → Container(window-frame) → window-chrome(X) + screen-host kosong`.
+4. Window shell memakai `WS_POPUP`, rounded region, border renderer JSON, dan custom resize; tidak ada
+   Windows titlebar/non-client resize frame.
+5. Exit criteria shell: JSON merge menghasilkan `0 screen`, Debug build lulus, executable dapat dibuat
+   dan frame kosong dapat dipresentasikan. Screen baru menjadi pekerjaan berikutnya melalui JSON, bukan
+   dengan menambahkan content default ke shell.
 
-Exit criteria: UI runtime dinyatakan PASS hanya jika build, contract tests, visible Windows smoke,
-clean install, dan `N → N+1` installed update lulus. Jika visible/install/update smoke tidak tersedia,
-verdict maksimal PARTIAL.
+### Phase 6 — Business wiring aktual, belum dipresentasikan oleh UI
 
-### Phase 6 — Business integration, terpisah
-
-Phase ini dimulai hanya setelah stub UI disetujui user.
-
-Urutan final mengikuti dependency dan implementasi yang sudah bekerja di dua repository referensi:
-
-1. Terminal launcher: PowerShell Admin, PowerShell, dan Ubuntu/WSL dengan selected folder.
-2. Settings/storage: theme, terminal preferences, recent folders, startup-to-tray, dan persistence.
-3. Chrome Launcher: cached Windows/WSL profile metadata, bookmark/URL state, launch, lalu Profile Manager.
-4. JSON INJECT: provider/config selection, Windows/WSL target, validation, backup, dan atomic write.
-5. JSON Editor: open, edit, dirty state, validate, backup/restore, save, dan error handling.
-6. UI Editor: edit draft, preview, apply/save, token preservation, reload, dan rollback diagnostic.
-7. Deployment UI: manual/scheduled update state, download consent, apply/restart, dan uninstall choice.
-
-Untuk setiap nomor: raw logic yang relevan berada di `src/logic/features`, facade typed berada di
-`src/logic/application`, dan adapter plug-and-play berada di `src/application/adapters`. Setiap action
-JSON tetap mempunyai fallback stub; adapter nyata memasangnya melalui `ReplaceAction` tanpa branch
-feature di component atau `WindowContainer`. Aplikasi tidak membangun source dari folder referensi.
+Raw logic sudah berada di `src/logic`, facade typed berada di `src/logic/application`, dan adapter
+plug-and-play berada di `src/application/adapters`. `src/main.cpp` mendaftarkan adapter Terminal,
+Settings, Chrome, Inject, dan JSON Editor ke `StubApplicationBridge` melalui `ReplaceAction`.
+Namun tidak ada business screen, feature route, atau content default pada checkout saat ini, sehingga
+action tersebut tidak reachable dari UI. Pekerjaan berikutnya adalah menambah screen/action JSON hanya
+ketika user menentukan screen; jangan menambah content otomatis ke shell kosong.
 
 ### Phase 7 — Release readiness, cutover, dan legacy retirement
 
@@ -1727,7 +1633,7 @@ run dicatat terpisah. Angka berikut adalah target regression V1, bukan blocker p
 - application-owned UI-thread work untuk satu input event: p95 maksimal 8 ms;
 - resize/layout/paint frame selama deterministic resize: p95 maksimal 16.7 ms dan tidak ada single
   application-owned stall di atas 50 ms;
-- idle private commit setelah 10 detik settle pada satu Terminal stub window: target maksimal 64 MiB;
+- idle private commit setelah 10 detik settle pada satu shell window: target maksimal 64 MiB;
   total working set tetap direkam sebagai diagnostic dan bukan hard PASS/FAIL metric;
 - process baseline mempunyai tepat satu hidden infrastructure top-level `HWND`; visible route window
   menambah satu top-level `HWND` per window, instantiated native Edit menambah child `HWND`, dan active
@@ -1746,7 +1652,7 @@ selama build, behavior utama, dan data safety tetap berfungsi; target tidak diha
 ### Multi-window dan tray
 
 - Satu proses dapat memiliki minimal dua independent top-level window.
-- External Chrome Launcher route tidak mengganti Terminal window yang sudah terbuka.
+- External configured route tidak mengganti route pada window lain yang sudah terbuka.
 - External route mengaktifkan matching window yang sudah ada atau membuat satu bila belum ada.
 - Same-window navigation ke route yang sama adalah no-op; visible match lain diaktifkan, sedangkan
   retained match dipulihkan lewat canonical DPI/layout/resource/frame-before-show path dan mengosongkan
@@ -1760,7 +1666,8 @@ selama build, behavior utama, dan data safety tetap berfungsi; target tidak diha
 - Jika retained hidden window lama sudah ada, close atas last visible route window menjadikan window
   terbaru sebagai retained setelah old-retained `PrepareClose` berhasil. Cancel mempertahankan old
   retained dan membiarkan newest window visible; tidak ada state yang dihancurkan sebagian.
-- Klik kiri tray memulihkan retained hidden route window atau membuat Terminal window bila tidak ada.
+- Klik kiri tray memulihkan retained hidden route window atau membuat shell window bila tidak ada;
+  route hanya dipilih jika sudah terdaftar.
 - Klik kanan tray menyediakan route dan Exit; Explorer restart memasang kembali icon.
 - Satu hidden infrastructure top-level window menerima tray callback, `TaskbarCreated`, second-launch,
   dan process-global OS-state signal sepanjang umur proses.
@@ -1857,15 +1764,15 @@ Minimum setiap implementation phase:
   dan no-duplicate-route registry assertion;
 - performance harness untuk first-complete-visible-frame, route, input-to-paint, layered-popup
   full-surface update/copy, resize, private commit, diagnostic working set, `HWND`, USER/GDI handle,
-  render-context/cache-entry/native-peer-GDI-lease counter, 100-cycle no-growth check, serta all-route
-  open/close scenario. Startup report memisahkan bootstrap/config, layout/render, BitBlt, dan visible;
+  render-context/cache-entry/native-peer-GDI-lease counter, serta 100-cycle no-growth check. Route
+  scenario baru berlaku setelah minimal satu screen benar-benar terdaftar;
 - clean-install smoke dari artifact, bukan build directory;
 - offline `Setup.exe` clean-install/first-launch smoke dengan jaringan dimatikan;
 - installed update smoke dari version `N` ke version `N+1`;
 - preservation check untuk config/settings/cache/user data yang relevan;
 - failed/invalid update dan uninstall smoke;
 - package version, manifest/checksum/signature, shortcut, taskbar, tray, dan installed-path checks sesuai
-  locked contract §25.7-§25.9;
+  locked contract §25.7-§25.8;
 - second-launch routing same-user/session pada locked per-user privilege/install scope, termasuk explicit
   behavior ketika executable diluncurkan manual dengan elevated token;
 - pemeriksaan bahwa nested repositories tidak berubah;
@@ -1899,20 +1806,20 @@ berikut. Bila build/test/runtime gagal, perbaiki implementasi atau pin yang rusa
 menahan pekerjaan untuk membuat plan pembuktian baru. User hanya perlu diminta lagi bila perubahan
 menyentuh product scope, business semantics, privilege, user-data deletion, atau publication external.
 
-### 25.1 Status freeze
+### 25.1 Status aktual
 
-| Area | Status sebelum source | Closure berikutnya |
-| --- | --- | --- |
-| arsitektur dan product behavior | locked | hanya berubah melalui keputusan user |
-| Phase 0A technical contract | locked di §25.2-§25.6 | implementation verification, bukan stack selection |
-| Phase 0B production contract | locked di §25.7-§25.9 | implement unsigned V1 workflow yang sudah ditentukan |
-| primary presentation | locked GDI DIB + BitBlt | implement §25.3; tidak ada backend probe |
-| performance/resource target | locked regression target §22 | ukur, catat, lalu optimalkan bila gagal |
-| field/flags per component | locked §25.10 | implement sesuai schema/default table |
-| business integration order | locked Phase 6 | Terminal → Settings → Chrome → Inject → JSON Editor → UI Editor → Deployment |
+| Area | Status checkout |
+| --- | --- |
+| renderer | GDI persistent DIB + BitBlt berada di `src/rendering` |
+| component system | registry dan component Window/Screen/Container/Text/Button/Input/Combo/Checkbox/Toggle/Card/List/Scrollbar/Dialog tersedia |
+| top-level shell | frameless rounded `WS_POPUP`, custom resize, close button, dan `screen-host` kosong |
+| source UI | hanya `Assets\ui\core.json`; tidak ada file screen/route aktif |
+| tab navigation | belum ada component Tabs/TabBar |
+| business integration | tidak dipresentasikan oleh shell; screen/action ditambahkan hanya atas permintaan user |
+| packaging/release | scripts/workflow tersedia; tidak berarti release dipublikasikan |
 
-Plan tidak membutuhkan dokumen `AGENTS.md` atau implementation-plan kedua. `Termial-plan.md` adalah
-satu-satunya spesifikasi delivery root. Phase 0 dimulai dengan membuat scaffold, bukan audit tambahan.
+Root tidak memakai `AGENTS.md` atau implementation-plan kedua. `Termial-plan.md` harus tetap mengikuti
+checkout aktual dan tidak boleh dipakai untuk menghidupkan kembali screen yang sudah dihapus.
 
 ### 25.2 Exact toolchain, project, dependency, dan test contract
 
@@ -2025,14 +1932,14 @@ pilihan.
   `tokens/styles/windows/screens`;
 - binary V1 mengompilasi `readerContract=1` dan `writerContract=1`. `minimumReaderContract` adalah integer
   positif; override diterapkan hanya bila nilainya `<= readerContract`. `writtenBy.appVersion` hanya
-  diagnostic SemVer dan tidak menentukan compatibility. UI Editor mengisi minimum contract tertinggi
-  dari field yang ditulis;
+  diagnostic SemVer dan tidak menentukan compatibility. Penulis override masa depan mengisi minimum
+  contract tertinggi dari field yang ditulis;
 - binary lama yang melihat minimum reader lebih tinggi menolak seluruh override, mempertahankan bytes,
   memakai embedded default, dan menampilkan rollback-incompatible diagnostic;
-- persistent config banner berada di bagian atas Settings/UI Editor dengan severity, error code,
-  source/path, JSON pointer/line-column bila ada, dan pesan `Override UI tidak diterapkan`. Banner tidak
-  hilang oleh navigation/close Settings dan baru clear setelah load/reload sukses; action yang tersedia
-  hanya `Buka UI Editor` dan `Coba reload`, bukan silent reset/delete;
+- UI diagnostic screen/banner belum ada pada checkout saat ini. Bila ditambahkan nanti, ia menerima
+  severity, error code, source/path, JSON pointer/line-column bila ada, dan pesan
+  `Override UI tidak diterapkan` dari diagnostic state yang sama; tidak boleh membuat parser/reload
+  path kedua atau silent reset/delete;
 - root data tetap `%LOCALAPPDATA%\Yuzha\Terminal`; config log
   `logs\ui-config.log`; updater state `updater\state.json`; measurement artifact tidak pernah ditulis ke
   data root normal dan berada di ignored repository `artifacts\measurements` atau test temp directory.
@@ -2105,14 +2012,15 @@ UTF-8 JSON tanpa NUL wajib. Request menolak duplicate/unknown field dan nesting 
   "version": 1,
   "requestId": "lowercase-uuid",
   "command": "open-route",
-  "arguments": { "routeId": "terminal" }
+  "arguments": { "routeId": "<configured-route-id>" }
 }
 ```
 
 Command/arguments exact:
 
 - `activate-default`: `{}`;
-- `open-route`: `{ "routeId": <terminal|json-inject|json-editor|chrome-launcher|chrome-profile-manager|settings|ui-editor> }`;
+- `open-route`: `{ "routeId": <configured lower-kebab-case route ID> }`; tidak ada route ID yang
+  terdaftar pada `Assets\ui\core.json` saat ini, sehingga command ini belum memiliki target aktif;
 - `request-exit`: `{}`.
 
 Receiver menyalin payload selama handler, parse/validasi, lalu memasukkan semantic event ke bounded
@@ -2188,7 +2096,7 @@ version, SHA256SUMS, dan—bila previous release tersedia—delta package. Outpu
 offline Setup, meluncurkan installed path, mengarahkan source ke local `win-preview` feed dengan test
 source environment, menjalankan check/download/consent/apply, menunggu restart, lalu memeriksa file/product version
 N+1, preserved data, no mixed version files, single-instance routing, tray/shortcut, failed/corrupt
-package survival, explicit downgrade test, uninstall-preserve, dan uninstall-delete UX.
+package survival, dan explicit downgrade test. Script saat ini tidak memiliki uninstall-delete UX.
 
 Isolation exact: pada GitHub Actions script berjalan langsung pada disposable `windows-2022` runner dan
 lebih dahulu memastikan package ID belum terpasang. Pada mesin developer default memakai generated
@@ -2218,42 +2126,6 @@ dotnet vpk upload github `
 `GITHUB_TOKEN` hanya repository-scoped `contents: write`. Release dispatch/publication selalu memerlukan
 instruksi eksplisit user; plan ini tidak mengotorisasi push, tag, workflow dispatch, atau publish.
 
-### 25.9 Exact uninstall-user-data UX dan deletion safety
-
-Default uninstall dari Windows Settings/Velopack selalu mempertahankan
-`%LOCALAPPDATA%\Yuzha\Terminal`. Ia menghapus versioned program files, shortcuts, taskbar/Jump
-List/Explorer integration milik aplikasi, serta installer registration; tidak menghapus config,
-settings, cache, history/bookmark, drafts, logs, updater diagnostic, atau credential tanpa pilihan user.
-
-Settings menyediakan action `Uninstall Terminal…`. In-surface confirmation menampilkan dua
-radio option:
-
-1. `Pertahankan data saya (direkomendasikan)` — default/focused;
-2. `Hapus seluruh data Terminal dari PC ini` — menampilkan exact root path dan memerlukan
-   checkbox kedua `Saya memahami data ini tidak dapat dipulihkan` sebelum tombol Uninstall enabled.
-
-Flow pilihan kedua lebih dahulu harus lulus `PrepareCloseAll`; Cancel tidak menulis marker atau
-meluncurkan updater. Setelah prepare lulus, app menulis atomic one-time marker ke
-`updater\uninstall-intent.json` berisi random 128-bit nonce, package ID, installed version, exact
-canonical data root, dan UTC expiry 10 menit, lalu menjalankan `Update.exe uninstall --silent` dengan
-nonce yang sama hanya pada inherited environment
-`TERMINAL_UNINSTALL_NONCE`. `OnBeforeUninstall` menghapus data hanya bila environment nonce
-dan marker cocok, marker valid/unexpired, serta package identity/version/root cocok. Marker invalid,
-stale, system-initiated uninstall, atau hook error kembali ke preserve-data default dan menghasilkan
-diagnostic, bukan aggressive cleanup.
-
-Sebelum delete, path dibentuk ulang dari `FOLDERID_LocalAppData` dan harus sama ordinal-ignore-case
-dengan exact canonical root, bukan hanya prefix. Root yang merupakan unexpected reparse point ditolak;
-enumeration tidak mengikuti reparse point dan hanya menghapus link entry. Deletion scope tidak pernah
-naik ke `%LOCALAPPDATA%`, `%LOCALAPPDATA%\Yuzha`, repository, nested repo, atau arbitrary user path.
-Windows Credential Manager entry hanya dihapus untuk exact target prefix
-`Yuzha.Terminal/`; credential provider lain tidak disentuh. Failure menampilkan path yang
-tersisa dan tidak mengklaim full deletion.
-
-Setelah normal preserve-data uninstall, Apps entry tidak menawarkan cleanup kedua. Dokumentasi final
-menunjukkan exact retained root untuk manual cleanup atau meminta reinstall lalu memakai in-app flow;
-uninstaller tidak menghapus data diam-diam agar UI tampak sederhana.
-
 ### 25.10 Exact component schema, native flags, dan default visual
 
 Semua component menerima common field berikut dan menolak field lain: `id` required lower-kebab-case;
@@ -2272,7 +2144,7 @@ Component-specific field final:
 | Type | Field exact dan default |
 | --- | --- |
 | `Window` | `title` required string/binding; `initialWidth=760`, `initialHeight=520`, `minWidth=620`, `minHeight=420`, `resizable=true`, `children=[]` |
-| `Screen` | `routeId` required enum inventory §10; `children=[]` |
+| `Screen` | `routeId` required lower-kebab-case dan harus sama dengan key/file screen; `children=[]`. Saat ini belum ada instance Screen pada source config. |
 | `Container` | `direction=column` (`row|column|grid|flow`), `gap=8` (`0..128`), `padding={0,0,0,0}`, `align=stretch`, `justify=start`, `wrap=false`, `overflow=visible` (`visible|clip|scroll`), `children=[]` |
 | `Text` | exactly one `text` or `textBinding`; `variant=body` (`body|title|caption|monospace`), `wrap=true`, `selectable=false`, `align=start` |
 | `Button` | `label` required string/binding; `variant=default` (`default|primary|subtle|danger|navigation|bookmark`), `selected=false`/binding, `tabStop=true`; event allowlist `click` |
@@ -2289,9 +2161,11 @@ Composition `children` berisi inline component object dan hanya valid pada Windo
 Dialog. Event value exact `{ "action": "lower-kebab-case", "payload": {} }`; payload hanya literal JSON
 atau binding yang schema action tersebut izinkan.
 
-Native flags final:
+Native flags aktual:
 
-- top-level route: `WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN`, extended `WS_EX_APPWINDOW`;
+- top-level shell: `WS_POPUP | WS_CLIPCHILDREN`, extended `WS_EX_APPWINDOW`; no `WS_OVERLAPPEDWINDOW`
+  or `WS_THICKFRAME`. Borderless resize memakai `WM_NCHITTEST`/`WM_NCLBUTTONDOWN` dan `SetWindowPos`,
+  sedangkan rounded region dan border dipresentasikan oleh primary surface;
 - Input base: `WS_CHILD | WS_CLIPSIBLINGS | WS_TABSTOP`; visible menambahkan `WS_VISIBLE`;
 - single-line Input: `ES_LEFT | ES_AUTOHSCROLL`; multiline:
   `ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN`; password menambah `ES_PASSWORD` dan hanya
@@ -2356,17 +2230,13 @@ disabled → `COLOR_GRAYTEXT`; accent/selection/focus → `COLOR_HIGHLIGHT`; acc
   di-ignore.
 - Perubahan plan belum otomatis menjadi Git history. Commit/push/release hanya atas instruksi user.
 
-### 25.12 Post-completion developer playbook dan skill
+### 25.12 Developer playbook dan skill aktual
 
-1. `Playbook.md` menjadi panduan operasional untuk menambah screen, component, navigation binding,
-   action handler, business service, tests, serta smoke tanpa memilih ulang arsitektur.
-2. Selama Phase 4 dan Phase 5, perubahan schema/event/bridge/route/build contract wajib memperbarui
-   playbook pada perubahan yang sama agar contoh tidak drift dari runtime aktual.
-3. Hanya setelah exit criteria Phase 5 benar-benar PASS, turunkan playbook yang telah terbukti dipakai
-   menjadi repo-specific skill untuk menghasilkan skeleton screen JSON, navigation button, feature
-   action registration, dan test checklist. Skill harus membaca contract aktual, tidak mengedit nested
-   reference repository, tidak melakukan commit/push, dan tidak menjadi architecture/implementation
-   plan kedua.
-4. Skill dinyatakan siap hanya jika output sample-nya lolos config resolution, Debug/Release contract
-   tests, `git diff --check`, dan runtime route smoke. Pembuatan skill adalah tooling pasca-completion,
-   bukan blocker exit criteria V1.
+- `Playbook.md` sudah ada sebagai panduan operasional repository.
+- Global skill `terminal-project` sudah ada untuk Windows/WSL dan wajib membaca checkout aktual sebelum
+  mengubah config, component, renderer, logic adapter, build, atau release.
+- Keduanya bukan source screen. Contoh route/content di dalam dokumentasi tidak berarti route tersebut
+  terdaftar; source UI aktif tetap `Assets\ui\core.json` dan directory screen saat ini kosong.
+- Perubahan schema/event/bridge/route/build contract harus menyelaraskan playbook/skill tanpa membuat
+  architecture plan kedua. Commit, push, release, dan perubahan nested reference tetap membutuhkan
+  instruksi eksplisit user.

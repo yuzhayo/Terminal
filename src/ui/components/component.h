@@ -76,6 +76,11 @@ struct MeasuredSize {
     int height = 0;
 };
 
+struct RouteTabDefinition {
+    std::string route_id;
+    std::wstring label;
+};
+
 struct ComponentRuntimeState {
     config::ComponentType type = config::ComponentType::Container;
     std::optional<std::wstring> draft_baseline;
@@ -109,6 +114,9 @@ struct ComponentHost {
     std::function<void(bool)> request_focus_traversal;
     std::function<bool(Component*, ModalResult)> request_modal_close;
     std::function<LRESULT(Component*, HWND, WPARAM, LPARAM)> return_popup_automation_provider;
+    std::function<std::vector<RouteTabDefinition>()> resolve_route_tabs;
+    std::function<std::string_view()> resolve_active_route;
+    std::function<bool(std::string_view)> request_route;
 };
 
 class Component {
@@ -214,6 +222,7 @@ public:
     virtual bool PrepareResources(COLORREF parent_background);
     virtual void ReleaseResources() noexcept;
     virtual void AddChild(std::unique_ptr<Component> child);
+    std::unique_ptr<Component> DetachChild(Component* child);
     virtual void CollectComponents(std::vector<Component*>& components);
 
     const RECT& bounds() const noexcept;

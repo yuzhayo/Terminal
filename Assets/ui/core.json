@@ -1837,8 +1837,8 @@
       "title": "Terminal",
       "initialWidth": 760,
       "initialHeight": 520,
-      "minWidth": 620,
-      "minHeight": 420,
+      "minWidth": 0,
+      "minHeight": 0,
       "resizable": true,
       "children": [
         {
@@ -1907,6 +1907,17 @@
               ]
             },
             {
+              "id": "route-tabs",
+              "type": "Tabs",
+              "style": {
+                "$ref": "styles.surface"
+              },
+              "layout": {
+                "width": "fill",
+                "height": 36
+              }
+            },
+            {
               "id": "screen-host",
               "type": "Container",
               "style": {
@@ -1914,8 +1925,9 @@
               },
               "layout": {
                 "width": "fill",
-                "height": "fill"
+                "height": "auto"
               },
+              "overflow": "scroll",
               "children": []
             }
           ]

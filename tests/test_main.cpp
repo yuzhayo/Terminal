@@ -262,6 +262,7 @@ std::vector<std::string> ScalarBindings(
                            bindings);
             break;
         case ui::config::ComponentType::Screen:
+        case ui::config::ComponentType::Tabs:
         case ui::config::ComponentType::Container:
         case ui::config::ComponentType::Scrollbar:
             break;
@@ -1060,6 +1061,7 @@ void TestComponentRegistryVerticalSlice() {
     REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Combo));
     REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Dialog));
     REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::List));
+    REQUIRE_TRUE(registry.Supports(ui::config::ComponentType::Tabs));
 }
 
 void TestComboPopupPlacement() {

@@ -147,6 +147,7 @@
     <ClCompile Include="ui\components\list\list_component.cpp" />
     <ClCompile Include="ui\components\screen\screen_component.cpp" />
     <ClCompile Include="ui\components\scrollbar\scrollbar_component.cpp" />
+    <ClCompile Include="ui\components\tabs\tabs_component.cpp" />
     <ClCompile Include="ui\components\text\text_component.cpp" />
     <ClCompile Include="ui\components\toggle\toggle_component.cpp" />
     <ClCompile Include="ui\components\window\window_component.cpp" />
@@ -215,6 +216,7 @@
     <ClInclude Include="ui\components\list\list_component.h" />
     <ClInclude Include="ui\components\screen\screen_component.h" />
     <ClInclude Include="ui\components\scrollbar\scrollbar_component.h" />
+    <ClInclude Include="ui\components\tabs\tabs_component.h" />
     <ClInclude Include="ui\components\text\text_component.h" />
     <ClInclude Include="ui\components\toggle\toggle_component.h" />
     <ClInclude Include="ui\components\window\window_component.h" />
@@ -232,14 +234,9 @@
     <None Include="..\Assets\Terminal-Icon.png" />
     <None Include="..\Assets\terminal.ico" />
     <None Include="..\Assets\ui\core.json" />
-    <None Include="..\Assets\ui\screens\chrome-launcher.json" />
-    <None Include="..\Assets\ui\screens\chrome-profile-manager.json" />
-    <None Include="..\Assets\ui\screens\json-editor.json" />
-    <None Include="..\Assets\ui\screens\json-inject.json" />
-    <None Include="..\Assets\ui\screens\settings.json" />
-    <None Include="..\Assets\ui\screens\terminal.json" />
-    <None Include="..\Assets\ui\screens\ui-editor.json" />
+    <None Include="..\Assets\ui\screens\*.json" />
     <None Include="..\tools\Merge-UiConfig.ps1" />
+    <None Include="..\tools\New-UiScreen.ps1" />
     <ResourceCompile Include="app.rc" />
   </ItemGroup>
   <Target Name="MergeUiConfig" BeforeTargets="PrepareForBuild;ResourceCompile">

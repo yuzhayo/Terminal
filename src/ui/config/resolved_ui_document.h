@@ -98,6 +98,7 @@ enum class ComponentType {
     List,
     Scrollbar,
     Dialog,
+    Tabs,
 };
 
 enum class ContainerDirection { Row, Column, Grid, Flow };
@@ -124,7 +125,11 @@ struct WindowProperties {
 
 struct ScreenProperties {
     std::string route_id;
+    std::string tab_label;
+    bool show_in_tabs = true;
 };
+
+struct TabsProperties {};
 
 struct ContainerProperties {
     ContainerDirection direction = ContainerDirection::Column;
@@ -225,7 +230,7 @@ struct DialogProperties {
 };
 
 using ComponentProperties =
-    std::variant<WindowProperties, ScreenProperties, ContainerProperties, TextProperties,
+    std::variant<WindowProperties, ScreenProperties, TabsProperties, ContainerProperties, TextProperties,
                  ButtonProperties, InputProperties, ComboProperties, CheckboxProperties,
                  ToggleProperties, CardProperties, ListProperties, ScrollbarProperties,
                  DialogProperties>;

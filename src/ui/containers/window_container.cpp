@@ -8,10 +8,12 @@
 #include <atomic>
 #include <cwchar>
 #include <exception>
+#include <stdexcept>
 
 #include "app/app_identity.h"
 #include "instrumentation/performance_trace.h"
 #include "platform/single_instance.h"
+#include "ui/components/tabs/tabs_component.h"
 
 namespace ui::containers {
 namespace {
@@ -252,10 +254,30 @@ bool WindowContainer::BuildComponentTree(std::wstring& diagnostic) {
                                                                        lparam)
                            : 0;
             };
+        component_host_->resolve_route_tabs = [this] {
+            std::vector<components::RouteTabDefinition> tabs;
+            if (!document_) return tabs;
+            tabs.reserve(document_->screens.size());
+            for (const auto& [route_id, definition] : document_->screens) {
+                const auto& properties =
+                    std::get<config::ScreenProperties>(definition.properties);
+                if (!properties.show_in_tabs) continue;
+                tabs.push_back({route_id, components::Utf8ToWide(properties.tab_label)});
+            }
+            return tabs;
+        };
+        component_host_->resolve_active_route = [this]() -> std::string_view {
+            return active_route_;
+        };
+        component_host_->request_route = [this](std::string_view route_id) {
+            std::wstring ignored;
+            return Navigate(route_id, ignored);
+        };
         if (!BuildWindowRoot(diagnostic)) return false;
         const auto& properties =
             std::get<config::WindowProperties>(window_definition_->properties);
         if (properties.initial_route.empty()) {
+            FitWindowToContent();
             diagnostic.clear();
             return true;
         }
@@ -271,6 +293,15 @@ bool WindowContainer::BuildWindowRoot(std::wstring& diagnostic) {
         ResetAutomationProvider();
         window_root_ = registry_.CreateTree(*window_definition_, *component_host_);
         root_ = window_root_.get();
+        screen_host_ = root_->FindById("screen-host");
+        if (screen_host_ && screen_host_->definition().type != config::ComponentType::Container) {
+            diagnostic = L"screen-host harus berupa Container.";
+            root_ = nullptr;
+            window_root_.reset();
+            screen_host_ = nullptr;
+            return false;
+        }
+        active_screen_ = nullptr;
         active_route_.clear();
         active_screen_instance_id_ = 0;
         focus_coordinator_.Rebuild(*root_);
@@ -296,7 +327,7 @@ void WindowContainer::ResetAutomationProvider() {
 }
 
 bool WindowContainer::ActivateRoute(std::string_view route_id, std::wstring& diagnostic) {
-    if (!component_host_ || !document_) {
+    if (!component_host_ || !document_ || !window_root_ || !screen_host_) {
         diagnostic = L"Component host belum tersedia.";
         return false;
     }
@@ -320,26 +351,41 @@ bool WindowContainer::ActivateRoute(std::string_view route_id, std::wstring& dia
     }
 
     components::Component* previous_root = root_;
+    components::Component* previous_screen = active_screen_;
+    const std::uint64_t previous_screen_instance_id = active_screen_instance_id_;
     ScreenEntry* previous_entry = nullptr;
     if (!active_route_.empty()) {
         const auto previous = screen_cache_.find(active_route_);
         if (previous != screen_cache_.end()) previous_entry = &previous->second;
     }
-    if (previous_entry && focus_coordinator_.focused()) {
+    if (previous_entry && active_screen_ && focus_coordinator_.focused() &&
+        focus_coordinator_.focused()->IsDescendantOrSelfOf(active_screen_)) {
         previous_entry->focused_component_id =
-            focus_coordinator_.focused()->definition().id;
+                focus_coordinator_.focused()->definition().id;
     }
     focus_coordinator_.Clear();
     ResetAutomationProvider();
-    if (previous_root && !previous_root->SuspendNativePeers(diagnostic)) {
+    if (active_screen_ && !active_screen_->SuspendNativePeers(diagnostic)) {
         focus_coordinator_.Rebuild(*previous_root);
         automation_provider_ = new accessibility::AutomationRootProvider(
-            window_, *previous_root, [this] { return focus_coordinator_.focused(); });
+                window_, *previous_root, [this] { return focus_coordinator_.focused(); });
         return false;
     }
-    if (previous_entry) previous_entry->suspended = true;
+    if (previous_entry && active_screen_) {
+        previous_entry->root = screen_host_->DetachChild(active_screen_);
+        if (!previous_entry->root) {
+            diagnostic = L"Active screen tidak dapat dilepas dari screen-host.";
+            focus_coordinator_.Rebuild(*previous_root);
+            automation_provider_ = new accessibility::AutomationRootProvider(
+                window_, *previous_root, [this] { return focus_coordinator_.focused(); });
+            return false;
+        }
+        previous_entry->suspended = true;
+    }
+    active_screen_ = nullptr;
 
     ScreenEntry* activated_entry = nullptr;
+    components::Component* activated_screen = nullptr;
     try {
         auto [entry, inserted] = screen_cache_.try_emplace(std::string(route_id));
         if (inserted) {
@@ -348,28 +394,36 @@ bool WindowContainer::ActivateRoute(std::string_view route_id, std::wstring& dia
             AttachCloseConfirmationIfMissing(*entry->second.root);
         }
         activated_entry = &entry->second;
-        root_ = entry->second.root.get();
-        active_route_ = entry->first;
+        activated_screen = entry->second.root.get();
+        if (!activated_screen) throw std::runtime_error("Screen root is not available.");
         active_screen_instance_id_ = entry->second.instance_id;
-        root_->OnDpiChanged();
+        activated_screen->OnDpiChanged();
         const auto snapshot = pending_screen_snapshots_.find(entry->first);
         if (snapshot != pending_screen_snapshots_.end()) {
-            root_->RestoreRuntimeState(snapshot->second.component_states);
+            activated_screen->RestoreRuntimeState(snapshot->second.component_states);
             entry->second.focused_component_id = snapshot->second.focused_component_id;
             pending_screen_snapshots_.erase(snapshot);
         }
         if (entry->second.suspended) {
-            root_->ResumeNativePeers();
+            activated_screen->ResumeNativePeers();
             entry->second.suspended = false;
         }
+        screen_host_->AddChild(std::move(entry->second.root));
+        active_screen_ = activated_screen;
+        active_route_ = entry->first;
     } catch (const std::exception&) {
         const auto incomplete = screen_cache_.find(route_id);
         if (incomplete != screen_cache_.end() && !incomplete->second.root) {
             screen_cache_.erase(incomplete);
         }
         if (previous_root) {
-            previous_root->ResumeNativePeers();
+            if (previous_entry && previous_entry->root) {
+                screen_host_->AddChild(std::move(previous_entry->root));
+                active_screen_ = previous_screen;
+            }
+            if (active_screen_) active_screen_->ResumeNativePeers();
             if (previous_entry) previous_entry->suspended = false;
+            active_screen_instance_id_ = previous_screen_instance_id;
             root_ = previous_root;
             focus_coordinator_.Rebuild(*root_);
             automation_provider_ = new accessibility::AutomationRootProvider(
@@ -383,6 +437,7 @@ bool WindowContainer::ActivateRoute(std::string_view route_id, std::wstring& dia
         return false;
     }
 
+    root_ = window_root_.get();
     focus_coordinator_.Rebuild(*root_);
     automation_provider_ = new accessibility::AutomationRootProvider(
         window_, *root_, [this] { return focus_coordinator_.focused(); });
@@ -394,6 +449,7 @@ bool WindowContainer::ActivateRoute(std::string_view route_id, std::wstring& dia
     }
     resources_prepared_ = false;
     frame_ready_ = false;
+    FitWindowToContent();
     if (render_context_.valid()) {
         Layout();
         PrepareRenderResources();
@@ -427,12 +483,13 @@ bool WindowContainer::NormalizeForReload(std::wstring& diagnostic) {
         diagnostic = L"Active route tidak tercatat pada screen cache.";
         return false;
     }
-    if (focus_coordinator_.focused()) {
+    if (active_screen_ && focus_coordinator_.focused() &&
+        focus_coordinator_.focused()->IsDescendantOrSelfOf(active_screen_)) {
         active->second.focused_component_id =
             focus_coordinator_.focused()->definition().id;
     }
-    if (!active->second.suspended) {
-        if (!root_->SuspendNativePeers(diagnostic)) return false;
+    if (!active->second.suspended && active_screen_) {
+        if (!active_screen_->SuspendNativePeers(diagnostic)) return false;
         active->second.suspended = true;
     }
     diagnostic.clear();
@@ -447,6 +504,15 @@ void WindowContainer::CaptureScreenSnapshots() {
         snapshot.focused_component_id = entry.focused_component_id;
         entry.root->CaptureRuntimeState(snapshot.component_states);
         snapshots.insert_or_assign(route_id, std::move(snapshot));
+    }
+    if (!active_route_.empty() && active_screen_) {
+        ScreenRuntimeSnapshot snapshot;
+        const auto active = screen_cache_.find(active_route_);
+        if (active != screen_cache_.end()) {
+            snapshot.focused_component_id = active->second.focused_component_id;
+            active_screen_->CaptureRuntimeState(snapshot.component_states);
+            snapshots.insert_or_assign(active_route_, std::move(snapshot));
+        }
     }
     pending_screen_snapshots_ = std::move(snapshots);
 }
@@ -491,6 +557,10 @@ bool WindowContainer::InstallDocument(
     }
     active_route_.clear();
     active_screen_instance_id_ = 0;
+    active_screen_ = nullptr;
+    screen_host_ = nullptr;
+    content_minimum_width_ = 0;
+    content_minimum_height_ = 0;
     render_runtime_.AdvanceResourceEpoch();
     resources_prepared_ = false;
     frame_ready_ = false;
@@ -502,6 +572,7 @@ bool WindowContainer::InstallDocument(
     }
     if (!BuildWindowRoot(diagnostic)) return false;
     if (target_route.empty()) {
+        FitWindowToContent();
         diagnostic.clear();
         return true;
     }
@@ -726,8 +797,10 @@ void WindowContainer::UpdateResize(POINT screen_point) noexcept {
     if (!resizing_ || !window_ || !window_definition_) return;
     const auto& properties =
         std::get<config::WindowProperties>(window_definition_->properties);
-    const int minimum_width = components::ScaleDip(properties.minimum_width, dpi_);
-    const int minimum_height = components::ScaleDip(properties.minimum_height, dpi_);
+    const int minimum_width = std::max(
+        components::ScaleDip(properties.minimum_width, dpi_), content_minimum_width_);
+    const int minimum_height = std::max(
+        components::ScaleDip(properties.minimum_height, dpi_), content_minimum_height_);
     const int dx = screen_point.x - resize_start_screen_.x;
     const int dy = screen_point.y - resize_start_screen_.y;
     RECT next = resize_start_window_;
@@ -791,12 +864,103 @@ void WindowContainer::UpdateMinimumTrackSize() noexcept {
         window_definition_->type != config::ComponentType::Window) return;
     const auto& properties =
         std::get<config::WindowProperties>(window_definition_->properties);
-    const int minimum_width = components::ScaleDip(properties.minimum_width, dpi_);
-    const int minimum_height = components::ScaleDip(properties.minimum_height, dpi_);
+    const int minimum_width = std::max(
+        components::ScaleDip(properties.minimum_width, dpi_), content_minimum_width_);
+    const int configured_minimum_height =
+        components::ScaleDip(properties.minimum_height, dpi_);
+    const int minimum_height = std::max(configured_minimum_height, content_minimum_height_);
     SetPropW(window_, L"Terminal.MinimumWidth",
              reinterpret_cast<HANDLE>(static_cast<INT_PTR>(minimum_width)));
     SetPropW(window_, L"Terminal.MinimumHeight",
              reinterpret_cast<HANDLE>(static_cast<INT_PTR>(minimum_height)));
+}
+
+void WindowContainer::FitWindowToContent() noexcept {
+    if (!window_ || !root_ || !screen_host_ || !component_host_) return;
+
+    RECT client{};
+    if (!GetClientRect(window_, &client)) return;
+    int available_width = 8192;
+    int available_height = 8192;
+    MONITORINFO monitor{sizeof(monitor)};
+    if (const HMONITOR handle = MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST);
+        handle && GetMonitorInfoW(handle, &monitor)) {
+        available_width = std::max(1L, monitor.rcWork.right - monitor.rcWork.left);
+        available_height = std::max(1L, monitor.rcWork.bottom - monitor.rcWork.top);
+    }
+
+    HDC dc = component_host_->layout_dc;
+    const bool release_dc = dc == nullptr;
+    if (!dc) dc = GetDC(window_);
+    if (!dc) return;
+    component_host_->layout_dc = dc;
+
+    components::Component* frame = root_->FindById("window-frame");
+    components::Component* chrome = root_->FindById("window-chrome");
+    components::Component* tabs = root_->FindById("route-tabs");
+    components::Component* close = root_->FindById("window-close");
+
+    int horizontal_padding = 0;
+    int vertical_padding = 0;
+    int gap = 0;
+    if (frame && frame->definition().type == config::ComponentType::Container) {
+        const auto& properties =
+            std::get<config::ContainerProperties>(frame->definition().properties);
+        horizontal_padding = components::ScaleDip(
+            properties.padding.left + properties.padding.right, dpi_);
+        vertical_padding = components::ScaleDip(
+            properties.padding.top + properties.padding.bottom, dpi_);
+        gap = components::ScaleDip(properties.gap, dpi_);
+    }
+
+    const auto& window_properties =
+        std::get<config::WindowProperties>(window_definition_->properties);
+    const int probe_width = std::max(
+        0, std::min(available_width, components::ScaleDip(window_properties.initial_width, dpi_)) -
+               horizontal_padding);
+    const int close_width =
+        close ? close->Measure(dc, probe_width, available_height).width : 0;
+    int tabs_width = 0;
+    if (auto* route_tabs = dynamic_cast<components::TabsComponent*>(tabs)) {
+        tabs_width = route_tabs->PreferredWidth(dc);
+    }
+    const int screen_width = active_screen_
+                                 ? active_screen_->Measure(dc, probe_width, available_height).width
+                                 : 0;
+    const int inner_width = std::max({close_width, tabs_width, screen_width});
+    const int measured_width = horizontal_padding + inner_width;
+
+    int measured_height = vertical_padding;
+    int child_count = 0;
+    auto add_child = [&](components::Component* child) {
+        if (!child) return;
+        if (child_count++ > 0) measured_height += gap;
+        measured_height += child->Measure(dc, inner_width, available_height).height;
+    };
+    add_child(chrome);
+    add_child(tabs);
+    const int screen_height =
+        screen_host_->Measure(dc, inner_width, available_height).height;
+    add_child(screen_host_);
+
+    content_minimum_width_ = std::max(0, horizontal_padding + close_width);
+    content_minimum_height_ = std::max(0, measured_height - screen_height);
+    component_host_->layout_dc = nullptr;
+    if (release_dc) ReleaseDC(window_, dc);
+    UpdateMinimumTrackSize();
+
+    RECT window_bounds{};
+    if (!GetWindowRect(window_, &window_bounds)) return;
+    const int desired_width =
+        std::clamp(measured_width, content_minimum_width_, available_width);
+    const int desired_height =
+        std::clamp(measured_height, content_minimum_height_, available_height);
+    const int current_width = window_bounds.right - window_bounds.left;
+    const int current_height = window_bounds.bottom - window_bounds.top;
+    if (desired_width == current_width && desired_height == current_height) return;
+    SetWindowPos(window_, nullptr, window_bounds.left, window_bounds.top,
+                 desired_width, desired_height,
+                 SWP_NOACTIVATE | SWP_NOZORDER);
 }
 
 bool WindowContainer::Navigate(std::string_view route_id, std::wstring& diagnostic) {
@@ -833,7 +997,7 @@ bool WindowContainer::IsDirty() const {
 }
 
 std::size_t WindowContainer::dirty_participant_count() const {
-    std::size_t count = 0;
+    std::size_t count = root_ ? CountDirtyParticipants(*root_) : 0;
     for (const auto& [route_id, entry] : screen_cache_) {
         (void)route_id;
         if (entry.root) count += CountDirtyParticipants(*entry.root);
@@ -897,6 +1061,7 @@ void WindowContainer::RollbackPreparedClose() noexcept {
 std::vector<components::EditableParticipant*>
 WindowContainer::CollectEditableParticipants() {
     std::vector<components::EditableParticipant*> participants;
+    if (root_) root_->CollectEditableParticipants(participants);
     for (auto& [route_id, entry] : screen_cache_) {
         (void)route_id;
         if (entry.root) entry.root->CollectEditableParticipants(participants);
@@ -1316,6 +1481,8 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             focus_coordinator_.Clear();
             ResetAutomationProvider();
             root_ = nullptr;
+            screen_host_ = nullptr;
+            active_screen_ = nullptr;
             screen_cache_.clear();
             pending_screen_snapshots_.clear();
             render_context_.Reset();

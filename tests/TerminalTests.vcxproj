@@ -116,6 +116,7 @@
     <ClCompile Include="..\src\ui\components\list\list_component.cpp" />
     <ClCompile Include="..\src\ui\components\screen\screen_component.cpp" />
     <ClCompile Include="..\src\ui\components\scrollbar\scrollbar_component.cpp" />
+    <ClCompile Include="..\src\ui\components\tabs\tabs_component.cpp" />
     <ClCompile Include="..\src\ui\components\text\text_component.cpp" />
     <ClCompile Include="..\src\ui\components\toggle\toggle_component.cpp" />
     <ClCompile Include="..\src\ui\components\window\window_component.cpp" />
