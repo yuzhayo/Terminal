@@ -161,9 +161,14 @@ void ApplicationContainer::ActivateDefault() {
 void ApplicationContainer::HandleIpcRequest(const platform::IpcRequest& request) {
     if (shutdown_in_progress_) return;
     switch (request.command) {
-        case platform::IpcCommand::ActivateDefault:
-            ActivateDefault();
+        case platform::IpcCommand::ActivateDefault: {
+            std::wstring diagnostic;
+            if (!CreateRouteWindow(DefaultRoute(), true,
+                                   options_.created_window_show_command, diagnostic)) {
+                nonfatal_diagnostic_ = std::move(diagnostic);
+            }
             break;
+        }
         case platform::IpcCommand::OpenRoute: {
             std::wstring diagnostic;
             if (!OpenExternalRoute(request.route_id, diagnostic)) {
