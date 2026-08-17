@@ -838,10 +838,13 @@ private:
             case ComponentType::Window: {
                 WindowProperties properties;
                 properties.title = ParseTextValue(Required(value, "title", path), ChildPath(path, "title"));
-                properties.initial_route = ReadString(value, "initialRoute", path);
-                if (!route_ids_.contains(properties.initial_route)) {
-                    Fail("invalid-route", ChildPath(path, "initialRoute"),
-                         "initialRoute does not reference a configured screen.");
+                if (value.contains("initialRoute")) {
+                    properties.initial_route = ReadString(value, "initialRoute", path);
+                    if (!properties.initial_route.empty() &&
+                        !route_ids_.contains(properties.initial_route)) {
+                        Fail("invalid-route", ChildPath(path, "initialRoute"),
+                             "initialRoute does not reference a configured screen.");
+                    }
                 }
                 properties.initial_width = ReadIntegerOr(value, "initialWidth", 760, 1, 8192, path);
                 properties.initial_height = ReadIntegerOr(value, "initialHeight", 520, 1, 8192, path);
@@ -1091,7 +1094,6 @@ ResolvedUiDocument ResolveMergedDocument(const Json& merged, UiConfigMetadata me
     RequireObject(windows, "/windows");
     RequireObject(screens, "/screens");
     if (windows.empty()) Fail("empty-windows", "/windows", "At least one Window is required.");
-    if (screens.empty()) Fail("empty-screens", "/screens", "At least one Screen is required.");
     std::set<std::string, std::less<>> route_ids;
     for (const auto& item : screens.items()) {
         if (!IsLowerKebab(item.key())) {

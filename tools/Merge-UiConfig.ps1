@@ -104,9 +104,6 @@ if (-not (Test-Path -LiteralPath $screensRoot -PathType Container)) {
 }
 
 $screenFiles = @(Get-ChildItem -LiteralPath $screensRoot -Filter '*.json' -File | Sort-Object Name)
-if ($screenFiles.Count -eq 0) {
-    Fail 'Assets\ui\screens' 'Tidak ada file screen. Minimal satu screen dibutuhkan.'
-}
 
 $entries = New-Object System.Collections.Generic.List[string]
 $routeIds = New-Object System.Collections.Generic.List[string]

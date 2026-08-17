@@ -92,6 +92,7 @@ WindowContainer::WindowContainer(HINSTANCE instance, rendering::RenderRuntime& r
 WindowContainer::~WindowContainer() {
     ResetAutomationProvider();
     root_ = nullptr;
+    window_root_.reset();
     screen_cache_.clear();
     pending_screen_snapshots_.clear();
     if (window_ && IsWindow(window_)) DestroyWindow(window_);
@@ -129,12 +130,11 @@ bool WindowContainer::Create(const std::string& window_id, std::wstring& diagnos
     const auto& properties = std::get<config::WindowProperties>(window_definition_->properties);
     RECT window_bounds{0, 0, components::ScaleDip(properties.initial_width, 96),
                        components::ScaleDip(properties.initial_height, 96)};
-    AdjustWindowRectExForDpi(&window_bounds, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, FALSE,
-                             WS_EX_APPWINDOW, 96);
+    const DWORD window_style = WS_POPUP | WS_CLIPCHILDREN;
     const std::wstring title = ResolveWindowTitle(*window_definition_);
     window_ = CreateWindowExW(WS_EX_APPWINDOW, platform::MainWindowClassName(),
                               title.empty() ? app_identity::kProductName : title.c_str(),
-                              WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT,
+                              window_style, CW_USEDEFAULT, CW_USEDEFAULT,
                               window_bounds.right - window_bounds.left,
                               window_bounds.bottom - window_bounds.top, nullptr, nullptr, instance_, this);
     if (!window_) {
@@ -142,6 +142,7 @@ bool WindowContainer::Create(const std::string& window_id, std::wstring& diagnos
         return false;
     }
     ApplyNonClientTheme();
+    ApplyWindowRegion();
     dpi_ = GetDpiForWindow(window_);
     render_context_.SetRedrawRequest([this] {
         if (window_) InvalidateRect(window_, nullptr, FALSE);
@@ -251,11 +252,38 @@ bool WindowContainer::BuildComponentTree(std::wstring& diagnostic) {
                                                                        lparam)
                            : 0;
             };
+        if (!BuildWindowRoot(diagnostic)) return false;
         const auto& properties =
             std::get<config::WindowProperties>(window_definition_->properties);
+        if (properties.initial_route.empty()) {
+            diagnostic.clear();
+            return true;
+        }
         return ActivateRoute(properties.initial_route, diagnostic);
     } catch (const std::exception&) {
         diagnostic = L"Component tree JSON tidak dapat dibuat oleh registry.";
+        return false;
+    }
+}
+
+bool WindowContainer::BuildWindowRoot(std::wstring& diagnostic) {
+    try {
+        ResetAutomationProvider();
+        window_root_ = registry_.CreateTree(*window_definition_, *component_host_);
+        root_ = window_root_.get();
+        active_route_.clear();
+        active_screen_instance_id_ = 0;
+        focus_coordinator_.Rebuild(*root_);
+        automation_provider_ = new accessibility::AutomationRootProvider(
+            window_, *root_, [this] { return focus_coordinator_.focused(); });
+        resources_prepared_ = false;
+        frame_ready_ = false;
+        diagnostic.clear();
+        return true;
+    } catch (const std::exception&) {
+        root_ = nullptr;
+        window_root_.reset();
+        diagnostic = L"Window JSON tidak dapat dibuat oleh component registry.";
         return false;
     }
 }
@@ -389,6 +417,11 @@ bool WindowContainer::NormalizeForReload(std::wstring& diagnostic) {
         !modal_stack_.Drain(*root_, focus_coordinator_, diagnostic)) {
         return false;
     }
+    if (active_route_.empty()) {
+        if (!root_->SuspendNativePeers(diagnostic)) return false;
+        diagnostic.clear();
+        return true;
+    }
     const auto active = screen_cache_.find(active_route_);
     if (active == screen_cache_.end()) {
         diagnostic = L"Active route tidak tercatat pada screen cache.";
@@ -443,6 +476,7 @@ bool WindowContainer::InstallDocument(
     focus_coordinator_.Clear();
     ResetAutomationProvider();
     root_ = nullptr;
+    window_root_.reset();
     screen_cache_.clear();
     document_ = std::move(document);
     window_definition_ = &document_->windows.at(window_id_);
@@ -465,6 +499,11 @@ bool WindowContainer::InstallDocument(
         const std::wstring title = ResolveWindowTitle(*window_definition_);
         SetWindowTextW(window_, title.empty() ? app_identity::kProductName : title.c_str());
         UpdateMinimumTrackSize();
+    }
+    if (!BuildWindowRoot(diagnostic)) return false;
+    if (target_route.empty()) {
+        diagnostic.clear();
+        return true;
     }
     return ActivateRoute(target_route, diagnostic);
 }
@@ -617,6 +656,134 @@ void WindowContainer::ApplyNonClientTheme() noexcept {
     const BOOL enabled = theme_kind_ == config::ThemeKind::Dark ? TRUE : FALSE;
     DwmSetWindowAttribute(window_, DWMWA_USE_IMMERSIVE_DARK_MODE, &enabled,
                           sizeof(enabled));
+}
+
+void WindowContainer::ApplyWindowRegion() noexcept {
+    if (!window_ || !document_ || !window_definition_) return;
+    RECT client{};
+    if (!GetClientRect(window_, &client)) return;
+    const int width = client.right - client.left;
+    const int height = client.bottom - client.top;
+    if (width <= 0 || height <= 0) return;
+    const auto& theme = document_->theme(theme_kind_);
+    const int radius = components::ScaleDip(
+        theme.styles.at(window_definition_->style_index).radius, dpi_);
+    HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1, radius * 2, radius * 2);
+    if (region && SetWindowRgn(window_, region, TRUE) == 0) DeleteObject(region);
+}
+
+bool WindowContainer::IsResizeHit(UINT hit) noexcept {
+    switch (hit) {
+        case HTLEFT:
+        case HTRIGHT:
+        case HTTOP:
+        case HTBOTTOM:
+        case HTTOPLEFT:
+        case HTTOPRIGHT:
+        case HTBOTTOMLEFT:
+        case HTBOTTOMRIGHT:
+            return true;
+        default:
+            return false;
+    }
+}
+
+UINT WindowContainer::HitTestResize(POINT point) const noexcept {
+    if (!window_ || !window_definition_ ||
+        window_definition_->type != config::ComponentType::Window) {
+        return HTNOWHERE;
+    }
+    const auto& properties =
+        std::get<config::WindowProperties>(window_definition_->properties);
+    if (!properties.resizable) return HTNOWHERE;
+    RECT client{};
+    if (!GetClientRect(window_, &client)) return HTNOWHERE;
+    const int border = std::max(components::ScaleDip(8, dpi_), 4);
+    const bool left = point.x >= client.left && point.x < client.left + border;
+    const bool right = point.x < client.right && point.x >= client.right - border;
+    const bool top = point.y >= client.top && point.y < client.top + border;
+    const bool bottom = point.y < client.bottom && point.y >= client.bottom - border;
+    if (top && left) return HTTOPLEFT;
+    if (top && right) return HTTOPRIGHT;
+    if (bottom && left) return HTBOTTOMLEFT;
+    if (bottom && right) return HTBOTTOMRIGHT;
+    if (left) return HTLEFT;
+    if (right) return HTRIGHT;
+    if (top) return HTTOP;
+    if (bottom) return HTBOTTOM;
+    return HTNOWHERE;
+}
+
+void WindowContainer::BeginResize(UINT hit, POINT screen_point) noexcept {
+    if (!IsResizeHit(hit) || !window_ || !GetWindowRect(window_, &resize_start_window_)) return;
+    resize_hit_ = hit;
+    resize_start_screen_ = screen_point;
+    resizing_ = true;
+    SetCapture(window_);
+}
+
+void WindowContainer::UpdateResize(POINT screen_point) noexcept {
+    if (!resizing_ || !window_ || !window_definition_) return;
+    const auto& properties =
+        std::get<config::WindowProperties>(window_definition_->properties);
+    const int minimum_width = components::ScaleDip(properties.minimum_width, dpi_);
+    const int minimum_height = components::ScaleDip(properties.minimum_height, dpi_);
+    const int dx = screen_point.x - resize_start_screen_.x;
+    const int dy = screen_point.y - resize_start_screen_.y;
+    RECT next = resize_start_window_;
+    switch (resize_hit_) {
+        case HTLEFT:
+            next.left = std::min(resize_start_window_.left + dx,
+                                 resize_start_window_.right - minimum_width);
+            break;
+        case HTRIGHT:
+            next.right = std::max(resize_start_window_.right + dx,
+                                  resize_start_window_.left + minimum_width);
+            break;
+        case HTTOP:
+            next.top = std::min(resize_start_window_.top + dy,
+                                resize_start_window_.bottom - minimum_height);
+            break;
+        case HTBOTTOM:
+            next.bottom = std::max(resize_start_window_.bottom + dy,
+                                   resize_start_window_.top + minimum_height);
+            break;
+        case HTTOPLEFT:
+            next.left = std::min(resize_start_window_.left + dx,
+                                 resize_start_window_.right - minimum_width);
+            next.top = std::min(resize_start_window_.top + dy,
+                                resize_start_window_.bottom - minimum_height);
+            break;
+        case HTTOPRIGHT:
+            next.right = std::max(resize_start_window_.right + dx,
+                                  resize_start_window_.left + minimum_width);
+            next.top = std::min(resize_start_window_.top + dy,
+                                resize_start_window_.bottom - minimum_height);
+            break;
+        case HTBOTTOMLEFT:
+            next.left = std::min(resize_start_window_.left + dx,
+                                 resize_start_window_.right - minimum_width);
+            next.bottom = std::max(resize_start_window_.bottom + dy,
+                                   resize_start_window_.top + minimum_height);
+            break;
+        case HTBOTTOMRIGHT:
+            next.right = std::max(resize_start_window_.right + dx,
+                                  resize_start_window_.left + minimum_width);
+            next.bottom = std::max(resize_start_window_.bottom + dy,
+                                   resize_start_window_.top + minimum_height);
+            break;
+        default:
+            return;
+    }
+    SetWindowPos(window_, nullptr, next.left, next.top, next.right - next.left,
+                 next.bottom - next.top, SWP_NOACTIVATE | SWP_NOZORDER);
+}
+
+void WindowContainer::EndResize() noexcept {
+    if (!resizing_) return;
+    resizing_ = false;
+    resize_hit_ = HTNOWHERE;
+    if (GetCapture() == window_) ReleaseCapture();
 }
 
 void WindowContainer::UpdateMinimumTrackSize() noexcept {
@@ -889,6 +1056,50 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
         return request->result ? 1 : 0;
     }
     switch (message) {
+        case WM_NCCALCSIZE:
+            // Frameless shell: the client surface owns the full window bounds.
+            return 0;
+        case WM_NCHITTEST: {
+            POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+            ScreenToClient(window_, &point);
+            if (root_) {
+                if (components::Component* target = HitTestInteractive(point);
+                    target && (target->CanFocus() || !target->definition().events.empty())) {
+                    return HTCLIENT;
+                }
+            }
+            if (const UINT hit = HitTestResize(point); IsResizeHit(hit)) return hit;
+            return HTCAPTION;
+        }
+        case WM_SETCURSOR: {
+            POINT point{};
+            GetCursorPos(&point);
+            ScreenToClient(window_, &point);
+            const UINT hit = resizing_ ? resize_hit_ : HitTestResize(point);
+            LPCWSTR cursor = IDC_ARROW;
+            switch (hit) {
+                case HTLEFT:
+                case HTRIGHT:
+                    cursor = IDC_SIZEWE;
+                    break;
+                case HTTOP:
+                case HTBOTTOM:
+                    cursor = IDC_SIZENS;
+                    break;
+                case HTTOPLEFT:
+                case HTBOTTOMRIGHT:
+                    cursor = IDC_SIZENWSE;
+                    break;
+                case HTTOPRIGHT:
+                case HTBOTTOMLEFT:
+                    cursor = IDC_SIZENESW;
+                    break;
+                default:
+                    break;
+            }
+            SetCursor(LoadCursorW(nullptr, cursor));
+            return TRUE;
+        }
         case WM_GETMINMAXINFO: {
             auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
             info->ptMinTrackSize.x = static_cast<LONG>(reinterpret_cast<INT_PTR>(GetPropW(window_, L"Terminal.MinimumWidth")));
@@ -905,6 +1116,7 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             }
             break;
         case WM_SIZE:
+            ApplyWindowRegion();
             pending_resize_correlation_ = NextCorrelationId();
             last_scenario_correlation_ = *pending_resize_correlation_;
             SetTimer(window_, 1, 10000, nullptr);
@@ -966,6 +1178,12 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             return 0;
         }
         case WM_MOUSEMOVE: {
+            if (resizing_) {
+                POINT screen_point{};
+                GetCursorPos(&screen_point);
+                UpdateResize(screen_point);
+                return 0;
+            }
             TraceInputStart();
             TRACKMOUSEEVENT tracking{sizeof(tracking), TME_LEAVE, window_, 0};
             TrackMouseEvent(&tracking);
@@ -975,6 +1193,7 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             return 0;
         }
         case WM_MOUSELEAVE:
+            if (resizing_) return 0;
             if (pointer_target_) pointer_target_->PointerMove({-1, -1});
             pointer_target_ = nullptr;
             return 0;
@@ -999,6 +1218,13 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                 return 0;
             }
             break;
+        case WM_NCLBUTTONDOWN:
+            if (IsResizeHit(static_cast<UINT>(wparam))) {
+                const POINT screen_point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+                BeginResize(static_cast<UINT>(wparam), screen_point);
+                return 0;
+            }
+            break;
         case WM_LBUTTONDOWN: {
             TraceInputStart();
             const POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
@@ -1010,11 +1236,24 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                 }
             }
             components::Component* target = HitTestInteractive(point);
+            if (!target || (target->CanFocus() == false && target->definition().events.empty())) {
+                const UINT resize_hit = HitTestResize(point);
+                if (IsResizeHit(resize_hit)) {
+                    POINT screen_point = point;
+                    ClientToScreen(window_, &screen_point);
+                    BeginResize(resize_hit, screen_point);
+                    return 0;
+                }
+            }
             if (target && target->CanFocus()) focus_coordinator_.RequestFocus(target);
             if (target && target->PointerDown(point)) pointer_target_ = target;
             return 0;
         }
         case WM_LBUTTONUP: {
+            if (resizing_) {
+                EndResize();
+                return 0;
+            }
             TraceInputStart();
             const POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
             if (pointer_target_) pointer_target_->PointerUp(point);
@@ -1022,6 +1261,12 @@ LRESULT WindowContainer::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             TrackPointer(point);
             return 0;
         }
+        case WM_CAPTURECHANGED:
+            if (resizing_) {
+                resizing_ = false;
+                resize_hit_ = HTNOWHERE;
+            }
+            break;
         case WM_MOUSEWHEEL: {
             TraceInputStart();
             POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
@@ -1158,6 +1403,10 @@ void WindowContainer::TrackPointer(POINT point) {
 void WindowContainer::DispatchUiEvent(components::Component& source,
                                       std::string_view event_type,
                                       const config::EventDefinition& event) {
+    if (event.action == "close-window") {
+        if (close_requested_handler_) close_requested_handler_(*this);
+        return;
+    }
     application::UiEvent ui_event;
     ui_event.source = {window_instance_id_, active_screen_instance_id_, source.instance_id(),
                        window_id_, active_route_, source.definition().id};

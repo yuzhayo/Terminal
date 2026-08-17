@@ -84,6 +84,7 @@ private:
     LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
 
     bool BuildComponentTree(std::wstring& diagnostic);
+    bool BuildWindowRoot(std::wstring& diagnostic);
     bool PrepareFrameForShow(bool resume_native_peers, std::wstring& diagnostic);
     bool ActivateRoute(std::string_view route_id, std::wstring& diagnostic);
     bool NormalizeForReload(std::wstring& diagnostic);
@@ -92,7 +93,13 @@ private:
                          std::string_view preferred_route, std::wstring& diagnostic);
     void ApplyThemeState(config::ThemeKind theme_kind, bool advance_shared_epoch);
     void ApplyNonClientTheme() noexcept;
+    void ApplyWindowRegion() noexcept;
     void UpdateMinimumTrackSize() noexcept;
+    UINT HitTestResize(POINT point) const noexcept;
+    void BeginResize(UINT hit, POINT screen_point) noexcept;
+    void UpdateResize(POINT screen_point) noexcept;
+    void EndResize() noexcept;
+    static bool IsResizeHit(UINT hit) noexcept;
     void ResetAutomationProvider();
     bool RenderCompleteFrame(HDC reference);
     bool RenderFrame(HDC reference, const RECT& requested_region, bool force_full);
@@ -140,6 +147,7 @@ private:
     };
     std::map<std::string, ScreenEntry, std::less<>> screen_cache_;
     std::map<std::string, ScreenRuntimeSnapshot, std::less<>> pending_screen_snapshots_;
+    std::unique_ptr<components::Component> window_root_;
     components::Component* root_ = nullptr;
     std::string window_id_;
     std::string active_route_;
@@ -167,6 +175,10 @@ private:
     bool close_prepared_ = false;
     bool retained_resources_released_ = false;
     std::uint64_t last_patch_generation_ = 0;
+    bool resizing_ = false;
+    UINT resize_hit_ = HTNOWHERE;
+    POINT resize_start_screen_{};
+    RECT resize_start_window_{};
 };
 
 }  // namespace ui::containers

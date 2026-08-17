@@ -120,8 +120,8 @@
         "right": 0,
         "bottom": 0
       },
-      "radius": 0,
-      "borderWidth": 0,
+      "radius": 16,
+      "borderWidth": 1,
       "focusWidth": 2,
       "states": {
         "normal": {
@@ -1840,8 +1840,87 @@
       "minWidth": 620,
       "minHeight": 420,
       "resizable": true,
-      "initialRoute": "terminal",
-      "children": []
+      "children": [
+        {
+          "id": "window-frame",
+          "type": "Container",
+          "style": {
+            "$ref": "styles.window"
+          },
+          "layout": {
+            "width": "fill",
+            "height": "fill"
+          },
+          "direction": "column",
+          "gap": 0,
+          "padding": {
+            "left": 8,
+            "top": 8,
+            "right": 8,
+            "bottom": 8
+          },
+          "children": [
+            {
+              "id": "window-chrome",
+              "type": "Container",
+              "style": {
+                "$ref": "styles.text-body"
+              },
+              "layout": {
+                "width": "fill",
+                "height": 40
+              },
+              "direction": "row",
+              "gap": 0,
+              "children": [
+                {
+                  "id": "window-chrome-spacer",
+                  "type": "Container",
+                  "style": {
+                    "$ref": "styles.text-body"
+                  },
+                  "layout": {
+                    "width": "fill",
+                    "height": "fill"
+                  },
+                  "children": []
+                },
+                {
+                  "id": "window-close",
+                  "type": "Button",
+                  "style": {
+                    "$ref": "styles.button-subtle"
+                  },
+                  "layout": {
+                    "width": 32,
+                    "height": 32
+                  },
+                  "label": "×",
+                  "tabStop": false,
+                  "events": {
+                    "click": {
+                      "action": "close-window",
+                      "payload": {}
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "id": "screen-host",
+              "type": "Container",
+              "style": {
+                "$ref": "styles.text-body"
+              },
+              "layout": {
+                "width": "fill",
+                "height": "fill"
+              },
+              "children": []
+            }
+          ]
+        }
+      ]
     }
   }
 }

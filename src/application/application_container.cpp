@@ -266,11 +266,11 @@ const std::wstring& ApplicationContainer::nonfatal_diagnostic() const noexcept {
 ui::containers::WindowContainer* ApplicationContainer::CreateRouteWindow(
     std::string_view route_id, bool prepare_and_show, int show_command,
     std::wstring& diagnostic) {
-    if (!IsConfiguredRoute(route_id)) {
+    if (!route_id.empty() && !IsConfiguredRoute(route_id)) {
         diagnostic = L"Route window tidak dapat dibuat karena route tidak terdaftar.";
         return nullptr;
     }
-    if (FindRouteWindowId(route_id)) {
+    if (!route_id.empty() && FindRouteWindowId(route_id)) {
         diagnostic = L"Route window duplikat ditolak oleh process registry.";
         return nullptr;
     }
@@ -280,7 +280,8 @@ ui::containers::WindowContainer* ApplicationContainer::CreateRouteWindow(
         instance_, render_runtime_, document_,
         theme_adapter_.Select(ui::config::ThemePreference::System), application_bridge_);
     if (!container->Create(window_definition_id_, diagnostic)) return nullptr;
-    if (container->active_route() != route_id && !container->Navigate(route_id, diagnostic)) {
+    if (!route_id.empty() && container->active_route() != route_id &&
+        !container->Navigate(route_id, diagnostic)) {
         return nullptr;
     }
     if (prepare_and_show && !container->PrepareFirstFrame(diagnostic)) return nullptr;
