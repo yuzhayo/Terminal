@@ -77,6 +77,16 @@ dimigrasikan; business logic canonical yang dibangun aplikasi berada di `src/log
 
 Contoh berikut membuat route `profile-manager`.
 
+Cara tercepat adalah memakai generator:
+
+```powershell
+.\tools\New-UiScreen.ps1 -RouteId profile-manager -Title "Profile Manager"
+```
+
+Generator membuat `Assets/ui/screens/profile-manager.json`, menolak overwrite screen yang sudah ada,
+menjalankan merge validation, lalu mencetak snippet Button `navigate-route` yang dapat disalin ke
+screen sumber. Generator tidak mengedit screen lain dan tidak membuat action atau logic C++.
+
 ### Langkah 1 — Buat file screen baru
 
 Buat file `Assets/ui/screens/profile-manager.json`. Nama file adalah route ID. Isi file adalah object
