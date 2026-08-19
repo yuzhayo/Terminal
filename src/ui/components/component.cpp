@@ -16,7 +16,9 @@ std::size_t StateIndex(config::VisualState state) noexcept {
 int ResolveDimension(const config::Dimension& dimension, int measured, int available) noexcept {
     switch (dimension.kind) {
         case config::DimensionKind::Auto: return measured;
-        case config::DimensionKind::Fill: return available;
+        // Fill dengan offer 0 berarti "ukuran konten": fill hanya meregang secara visual
+        // saat Arrange, tidak memaksa ukuran window saat pengukuran (auto-compact).
+        case config::DimensionKind::Fill: return available > 0 ? available : measured;
         case config::DimensionKind::Pixels: return dimension.pixels;
     }
     return measured;

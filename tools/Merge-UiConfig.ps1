@@ -104,29 +104,30 @@ if (-not (Test-Path -LiteralPath $screensRoot -PathType Container)) {
 }
 
 $screenFiles = @(Get-ChildItem -LiteralPath $screensRoot -Filter '*.json' -File | Sort-Object Name)
+$screenFolders = @(Get-ChildItem -LiteralPath $screensRoot -Directory | Sort-Object Name)
 
 $entries = New-Object System.Collections.Generic.List[string]
 $routeIds = New-Object System.Collections.Generic.List[string]
 
-foreach ($file in $screenFiles) {
-    $routeId = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
-    $source = "Assets\ui\screens\$($file.Name)"
-
-    if ($routeId -notmatch $routeIdPattern) {
-        Fail $source `
-            "Nama file `"$routeId`" bukan lower-kebab-case. Nama file adalah route ID."
+function Add-ScreenEntry([string] $RouteId, [string] $FilePath, [string] $Source) {
+    if ($RouteId -notmatch $routeIdPattern) {
+        Fail $Source `
+            "Nama `"$RouteId`" bukan lower-kebab-case. Nama screen adalah route ID."
+    }
+    if ($routeIds -contains $RouteId) {
+        Fail $Source "Route `"$RouteId`" sudah terdaftar dari screen lain."
     }
 
-    $screenText = Read-JsonFile $file.FullName $source
+    $screenText = Read-JsonFile $FilePath $Source
     $screenDocument = $screenText | ConvertFrom-Json
     $screenKeys = @($screenDocument.PSObject.Properties.Name)
 
     if ($screenKeys -notcontains 'routeId') {
-        Fail $source 'Field "routeId" tidak ada.'
+        Fail $Source 'Field "routeId" tidak ada.'
     }
-    if ($screenDocument.routeId -ne $routeId) {
-        Fail $source `
-            "routeId `"$($screenDocument.routeId)`" tidak cocok dengan nama file `"$routeId`"."
+    if ($screenDocument.routeId -ne $RouteId) {
+        Fail $Source `
+            "routeId `"$($screenDocument.routeId)`" tidak cocok dengan nama screen `"$RouteId`"."
     }
 
     # Text splicing, bukan re-serialize: byte fragment masuk apa adanya sehingga script tidak
@@ -136,10 +137,23 @@ foreach ($file in $screenFiles) {
         if ($_.Length -eq 0) { '' } else { '    ' + $_ }
     }) -join "`n"
     if (-not $indented.StartsWith('    {')) {
-        Fail $source 'Dokumen screen harus berupa JSON object.'
+        Fail $Source 'Dokumen screen harus berupa JSON object.'
     }
-    $entries.Add('    "' + $routeId + '": ' + $indented.Substring(4))
-    $routeIds.Add($routeId)
+    $entries.Add('    "' + $RouteId + '": ' + $indented.Substring(4))
+    $routeIds.Add($RouteId)
+}
+
+foreach ($file in $screenFiles) {
+    $routeId = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
+    Add-ScreenEntry $routeId $file.FullName "Assets\ui\screens\$($file.Name)"
+}
+
+foreach ($folder in $screenFolders) {
+    $screenPath = Join-Path $folder.FullName 'screen.json'
+    if (-not (Test-Path -LiteralPath $screenPath -PathType Leaf)) {
+        continue
+    }
+    Add-ScreenEntry $folder.Name $screenPath "Assets\ui\screens\$($folder.Name)\screen.json"
 }
 
 # --- assemble ----------------------------------------------------------------

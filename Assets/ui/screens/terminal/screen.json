@@ -1,0 +1,228 @@
+{
+    "id": "terminal-screen",
+    "type": "Screen",
+    "style": {
+        "$ref": "styles.surface"
+    },
+    "routeId": "terminal",
+    "tabLabel": "Terminal",
+    "showInTabs": true,
+    "children": [
+        {
+            "id": "shell",
+            "type": "Container",
+            "style": {
+                "$ref": "styles.surface"
+            },
+            "layout": {
+                "width": "fill",
+                "height": "fill"
+            },
+            "direction": "column",
+            "gap": 12,
+            "padding": {
+                "left": 16,
+                "top": 16,
+                "right": 16,
+                "bottom": 16
+            },
+            "children": [
+                {
+                    "id": "terminal-path-row",
+                    "type": "Container",
+                    "style": {
+                        "$ref": "styles.surface"
+                    },
+                    "layout": {
+                        "width": "fill",
+                        "height": "auto"
+                    },
+                    "direction": "row",
+                    "gap": 8,
+                    "children": [
+                        {
+                            "id": "terminal-input",
+                            "type": "Input",
+                            "style": {
+                                "$ref": "styles.input"
+                            },
+                            "layout": {
+                                "width": "fill",
+                                "height": 44
+                            },
+                            "valueBinding": {
+                                "$bind": "viewState.terminalInput"
+                            },
+                            "mode": "singleLine",
+                            "placeholder": "C:\\folder\\kerja",
+                            "tabStop": true,
+                            "automation": {
+                                "name": "Folder terminal"
+                            }
+                        },
+                        {
+                            "id": "terminal-browse",
+                            "type": "Button",
+                            "style": {
+                                "$ref": "styles.button-default"
+                            },
+                            "layout": {
+                                "width": 44,
+                                "height": 44
+                            },
+                            "label": "…",
+                            "tabStop": true,
+                            "automation": {
+                                "name": "Pilih folder"
+                            },
+                            "pressSelects": false
+                        }
+                    ]
+                },
+                {
+                    "id": "terminal-row-admin",
+                    "type": "Container",
+                    "style": {
+                        "$ref": "styles.surface"
+                    },
+                    "layout": {
+                        "width": "fill",
+                        "height": "auto"
+                    },
+                    "direction": "row",
+                    "gap": 8,
+                    "children": [
+                        {
+                            "id": "terminal-profile-admin",
+                            "type": "Button",
+                            "style": {
+                                "$ref": "styles.button-default"
+                            },
+                            "layout": {
+                                "width": "fill",
+                                "height": 44
+                            },
+                            "label": "🛡 PowerShell Admin",
+                            "tabStop": true
+                        },
+                        {
+                            "id": "terminal-venv-admin",
+                            "type": "Button",
+                            "style": {
+                                "$ref": "styles.button-default"
+                            },
+                            "layout": {
+                                "width": "auto",
+                                "height": 44
+                            },
+                            "label": "Activate venv",
+                            "tabStop": true,
+                            "automation": {
+                                "name": "Activate venv PowerShell Admin"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "id": "terminal-row-powershell",
+                    "type": "Container",
+                    "style": {
+                        "$ref": "styles.surface"
+                    },
+                    "layout": {
+                        "width": "fill",
+                        "height": "auto"
+                    },
+                    "direction": "row",
+                    "gap": 8,
+                    "children": [
+                        {
+                            "id": "terminal-profile-powershell",
+                            "type": "Button",
+                            "style": {
+                                "$ref": "styles.button-default"
+                            },
+                            "layout": {
+                                "width": "fill",
+                                "height": 44
+                            },
+                            "label": "PowerShell",
+                            "selected": true,
+                            "tabStop": true
+                        },
+                        {
+                            "id": "terminal-venv-powershell",
+                            "type": "Button",
+                            "style": {
+                                "$ref": "styles.button-default"
+                            },
+                            "layout": {
+                                "width": "auto",
+                                "height": 44
+                            },
+                            "label": "Activate venv",
+                            "tabStop": true,
+                            "automation": {
+                                "name": "Activate venv PowerShell"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "id": "terminal-row-wsl",
+                    "type": "Container",
+                    "style": {
+                        "$ref": "styles.surface"
+                    },
+                    "layout": {
+                        "width": "fill",
+                        "height": "auto"
+                    },
+                    "direction": "row",
+                    "gap": 8,
+                    "children": [
+                        {
+                            "id": "terminal-profile-wsl",
+                            "type": "Button",
+                            "style": {
+                                "$ref": "styles.button-default"
+                            },
+                            "layout": {
+                                "width": "fill",
+                                "height": 44
+                            },
+                            "label": "Ubuntu (WSL)",
+                            "tabStop": true
+                        },
+                        {
+                            "id": "terminal-venv-wsl",
+                            "type": "Button",
+                            "style": {
+                                "$ref": "styles.button-default"
+                            },
+                            "layout": {
+                                "width": "auto",
+                                "height": 44
+                            },
+                            "label": "Activate venv",
+                            "tabStop": true,
+                            "automation": {
+                                "name": "Activate venv Ubuntu WSL"
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "selectRules": [
+        {
+            "mode": "single",
+            "ids": [
+                "terminal-profile-admin",
+                "terminal-profile-powershell",
+                "terminal-profile-wsl"
+            ]
+        }
+    ]
+}

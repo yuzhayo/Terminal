@@ -123,6 +123,7 @@
     <ClCompile Include="logic\storage\json.cpp" />
     <ClCompile Include="logic\storage\settings.cpp" />
     <ClCompile Include="platform\app_paths.cpp" />
+    <ClCompile Include="platform\jump_list.cpp" />
     <ClCompile Include="platform\single_instance.cpp" />
     <ClCompile Include="platform\updater.cpp" />
     <ClCompile Include="platform\windows_runtime.cpp" />
@@ -191,6 +192,7 @@
     <ClInclude Include="logic\storage\json.h" />
     <ClInclude Include="logic\storage\settings.h" />
     <ClInclude Include="platform\app_paths.h" />
+    <ClInclude Include="platform\jump_list.h" />
     <ClInclude Include="platform\single_instance.h" />
     <ClInclude Include="platform\updater.h" />
     <ClInclude Include="platform\windows_runtime.h" />

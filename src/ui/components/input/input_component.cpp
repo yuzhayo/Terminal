@@ -111,6 +111,7 @@ MeasuredSize InputComponent::Measure(HDC dc, int available_width, int available_
 void InputComponent::Arrange(const RECT& bounds) {
     Component::Arrange(bounds);
     if (!edit_) return;
+    const config::InputProperties& properties = Properties();
     const int border = ScaleDip(logically_focused_ && window_active_ ? style().focus_width
                                                                     : style().border_width,
                                 host_.dpi);
@@ -118,6 +119,19 @@ void InputComponent::Arrange(const RECT& bounds) {
     const int top = bounds.top + border + ScaleDip(style().content_padding.top, host_.dpi);
     int right = bounds.right - border - ScaleDip(style().content_padding.right, host_.dpi);
     const int bottom = bounds.bottom - border - ScaleDip(style().content_padding.bottom, host_.dpi);
+    // EDIT single-line tidak menengahkan teks vertikal pada kontrol tinggi;
+    // tengahkan rect peer secara manual agar teks sejajar tengah box.
+    int peer_top = top;
+    int peer_bottom = bottom;
+    if (properties.mode == config::InputMode::SingleLine) {
+        const SIZE line = host_.render_runtime->MeasureText(L"Mg", style().font, host_.dpi, 8192,
+                                                            DT_SINGLELINE | DT_NOPREFIX);
+        const int content_height = bottom - top;
+        if (line.cy > 0 && line.cy < content_height) {
+            peer_top = top + (content_height - line.cy) / 2;
+            peer_bottom = peer_top + line.cy;
+        }
+    }
     RECT reserved{};
     if (scrollbar_) {
         const int thickness = ScaleDip(
@@ -127,7 +141,7 @@ void InputComponent::Arrange(const RECT& bounds) {
         right = reserved.left;
         scrollbar_->Arrange(reserved);
     }
-    native_peer_content_rect_ = {left, top, right, bottom};
+    native_peer_content_rect_ = {left, peer_top, right, peer_bottom};
     const std::array<RECT, 1> reserved_regions{reserved};
     geometry_valid_ = ValidateNativePeerGeometry(
         bounds_, native_peer_content_rect_, scrollbar_ ? std::span<const RECT>(reserved_regions)
@@ -136,7 +150,7 @@ void InputComponent::Arrange(const RECT& bounds) {
         ShowWindow(edit_, SW_HIDE);
         return;
     }
-    MoveWindow(edit_, left, top, right - left, bottom - top, TRUE);
+    MoveWindow(edit_, left, peer_top, right - left, peer_bottom - peer_top, TRUE);
     SyncScrollbarFromPeer();
     if (!scrollbar_visible_ && scrollbar_) {
         const int full_right = bounds.right - border -

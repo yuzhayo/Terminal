@@ -13,6 +13,7 @@
 #include "app/app_identity.h"
 #include "instrumentation/performance_trace.h"
 #include "platform/single_instance.h"
+#include "ui/components/button/button_component.h"
 #include "ui/components/tabs/tabs_component.h"
 
 namespace ui::containers {
@@ -272,6 +273,28 @@ bool WindowContainer::BuildComponentTree(std::wstring& diagnostic) {
         component_host_->request_route = [this](std::string_view route_id) {
             std::wstring ignored;
             return Navigate(route_id, ignored);
+        };
+        // Aturan interaksi screen (selectRules single): memilih satu tombol
+        // menghapus seleksi tombol lain dalam grup yang sama.
+        component_host_->selection_changed = [this](components::Component& source,
+                                                    bool now_selected) {
+            if (!now_selected || !active_screen_ || !root_) return;
+            const auto& screen_properties =
+                std::get<config::ScreenProperties>(active_screen_->definition().properties);
+            const std::string source_id(source.definition().id);
+            for (const auto& rule : screen_properties.select_rules) {
+                if (rule.mode != config::SelectMode::Single) continue;
+                if (std::find(rule.ids.begin(), rule.ids.end(), source_id) == rule.ids.end()) {
+                    continue;
+                }
+                for (const std::string& other : rule.ids) {
+                    if (other == source_id) continue;
+                    components::Component* target = root_->FindById(other);
+                    if (auto* button = dynamic_cast<components::ButtonComponent*>(target)) {
+                        button->SetSelectedOverride(false);
+                    }
+                }
+            }
         };
         if (!BuildWindowRoot(diagnostic)) return false;
         const auto& properties =

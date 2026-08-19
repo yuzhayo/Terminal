@@ -106,6 +106,7 @@ struct ComponentHost {
     std::function<void(const RECT&)> invalidate;
     std::function<void(Component&, std::string_view, const config::EventDefinition&)>
         dispatch_event;
+    std::function<void(Component&, bool now_selected)> selection_changed;
     std::function<void(Component*, bool)> native_focus_changed;
     std::function<void(Component*, bool)> popup_state_changed;
     std::function<std::vector<std::wstring>(std::string_view)> resolve_string_items;

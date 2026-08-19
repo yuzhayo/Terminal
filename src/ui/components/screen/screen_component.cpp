@@ -8,7 +8,9 @@ MeasuredSize ScreenComponent::Measure(HDC dc, int available_width, int available
     int width = 0;
     int height = 0;
     for (const auto& child : children_) {
-        const MeasuredSize measured = child->Measure(dc, available_width, available_height);
+        // Screen selalu berukuran konten agar window auto-compact; child fill tetap
+        // meregang secara visual pada Arrange.
+        const MeasuredSize measured = child->Measure(dc, available_width, 0);
         width = std::max(width, measured.width);
         height += measured.height;
     }

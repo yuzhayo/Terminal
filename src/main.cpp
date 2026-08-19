@@ -15,6 +15,7 @@
 #include "app/app_identity.h"
 #include "instrumentation/performance_trace.h"
 #include "platform/app_paths.h"
+#include "platform/jump_list.h"
 #include "platform/single_instance.h"
 #include "platform/updater.h"
 #include "platform/windows_runtime.h"
@@ -67,6 +68,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
         return updater::CheckDownloadAndApply() == updater::UpdateResult::Failed ? 10 : 0;
     }
 
+    platform::ApplyAppUserModelId();
     platform::SingleInstance single_instance;
     const platform::InstanceClaim claim = single_instance.Claim(command_line);
     switch (claim) {
@@ -117,12 +119,18 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
         return 18;
     }
     const auto startup_request = platform::BuildIpcRequestFromCommandLine(command_line);
+    application::ApplicationContainerOptions container_options;
+    // Eksperimen: samakan perilaku dengan v1 (Open-terminal) — setiap aktivasi
+    // taskbar/jump list membuka window baru.
+    container_options.allow_duplicate_route_windows = true;
     application::ApplicationContainer application_container(
-        instance, render_runtime, config_gate.document(), theme_adapter, application_bridge);
+        instance, render_runtime, config_gate.document(), theme_adapter, application_bridge,
+        container_options);
     if (!application_container.Initialize("main", startup_request, diagnostic)) {
         ShowBootstrapError(diagnostic);
         return 16;
     }
+    platform::InstallJumpList();
     if (!application_container.nonfatal_diagnostic().empty()) {
         OutputDebugStringW((application_container.nonfatal_diagnostic() + L"\n").c_str());
     }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include "ui/components/component.h"
 
 namespace ui::components {
@@ -22,6 +24,8 @@ public:
     bool automation_supports_invoke() const noexcept override;
     bool AutomationInvoke() override;
 
+    void SetSelectedOverride(bool selected);
+
 private:
     config::VisualState State() const noexcept;
     void Activate();
@@ -29,7 +33,9 @@ private:
     bool hovered_ = false;
     bool pressed_ = false;
     bool focused_ = false;
+    bool keyboard_focus_ = false;
     bool window_active_ = true;
+    std::optional<bool> press_override_;
 };
 
 }  // namespace ui::components

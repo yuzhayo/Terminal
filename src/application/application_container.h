@@ -26,6 +26,10 @@ struct ApplicationContainerTestAccess;
 struct ApplicationContainerOptions {
     bool enable_tray = true;
     int created_window_show_command = SW_SHOWNORMAL;
+    // Eksperimen perilaku v1 (Open-terminal): setiap launch/jump list membuka
+    // WindowContainer baru, bukan mengaktifkan window yang sudah ada. Mematikan
+    // registry one-window-per-route beserta invariant-nya.
+    bool allow_duplicate_route_windows = false;
 };
 
 class ApplicationContainer final {

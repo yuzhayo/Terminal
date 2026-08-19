@@ -737,11 +737,11 @@ ComponentType ParseComponentType(std::string_view value, std::string_view path) 
 std::set<std::string_view> SpecificKeys(ComponentType type) {
     switch (type) {
         case ComponentType::Window: return {"title", "initialRoute", "initialWidth", "initialHeight", "minWidth", "minHeight", "resizable", "children"};
-        case ComponentType::Screen: return {"routeId", "tabLabel", "showInTabs", "children"};
+        case ComponentType::Screen: return {"routeId", "tabLabel", "showInTabs", "selectRules", "children"};
         case ComponentType::Tabs: return {};
         case ComponentType::Container: return {"direction", "gap", "padding", "align", "justify", "wrap", "overflow", "children"};
         case ComponentType::Text: return {"text", "textBinding", "variant", "wrap", "selectable", "align"};
-        case ComponentType::Button: return {"label", "variant", "selected", "tabStop"};
+        case ComponentType::Button: return {"label", "variant", "selected", "pressSelects", "tabStop"};
         case ComponentType::Input: return {"valueBinding", "mode", "placeholder", "readOnly", "password", "maxLength", "horizontalAlign", "scrollbar", "tabStop"};
         case ComponentType::Combo: return {"itemsBinding", "selectedValueBinding", "placeholder", "maxVisibleItems", "popupMaxHeight", "allowEmpty", "tabStop"};
         case ComponentType::Checkbox: return {"label", "checkedBinding", "triState", "tabStop"};
@@ -864,6 +864,28 @@ private:
                 properties.tab_label =
                     ReadStringOr(value, "tabLabel", properties.route_id, path);
                 properties.show_in_tabs = ReadBoolOr(value, "showInTabs", true, path);
+                if (value.contains("selectRules")) {
+                    const Json& rules = value.at("selectRules");
+                    const std::string rules_path = ChildPath(path, "selectRules");
+                    if (!rules.is_array()) Fail("wrong-type", rules_path, "selectRules must be an array.");
+                    for (const Json& rule : rules) {
+                        RequireExactKeys(rule, {}, {"mode", "ids"}, rules_path);
+                        SelectRule parsed;
+                        parsed.mode = ParseEnum<SelectMode>(
+                            ReadStringOr(rule, "mode", "multi", rules_path),
+                            {{"multi", SelectMode::Multi}, {"single", SelectMode::Single}},
+                            ChildPath(rules_path, "mode"));
+                        const Json& ids = Required(rule, "ids", rules_path);
+                        if (!ids.is_array()) Fail("wrong-type", ChildPath(rules_path, "ids"), "ids must be an array.");
+                        for (const Json& id : ids) {
+                            if (!id.is_string()) {
+                                Fail("wrong-type", ChildPath(rules_path, "ids"), "ids entries must be strings.");
+                            }
+                            parsed.ids.push_back(id.get<std::string>());
+                        }
+                        properties.select_rules.push_back(std::move(parsed));
+                    }
+                }
                 return properties;
             }
             case ComponentType::Tabs: return TabsProperties{};
@@ -903,6 +925,7 @@ private:
                 properties.variant = ParseEnum<ButtonVariant>(ReadStringOr(value, "variant", "default", path),
                     {{"default", ButtonVariant::Default}, {"primary", ButtonVariant::Primary}, {"subtle", ButtonVariant::Subtle}, {"danger", ButtonVariant::Danger}, {"navigation", ButtonVariant::Navigation}, {"bookmark", ButtonVariant::Bookmark}}, ChildPath(path, "variant"));
                 if (value.contains("selected")) properties.selected = ParseBooleanValue(value.at("selected"), ChildPath(path, "selected"));
+                properties.press_selects = ReadBoolOr(value, "pressSelects", true, path);
                 properties.tab_stop = ReadBoolOr(value, "tabStop", true, path);
                 return properties;
             }

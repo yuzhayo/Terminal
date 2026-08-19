@@ -659,7 +659,7 @@
             "$ref": "tokens.text"
           },
           "border": {
-            "$ref": "tokens.borderStrong"
+            "$ref": "tokens.accent"
           }
         },
         "pressed": {
@@ -675,13 +675,13 @@
         },
         "selected": {
           "background": {
-            "$ref": "tokens.selection"
+            "$ref": "tokens.accent"
           },
           "foreground": {
-            "$ref": "tokens.text"
+            "$ref": "tokens.accentText"
           },
           "border": {
-            "$ref": "tokens.accent"
+            "$ref": "tokens.border"
           }
         },
         "disabled": {
@@ -1835,6 +1835,7 @@
         "$ref": "styles.window"
       },
       "title": "Terminal",
+      "initialRoute": "terminal",
       "initialWidth": 760,
       "initialHeight": 520,
       "minWidth": 0,
@@ -1845,7 +1846,7 @@
           "id": "window-frame",
           "type": "Container",
           "style": {
-            "$ref": "styles.window"
+            "$ref": "styles.surface"
           },
           "layout": {
             "width": "fill",

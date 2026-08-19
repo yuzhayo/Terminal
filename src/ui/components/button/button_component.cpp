@@ -69,6 +69,8 @@ bool ButtonComponent::FocusNativePeer() {
 }
 
 void ButtonComponent::SetLogicalFocus(bool focused, bool window_active) {
+    // Ring fokus hanya untuk navigasi keyboard (Tab), bukan klik mouse.
+    if (focused) keyboard_focus_ = (GetAsyncKeyState(VK_TAB) & 0x8000) != 0;
     if (focused_ == focused && window_active_ == window_active) return;
     focused_ = focused;
     window_active_ = window_active;
@@ -101,15 +103,30 @@ bool ButtonComponent::AutomationInvoke() {
 config::VisualState ButtonComponent::State() const noexcept {
     if (!enabled()) return config::VisualState::Disabled;
     if (pressed_) return config::VisualState::Pressed;
-    if (focused_ && window_active_) return config::VisualState::Focus;
+    const bool selected =
+        press_override_.value_or(ResolveBooleanValue(Properties(definition_).selected));
+    if (selected) return config::VisualState::Selected;
+    if (focused_ && window_active_ && keyboard_focus_) return config::VisualState::Focus;
     if (hovered_) return config::VisualState::Hover;
-    if (ResolveBooleanValue(Properties(definition_).selected)) {
-        return config::VisualState::Selected;
-    }
     return config::VisualState::Normal;
 }
 
+void ButtonComponent::SetSelectedOverride(bool selected) {
+    const bool current =
+        press_override_.value_or(ResolveBooleanValue(Properties(definition_).selected));
+    if (current == selected) return;
+    press_override_ = selected;
+    Invalidate();
+}
+
 void ButtonComponent::Activate() {
+    if (Properties(definition_).press_selects) {
+        const bool current =
+            press_override_.value_or(ResolveBooleanValue(Properties(definition_).selected));
+        press_override_ = !current;
+        Invalidate();
+        if (host_.selection_changed) host_.selection_changed(*this, !current);
+    }
     EmitEvent("click");
 }
 

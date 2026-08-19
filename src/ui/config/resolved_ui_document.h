@@ -123,10 +123,18 @@ struct WindowProperties {
     bool resizable = true;
 };
 
+enum class SelectMode { Multi, Single };
+
+struct SelectRule {
+    SelectMode mode = SelectMode::Multi;
+    std::vector<std::string> ids;
+};
+
 struct ScreenProperties {
     std::string route_id;
     std::string tab_label;
     bool show_in_tabs = true;
+    std::vector<SelectRule> select_rules;
 };
 
 struct TabsProperties {};
@@ -153,6 +161,7 @@ struct ButtonProperties {
     TextValue label;
     ButtonVariant variant = ButtonVariant::Default;
     BooleanValue selected = false;
+    bool press_selects = false;
     bool tab_stop = true;
 };
 
