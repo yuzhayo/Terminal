@@ -130,7 +130,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show_command) {
         ShowBootstrapError(diagnostic);
         return 16;
     }
-    platform::InstallJumpList();
+    platform::InstallJumpList(application_container.JumpListRoutes());
     if (!application_container.nonfatal_diagnostic().empty()) {
         OutputDebugStringW((application_container.nonfatal_diagnostic() + L"\n").c_str());
     }

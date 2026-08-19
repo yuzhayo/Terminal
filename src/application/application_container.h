@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "application/application_infrastructure_window.h"
+#include "platform/jump_list.h"
 #include "platform/single_instance.h"
 #include "rendering/render_runtime.h"
 #include "ui/application/ui_application_bridge.h"
@@ -54,6 +55,10 @@ public:
     void ActivateDefault();
     void HandleIpcRequest(const platform::IpcRequest& request);
     void BeginShutdown() noexcept;
+
+    // Route yang boleh muncul sebagai task jump list, diambil dari resolved UI
+    // document (tabLabel + showInTabs) sehingga daftarnya tidak pernah basi.
+    std::vector<platform::JumpListRoute> JumpListRoutes() const;
 
     ui::containers::WindowContainer* initial_window() noexcept;
     ui::containers::WindowContainer* FindRouteWindow(std::string_view route_id) noexcept;

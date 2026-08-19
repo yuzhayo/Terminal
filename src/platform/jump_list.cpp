@@ -57,7 +57,7 @@ IShellLinkW* MakeTask(const std::wstring& title, const std::wstring& arguments) 
 
 void ApplyAppUserModelId() { SetCurrentProcessExplicitAppUserModelID(app_identity::kApplicationId); }
 
-void InstallJumpList() {
+void InstallJumpList(std::span<const JumpListRoute> routes) {
     if (!EnsureCom()) return;
 
     ICustomDestinationList* list = nullptr;
@@ -76,18 +76,9 @@ void InstallJumpList() {
     IObjectCollection* tasks = nullptr;
     if (SUCCEEDED(CoCreateInstance(CLSID_EnumerableObjectCollection, nullptr, CLSCTX_INPROC_SERVER,
                                    IID_PPV_ARGS(&tasks)))) {
-        struct Entry {
-            const wchar_t* title;
-            const wchar_t* args;
-        };
-        const Entry entries[] = {
-            {L"Terminal", L"--route terminal"},
-            {L"JSON Inject", L"--route json-inject"},
-            {L"Chrome Launcher", L"--route chrome-launcher"},
-            {L"Exit", L"--exit"},
-        };
-        for (const Entry& entry : entries) {
-            if (IShellLinkW* link = MakeTask(entry.title, entry.args)) {
+        for (const JumpListRoute& route : routes) {
+            if (route.title.empty() || route.route_id.empty()) continue;
+            if (IShellLinkW* link = MakeTask(route.title, L"--route " + route.route_id)) {
                 tasks->AddObject(link);
                 link->Release();
             }

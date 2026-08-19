@@ -192,6 +192,23 @@ void ApplicationContainer::HandleIpcRequest(const platform::IpcRequest& request)
     }
 }
 
+std::vector<platform::JumpListRoute> ApplicationContainer::JumpListRoutes() const {
+    std::vector<platform::JumpListRoute> routes;
+    if (!document_) return routes;
+    routes.reserve(document_->screens.size());
+    for (const auto& [route_id, definition] : document_->screens) {
+        const auto& properties =
+            std::get<ui::config::ScreenProperties>(definition.properties);
+        if (!properties.show_in_tabs) continue;
+        std::wstring title = Utf8ToWide(properties.tab_label);
+        if (title.empty()) title = Utf8ToWide(route_id);
+        std::wstring wide_route = Utf8ToWide(route_id);
+        if (title.empty() || wide_route.empty()) continue;
+        routes.push_back({std::move(title), std::move(wide_route)});
+    }
+    return routes;
+}
+
 void ApplicationContainer::BeginShutdown() noexcept {
     if (shutdown_in_progress_) return;
     shutdown_in_progress_ = true;
